@@ -892,7 +892,8 @@ def mark_stale_running_backups(snapshot_time=None):
     )
     updated = []
     for backup_run in stale_runs:
-        reference_time = backup_run.last_output_at or backup_run.heartbeat_at or backup_run.started_at
+        timestamps = [value for value in [backup_run.last_output_at, backup_run.heartbeat_at, backup_run.started_at] if value is not None]
+        reference_time = max(timestamps) if timestamps else None
         if backup_run.stop_requested_at and not _pid_is_alive(backup_run.process_pid):
             result = BackupExecutionResult(
                 False,
