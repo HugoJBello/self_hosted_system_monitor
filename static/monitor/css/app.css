@@ -291,6 +291,14 @@ body.app-shell {
   min-width: 0;
 }
 
+.backup-timeout-editor .form-control {
+  min-width: 4.5rem;
+}
+
+.backup-timeout-editor .form-select {
+  max-width: 8rem;
+}
+
 .severity-pill,
 .live-pill,
 .resolved-pill {
@@ -705,6 +713,13 @@ body.app-shell {
 
   .backup-source-group > .btn {
     margin-left: 0 !important;
+  }
+
+  .backup-timeout-editor > .form-control,
+  .backup-timeout-editor > .form-select {
+    width: 100%;
+    flex: 0 0 100%;
+    border-radius: 0.75rem !important;
   }
 
   .command-modal-block {

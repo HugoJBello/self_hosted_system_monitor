@@ -34,6 +34,7 @@ BACKUP_LOG_FLUSH_MAX_BUFFERED_LINES = 25
 DEFAULT_STOP_EXIT_CODE = 130
 DEFAULT_TIMEOUT_EXIT_CODE = 124
 RSYNC_PARTIAL_SUCCESS_EXIT_CODES = {23, 24}
+BACKUP_NICE_LEVEL = 19
 BROWSER_ROOTS = [
     "/home",
     "/media",
@@ -101,6 +102,24 @@ def _with_db_retry(action, *, default=None, label="database operation"):
                 logger.warning("Skipping %s after repeated SQLite lock contention.", label)
                 return default
             time.sleep(SQLITE_LOCK_RETRY_SECONDS)
+
+
+def _with_low_priority(command_parts):
+    wrapped = list(command_parts)
+    nice_bin = shutil.which("nice")
+    if nice_bin:
+        wrapped = [nice_bin, "-n", str(BACKUP_NICE_LEVEL), *wrapped]
+    ionice_bin = shutil.which("ionice")
+    if ionice_bin:
+        wrapped = [ionice_bin, "-c3", *wrapped]
+    return wrapped
+
+
+def _lower_current_process_priority():
+    try:
+        os.nice(BACKUP_NICE_LEVEL)
+    except OSError:
+        logger.warning("Could not lower backup worker nice level.", exc_info=True)
 
 
 def _hostfs_path(host_path):
@@ -524,10 +543,11 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
         if heartbeat_callback:
             heartbeat_callback(force=False)
 
+    _lower_current_process_priority()
     source_path = _ensure_local_source(job)
     normalized_host = _normalized_remote_host(job)
     password = _resolve_password(job)
-    command_preview = _format_command(_rsync_command(job, source_path, password, use_key_auth=not bool(password)))
+    command_preview = _format_command(_with_low_priority(_rsync_command(job, source_path, password, use_key_auth=not bool(password))))
     log_lines = [
         f"Starting backup job {job.name}",
         f"Source: {job.source_path}",
@@ -575,7 +595,7 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
     if not use_key_auth and not password:
         raise RuntimeError("Key authentication failed and no password-based auth is configured.")
 
-    rsync_cmd = _rsync_command(job, source_path, password, use_key_auth)
+    rsync_cmd = _with_low_priority(_rsync_command(job, source_path, password, use_key_auth))
     push_log(f"Starting rsync transfer with command: {_format_command(rsync_cmd)}")
     command_result = _run_streaming_command(
         rsync_cmd,
@@ -844,7 +864,7 @@ def execute_backup_job(job, *, backup_run=None):
 
 def start_background_backup(job, *, launched_by="manual"):
     backup_run = create_running_backup_run(job, launched_by=launched_by)
-    command = [sys.executable, "manage.py", "run_backup_job", str(job.id), "--run-id", str(backup_run.id)]
+    command = _with_low_priority([sys.executable, "manage.py", "run_backup_job", str(job.id), "--run-id", str(backup_run.id)])
     try:
         subprocess.Popen(
             command,

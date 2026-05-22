@@ -193,7 +193,7 @@ class BackupJobForm(forms.ModelForm):
             "install_public_key": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "delete_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "max_size": forms.TextInput(attrs={"class": "form-control", "placeholder": "100m"}),
-            "run_timeout_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 60, "max": 604800, "step": 60}),
+            "run_timeout_seconds": forms.NumberInput(attrs={"class": "form-control d-none backup-timeout-seconds", "min": 60, "max": 604800, "step": 60}),
             "idle_timeout_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 30, "max": 86400, "step": 30}),
             "exclude_patterns": forms.Textarea(attrs={"class": "form-control", "rows": 3, "placeholder": "*.tmp\nnode_modules/"}),
             "position": forms.NumberInput(attrs={"class": "form-control", "min": 0}),

@@ -156,7 +156,19 @@
         </div>
       </div>
       <div class="col-md-3"><label class="form-label" for="{{ create_form.max_size.id_for_label }}">Max file size</label>{{ create_form.max_size }}</div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.run_timeout_seconds.id_for_label }}">Hard timeout (s)</label>{{ create_form.run_timeout_seconds }}</div>
+      <div class="col-md-3">
+        <label class="form-label" for="{{ create_form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
+        {{ create_form.run_timeout_seconds }}
+        <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ create_form.run_timeout_seconds.id_for_label }}">
+          <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+          <select class="form-select" data-timeout-unit>
+            <option value="minutes">minutes</option>
+            <option value="hours">hours</option>
+            <option value="seconds">seconds</option>
+          </select>
+        </div>
+        <div class="form-text">This is the maximum total runtime for one backup.</div>
+      </div>
       <div class="col-md-3"><label class="form-label" for="{{ create_form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ create_form.idle_timeout_seconds }}</div>
       <div class="col-md-3"><label class="form-label" for="{{ create_form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ create_form.enabled }}</div></div>
       <div class="col-md-3"><label class="form-label" for="{{ create_form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ create_form.delete_enabled }}</div></div>
@@ -164,6 +176,7 @@
       <div class="col-md-6"><label class="form-label" for="{{ create_form.password_file_path.id_for_label }}">Password file on host</label>{{ create_form.password_file_path }}</div>
       <div class="col-md-6"><label class="form-label" for="{{ create_form.public_key_path.id_for_label }}">Public key path on host</label>{{ create_form.public_key_path }}</div>
       <div class="col-12"><label class="form-label" for="{{ create_form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ create_form.exclude_patterns }}</div>
+      <div class="col-12"><div class="form-text">A backup job never overlaps with itself. If its schedule fires again while that same job is still running, the scheduler waits until the current run has finished before considering the next slot.</div></div>
     </div>
     {% if create_form.errors %}
       <div class="alert alert-danger mb-0">{{ create_form.errors }}</div>
@@ -244,7 +257,19 @@
               </div>
             </div>
             <div class="col-md-3"><label class="form-label" for="{{ form.max_size.id_for_label }}">Max file size</label>{{ form.max_size }}</div>
-            <div class="col-md-3"><label class="form-label" for="{{ form.run_timeout_seconds.id_for_label }}">Hard timeout (s)</label>{{ form.run_timeout_seconds }}</div>
+            <div class="col-md-3">
+              <label class="form-label" for="{{ form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
+              {{ form.run_timeout_seconds }}
+              <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.run_timeout_seconds.id_for_label }}">
+                <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+                <select class="form-select" data-timeout-unit>
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                  <option value="seconds">seconds</option>
+                </select>
+              </div>
+              <div class="form-text">Maximum total runtime for one backup run.</div>
+            </div>
             <div class="col-md-3"><label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ form.idle_timeout_seconds }}</div>
             <div class="col-md-3"><label class="form-label" for="{{ form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ form.enabled }}</div></div>
             <div class="col-md-3"><label class="form-label" for="{{ form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ form.delete_enabled }}</div></div>
@@ -252,6 +277,7 @@
             <div class="col-md-6"><label class="form-label" for="{{ form.password_file_path.id_for_label }}">Password file on host</label>{{ form.password_file_path }}</div>
             <div class="col-md-6"><label class="form-label" for="{{ form.public_key_path.id_for_label }}">Public key path on host</label>{{ form.public_key_path }}</div>
             <div class="col-12"><label class="form-label" for="{{ form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ form.exclude_patterns }}</div>
+            <div class="col-12"><div class="form-text">This job will not launch a second overlapping run of itself. Different backup jobs can still run in parallel.</div></div>
           </div>
 
           {% if form.errors %}
@@ -452,5 +478,42 @@
       activeCards.forEach((card) => pollBackupRunCard(card));
     }, 2000);
   }
+
+  function secondsToEditorState(secondsValue) {
+    const seconds = Number(secondsValue || 0);
+    if (seconds > 0 && seconds % 3600 === 0) {
+      return { value: seconds / 3600, unit: "hours" };
+    }
+    if (seconds > 0 && seconds % 60 === 0) {
+      return { value: seconds / 60, unit: "minutes" };
+    }
+    return { value: Math.max(seconds, 1), unit: "seconds" };
+  }
+
+  function editorStateToSeconds(value, unit) {
+    const amount = Math.max(Number(value || 0), 1);
+    if (unit === "hours") return Math.round(amount * 3600);
+    if (unit === "minutes") return Math.round(amount * 60);
+    return Math.round(amount);
+  }
+
+  document.querySelectorAll("[data-timeout-editor]").forEach((editor) => {
+    const hiddenInput = document.getElementById(editor.dataset.timeoutInputId);
+    const valueInput = editor.querySelector("[data-timeout-value]");
+    const unitSelect = editor.querySelector("[data-timeout-unit]");
+    if (!hiddenInput || !valueInput || !unitSelect) return;
+
+    const initial = secondsToEditorState(hiddenInput.value);
+    valueInput.value = initial.value;
+    unitSelect.value = initial.unit;
+
+    const syncToHidden = () => {
+      hiddenInput.value = editorStateToSeconds(valueInput.value, unitSelect.value);
+    };
+
+    valueInput.addEventListener("input", syncToHidden);
+    unitSelect.addEventListener("change", syncToHidden);
+    syncToHidden();
+  });
 </script>
 {% endblock %}

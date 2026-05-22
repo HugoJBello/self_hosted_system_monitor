@@ -14,14 +14,14 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         self.stdout.write(self.style.SUCCESS("Starting system monitor sampler"))
         while True:
+            sleep_seconds = settings.SAMPLER_DEFAULT_INTERVAL
             try:
                 collect_snapshot()
-                interval = MonitoringSettings.load().sample_interval_seconds
+                sleep_seconds = max(MonitoringSettings.load().sample_interval_seconds, 10)
             except OperationalError:
-                interval = settings.SAMPLER_DEFAULT_INTERVAL
-                self.stdout.write("Database not ready yet, retrying soon.")
+                sleep_seconds = 5
+                self.stdout.write("Database busy, retrying soon.")
             except Exception as exc:
-                interval = settings.SAMPLER_DEFAULT_INTERVAL
+                sleep_seconds = max(settings.SAMPLER_DEFAULT_INTERVAL, 10)
                 self.stderr.write(f"Sampler error: {exc}")
-            time.sleep(max(interval, 10))
-
+            time.sleep(sleep_seconds)

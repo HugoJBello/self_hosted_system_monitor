@@ -11,7 +11,6 @@ from django.db import transaction
 from django.utils import timezone
 
 from .alerting import evaluate_alerts
-from .backups import dispatch_scheduled_backups
 from .models import MonitoringSettings, ProcessSnapshot, SystemSnapshot
 from .reporting import dispatch_scheduled_reports
 
@@ -226,10 +225,6 @@ def collect_snapshot():
 
     evaluate_alerts(snapshot, settings_obj=settings_obj)
     dispatch_scheduled_reports(snapshot, settings_obj=settings_obj)
-    try:
-        dispatch_scheduled_backups(snapshot.captured_at)
-    except Exception:
-        logger.exception("Backup dispatch failed, but monitoring snapshot collection will continue.")
     prune_old_snapshots(settings_obj.history_retention_days)
     return snapshot
 
