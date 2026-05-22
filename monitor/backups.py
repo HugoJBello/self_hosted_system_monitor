@@ -602,7 +602,10 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
         env=_command_env(job),
         on_output=push_log,
         timeout_seconds=_job_timeout_seconds(job),
-        idle_timeout_seconds=_job_idle_timeout_seconds(job),
+        # Rsync can legitimately stay quiet for long periods while a large file is
+        # transferred over SSH. Using an output-based idle timeout here produces
+        # false failures, so only the hard timeout applies to the main transfer.
+        idle_timeout_seconds=None,
         heartbeat_callback=heartbeat_callback,
         should_stop=should_stop,
     )

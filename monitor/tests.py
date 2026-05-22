@@ -4,7 +4,7 @@ from django.urls import reverse
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, mark_stale_running_backups, request_backup_run_stop
+from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -730,11 +730,13 @@ class BackupHelpersTests(TestCase):
             job=job,
             status="running",
             summary="Running",
+            started_at=stale_time,
             heartbeat_at=stale_time,
+            last_output_at=stale_time,
             log_output="still running",
         )
 
-        updated = mark_stale_running_backups(timezone.now())
+        updated = mark_stale_running_backups(stale_time + timezone.timedelta(minutes=20))
         backup_run.refresh_from_db()
         self.assertEqual(len(updated), 1)
         self.assertEqual(backup_run.status, "failed")
@@ -744,6 +746,45 @@ class BackupHelpersTests(TestCase):
         self.assertTrue(_rsync_exit_is_partial_success(23))
         self.assertTrue(_rsync_exit_is_partial_success(24))
         self.assertFalse(_rsync_exit_is_partial_success(12))
+
+    @patch("monitor.backups._command_env", return_value={})
+    @patch("monitor.backups._run_streaming_command")
+    @patch("monitor.backups._rsync_command", return_value=["rsync", "/src/", "host:/dst/"])
+    @patch("monitor.backups._key_auth_works", return_value=True)
+    @patch("monitor.backups._install_public_key", return_value="")
+    @patch("monitor.backups._ensure_remote_directory", return_value=(False, "Remote directory already existed."))
+    @patch("monitor.backups._resolve_password", return_value="")
+    @patch("monitor.backups._normalized_remote_host", return_value="backup.example.com")
+    @patch("monitor.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
+    def test_main_rsync_transfer_does_not_use_output_idle_timeout(
+        self,
+        mock_ensure_local_source,
+        mock_normalized_remote_host,
+        mock_resolve_password,
+        mock_ensure_remote_directory,
+        mock_install_public_key,
+        mock_key_auth_works,
+        mock_rsync_command,
+        mock_run_streaming_command,
+        mock_command_env,
+    ):
+        job = BackupJob.objects.create(
+            name="Docs",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            run_timeout_seconds=7200,
+            idle_timeout_seconds=900,
+        )
+        mock_run_streaming_command.return_value = StreamingCommandResult(0, "", "")
+
+        result = run_backup_job(job)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "success")
+        self.assertEqual(mock_run_streaming_command.call_args.kwargs["idle_timeout_seconds"], None)
 
 
 class MonitoringIsolationTests(TestCase):
