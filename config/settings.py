@@ -63,6 +63,9 @@ DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.getenv("DJANGO_DB_PATH", str(BASE_DIR / "data" / "db.sqlite3")),
+        "OPTIONS": {
+            "timeout": int(os.getenv("DJANGO_DB_TIMEOUT_SECONDS", "30")),
+        },
     }
 }
 
@@ -84,4 +87,3 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
 SAMPLER_DEFAULT_INTERVAL = int(os.getenv("SAMPLER_DEFAULT_INTERVAL", "60"))
-

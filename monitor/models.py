@@ -323,3 +323,107 @@ class ReportRun(models.Model):
 
     def __str__(self):
         return f"{self.rule.name} report @ {self.generated_at:%Y-%m-%d %H:%M:%S}"
+
+
+class BackupJob(models.Model):
+    CONNECTION_CHOICES = [
+        ("direct", "Direct SSH"),
+        ("cloudflare", "Cloudflare Access SSH"),
+    ]
+    AUTH_CHOICES = [
+        ("key", "SSH key only"),
+        ("password_file", "Password file"),
+        ("password_value", "Saved password"),
+    ]
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    enabled = models.BooleanField(default=True)
+    source_path = models.CharField(max_length=500, help_text="Host path, for example /home/user/Documents")
+    schedule_minutes = models.PositiveIntegerField(
+        default=60,
+        validators=[MinValueValidator(5), MaxValueValidator(60 * 24 * 30)],
+    )
+    remote_host = models.CharField(max_length=255)
+    remote_user = models.CharField(max_length=255)
+    remote_dir = models.CharField(max_length=500)
+    ssh_port = models.PositiveIntegerField(
+        default=22,
+        validators=[MinValueValidator(1), MaxValueValidator(65535)],
+    )
+    connection_mode = models.CharField(max_length=32, choices=CONNECTION_CHOICES, default="direct")
+    cloudflare_auth_home = models.CharField(max_length=500, blank=True, default="")
+    cloudflare_service_token_id = models.CharField(max_length=255, blank=True, default="")
+    cloudflare_service_token_secret = models.CharField(max_length=255, blank=True, default="")
+    auth_mode = models.CharField(max_length=32, choices=AUTH_CHOICES, default="key")
+    password_file_path = models.CharField(max_length=500, blank=True, default="")
+    ssh_password = models.CharField(max_length=255, blank=True, default="")
+    public_key_path = models.CharField(max_length=500, blank=True, default="")
+    install_public_key = models.BooleanField(default=False)
+    delete_enabled = models.BooleanField(default=True)
+    max_size = models.CharField(max_length=32, blank=True, default="100m")
+    run_timeout_seconds = models.PositiveIntegerField(
+        default=7200,
+        validators=[MinValueValidator(60), MaxValueValidator(60 * 60 * 24 * 7)],
+    )
+    idle_timeout_seconds = models.PositiveIntegerField(
+        default=900,
+        validators=[MinValueValidator(30), MaxValueValidator(60 * 60 * 24)],
+    )
+    exclude_patterns = models.TextField(blank=True, default="")
+    next_run_at = models.DateTimeField(blank=True, null=True)
+    last_run_at = models.DateTimeField(blank=True, null=True)
+    position = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("position", "id")
+
+    def save(self, *args, **kwargs):
+        if self.enabled and self.next_run_at is None:
+            self.next_run_at = timezone.now() + timezone.timedelta(minutes=max(self.schedule_minutes, 5))
+        super().save(*args, **kwargs)
+
+    @property
+    def exclude_patterns_list(self):
+        return [line.strip() for line in self.exclude_patterns.splitlines() if line.strip()]
+
+    def __str__(self):
+        return self.name
+
+
+class BackupRun(models.Model):
+    STATUS_CHOICES = [
+        ("running", "Running"),
+        ("success", "Success"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
+        ("timed_out", "Timed out"),
+    ]
+    LAUNCH_CHOICES = [
+        ("manual", "Manual"),
+        ("scheduler", "Scheduler"),
+    ]
+
+    job = models.ForeignKey(BackupJob, related_name="runs", on_delete=models.CASCADE)
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    finished_at = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="success")
+    exit_code = models.IntegerField(default=0)
+    summary = models.CharField(max_length=255, blank=True, default="")
+    log_output = models.TextField(blank=True, default="")
+    created_remote_dir = models.BooleanField(default=False)
+    launched_by = models.CharField(max_length=16, choices=LAUNCH_CHOICES, default="manual")
+    process_pid = models.PositiveIntegerField(blank=True, null=True)
+    heartbeat_at = models.DateTimeField(blank=True, null=True)
+    last_output_at = models.DateTimeField(blank=True, null=True)
+    stop_requested_at = models.DateTimeField(blank=True, null=True)
+    command_line = models.TextField(blank=True, default="")
+    runner_label = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ("-started_at",)
+
+    def __str__(self):
+        return f"{self.job.name} @ {self.started_at:%Y-%m-%d %H:%M:%S}"

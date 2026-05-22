@@ -4,8 +4,10 @@ from django.urls import reverse
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .models import AlertEvent, AlertRule, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
+from .backups import _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, mark_stale_running_backups, request_backup_run_stop
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
+from .services import collect_snapshot
 
 
 @override_settings(FORCE_SCRIPT_NAME=None)
@@ -227,6 +229,117 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:report-detail", args=[report.id]))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Report window")
+
+    def test_backups_page_loads(self):
+        response = self.client.get(self._path("monitor:backups"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Configured backup jobs")
+
+    def test_backup_runs_page_loads(self):
+        response = self.client.get(self._path("monitor:backup-runs"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "All backup runs")
+
+    @patch("monitor.views.start_background_backup")
+    def test_backup_run_now_starts_background_process(self, mock_start_background):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            position=1,
+        )
+
+        response = self.client.post(self._path("monitor:backups"), {"run_now": str(job.id)})
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        mock_start_background.assert_called_once()
+
+    @patch("monitor.views.start_background_backup")
+    def test_backup_run_now_does_not_duplicate_running_job(self, mock_start_background):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            position=1,
+        )
+        BackupRun.objects.create(
+            job=job,
+            status="running",
+            summary="Already running",
+        )
+
+        response = self.client.post(self._path("monitor:backups"), {"run_now": str(job.id)})
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        mock_start_background.assert_not_called()
+
+    @patch("monitor.views.start_background_backup")
+    def test_backup_rerun_starts_background_process(self, mock_start_background):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            position=1,
+        )
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="failed",
+            summary="Backup failed",
+        )
+
+        response = self.client.post(self._path("monitor:backups"), {"rerun_run": str(backup_run.id)})
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        mock_start_background.assert_called_once_with(job, launched_by="manual")
+
+    def test_backup_stop_requests_graceful_shutdown(self):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            position=1,
+        )
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="running",
+            summary="Running",
+        )
+
+        response = self.client.post(self._path("monitor:backups"), {"stop_run": str(backup_run.id)})
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        backup_run.refresh_from_db()
+        self.assertIsNotNone(backup_run.stop_requested_at)
+
+    def test_backup_run_detail_page_loads(self):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            position=1,
+        )
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="success",
+            exit_code=0,
+            summary="Backup finished",
+            log_output="rsync stats",
+        )
+
+        response = self.client.get(self._path("monitor:backup-run-detail", args=[backup_run.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Execution log")
 
 
 @override_settings(FORCE_SCRIPT_NAME=None)
@@ -487,3 +600,209 @@ class AlertingTests(TestCase):
         payload = mock_send_json_notification.call_args[0][1]
         self.assertIn("Report link:", payload["message"])
         self.assertIn("/reports/", payload["message"])
+
+
+class BackupHelpersTests(TestCase):
+    def _path(self, name, args=None):
+        path = reverse(name, args=args or [])
+        return path.replace("/system_monitor", "", 1)
+
+    def test_normalized_remote_host_accepts_plain_hostname(self):
+        job = BackupJob(remote_host="ssh.example.com", remote_user="backup", remote_dir="/tmp", source_path="/home/test")
+        self.assertEqual(_normalized_remote_host(job), "ssh.example.com")
+
+    def test_normalized_remote_host_strips_scheme_from_base_url(self):
+        job = BackupJob(remote_host="https://ssh.example.com", remote_user="backup", remote_dir="/tmp", source_path="/home/test")
+        self.assertEqual(_normalized_remote_host(job), "ssh.example.com")
+
+    def test_cloudflare_hint_is_exposed_for_bad_handshake(self):
+        job = BackupJob(
+            remote_host="https://ssh.example.com",
+            remote_user="backup",
+            remote_dir="/tmp",
+            source_path="/home/test",
+            connection_mode="cloudflare",
+        )
+        hint = _cloudflare_error_hint(job, "websocket: bad handshake\nConnection closed by UNKNOWN port 65535")
+        self.assertIn("Cloudflare SSH handshake failed", hint)
+
+    def test_cloudflare_mode_requires_service_tokens(self):
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "create_job": "1",
+                "new-name": "CF backup",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-source_path": "/home/test/Documents",
+                "new-schedule_minutes": "30",
+                "new-remote_host": "ssh.example.com",
+                "new-remote_user": "backup",
+                "new-remote_dir": "/srv/backups/test",
+                "new-ssh_port": "22",
+                "new-connection_mode": "cloudflare",
+                "new-auth_mode": "password_value",
+                "new-ssh_password": "secret",
+                "new-cloudflare_auth_home": "",
+                "new-cloudflare_service_token_id": "",
+                "new-cloudflare_service_token_secret": "",
+                "new-password_file_path": "",
+                "new-public_key_path": "",
+                "new-max_size": "100m",
+                "new-run_timeout_seconds": "7200",
+                "new-idle_timeout_seconds": "900",
+                "new-exclude_patterns": "",
+                "new-position": "0",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cloudflare mode needs either a host auth home with an existing cloudflared session or a service token pair.")
+
+    def test_cloudflare_mode_accepts_host_auth_home_without_service_tokens(self):
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "create_job": "1",
+                "new-name": "CF backup",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-source_path": "/home/test/Documents",
+                "new-schedule_minutes": "30",
+                "new-remote_host": "ssh.example.com",
+                "new-remote_user": "backup",
+                "new-remote_dir": "/srv/backups/test",
+                "new-ssh_port": "22",
+                "new-connection_mode": "cloudflare",
+                "new-auth_mode": "password_value",
+                "new-ssh_password": "secret",
+                "new-cloudflare_auth_home": "/home/goku",
+                "new-cloudflare_service_token_id": "",
+                "new-cloudflare_service_token_secret": "",
+                "new-password_file_path": "",
+                "new-public_key_path": "",
+                "new-max_size": "100m",
+                "new-run_timeout_seconds": "7200",
+                "new-idle_timeout_seconds": "900",
+                "new-exclude_patterns": "",
+                "new-position": "0",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+    def test_cloudflare_command_env_maps_host_home(self):
+        job = BackupJob(
+            remote_host="ssh.example.com",
+            remote_user="backup",
+            remote_dir="/tmp",
+            source_path="/home/test",
+            connection_mode="cloudflare",
+            cloudflare_auth_home="/home/goku",
+        )
+        with patch("monitor.backups.os.path.isdir", return_value=True):
+            env = _command_env(job)
+        self.assertEqual(env["HOME"], "/hostfs/home/goku")
+
+    def test_request_backup_run_stop_marks_stop_requested(self):
+        job = BackupJob.objects.create(
+            name="Docs",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        backup_run = BackupRun.objects.create(job=job, status="running", summary="Running")
+        self.assertTrue(request_backup_run_stop(backup_run))
+        backup_run.refresh_from_db()
+        self.assertIsNotNone(backup_run.stop_requested_at)
+
+    def test_mark_stale_running_backups_fails_orphaned_run(self):
+        job = BackupJob.objects.create(
+            name="Docs",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        stale_time = timezone.now() - timezone.timedelta(minutes=10)
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="running",
+            summary="Running",
+            heartbeat_at=stale_time,
+            log_output="still running",
+        )
+
+        updated = mark_stale_running_backups(timezone.now())
+        backup_run.refresh_from_db()
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(backup_run.status, "failed")
+        self.assertIn("heartbeat became stale", backup_run.log_output)
+
+    def test_rsync_partial_transfer_exit_codes_are_treated_as_non_fatal(self):
+        self.assertTrue(_rsync_exit_is_partial_success(23))
+        self.assertTrue(_rsync_exit_is_partial_success(24))
+        self.assertFalse(_rsync_exit_is_partial_success(12))
+
+
+class MonitoringIsolationTests(TestCase):
+    @patch("monitor.services.prune_old_snapshots")
+    @patch("monitor.services.dispatch_scheduled_backups", side_effect=RuntimeError("backup scheduler exploded"))
+    @patch("monitor.services.dispatch_scheduled_reports")
+    @patch("monitor.services.evaluate_alerts")
+    @patch("monitor.services._process_rows", return_value={"rows": [], "total": 10, "running": 2, "sleeping": 8, "stopped": 0, "zombie": 0, "status_counts": {"running": 2}})
+    @patch("monitor.services._disk_devices", return_value=[])
+    @patch("monitor.services._network_stats", return_value={"sent_mb": 1, "recv_mb": 2, "sent_rate_kbps": 3, "recv_rate_kbps": 4})
+    @patch("monitor.services._safe_load_avg", return_value=(0.1, 0.2, 0.3))
+    @patch("monitor.services.psutil.disk_usage")
+    @patch("monitor.services.psutil.swap_memory")
+    @patch("monitor.services.psutil.virtual_memory")
+    @patch("monitor.services.psutil.cpu_count", side_effect=[4, 2])
+    @patch("monitor.services.psutil.cpu_percent", side_effect=[12.5, [12.5, 0.0]])
+    @patch("monitor.services.psutil.boot_time", return_value=1_700_000_000)
+    def test_backup_failures_do_not_break_snapshot_collection(
+        self,
+        mock_boot_time,
+        mock_cpu_percent,
+        mock_cpu_count,
+        mock_virtual_memory,
+        mock_swap_memory,
+        mock_disk_usage,
+        mock_load_avg,
+        mock_network_stats,
+        mock_disk_devices,
+        mock_process_rows,
+        mock_evaluate_alerts,
+        mock_dispatch_reports,
+        mock_dispatch_backups,
+        mock_prune,
+    ):
+        class _Memory:
+            total = 1024 * 1024 * 1024
+            used = 512 * 1024 * 1024
+            available = 512 * 1024 * 1024
+            percent = 50
+
+        class _Swap:
+            total = 256 * 1024 * 1024
+            used = 64 * 1024 * 1024
+            percent = 25
+
+        class _Disk:
+            total = 100 * 1024 * 1024 * 1024
+            used = 40 * 1024 * 1024 * 1024
+            free = 60 * 1024 * 1024 * 1024
+            percent = 40
+
+        mock_virtual_memory.return_value = _Memory()
+        mock_swap_memory.return_value = _Swap()
+        mock_disk_usage.return_value = _Disk()
+
+        snapshot = collect_snapshot()
+
+        self.assertIsNotNone(snapshot.pk)
+        mock_evaluate_alerts.assert_called_once()
+        mock_dispatch_reports.assert_called_once()
+        mock_dispatch_backups.assert_called_once()
+        mock_prune.assert_called_once()

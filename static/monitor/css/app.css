@@ -189,6 +189,108 @@ body.app-shell {
     rgba(255, 255, 255, 0.03);
 }
 
+.backup-browser {
+  display: grid;
+  gap: 0.65rem;
+  max-height: 32rem;
+  overflow: auto;
+  padding-right: 0.2rem;
+}
+
+.backup-modal-shell {
+  background: #0f1720;
+  color: #dfe8f1;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.backup-browser-node {
+  padding: 0.75rem 0.85rem;
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.backup-browser-node.nested {
+  margin-top: 0.55rem;
+  margin-left: 1rem;
+}
+
+.backup-browser-select {
+  display: inline-block;
+  max-width: calc(100% - 5.5rem);
+  padding: 0;
+  margin-left: 0.6rem;
+  color: #dfe8f1;
+  text-decoration: none;
+  white-space: normal;
+  word-break: break-word;
+  text-align: left;
+}
+
+.backup-browser-select:hover {
+  color: #5dc6ff;
+}
+
+.backup-browser-children {
+  display: none;
+}
+
+.backup-browser-children.open {
+  display: block;
+}
+
+.backup-advanced-toggle {
+  cursor: pointer;
+  list-style: none;
+}
+
+.backup-advanced-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.backup-run-card {
+  display: block;
+  overflow: hidden;
+}
+
+.running-backup-card {
+  border-color: rgba(77, 212, 172, 0.22);
+  background:
+    linear-gradient(180deg, rgba(77, 212, 172, 0.08), rgba(255, 255, 255, 0.02) 26%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.backup-run-side {
+  min-width: 8rem;
+  max-width: 100%;
+}
+
+.backup-run-log-details summary {
+  cursor: pointer;
+  color: #9fb3c8;
+  font-size: 0.92rem;
+  margin-bottom: 0.75rem;
+}
+
+.backup-run-log {
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.9rem;
+  border-radius: 0.85rem;
+  background: rgba(5, 10, 17, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #d9e4ef;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.backup-source-group > .form-control,
+.backup-source-group > .form-select {
+  min-width: 0;
+}
+
 .severity-pill,
 .live-pill,
 .resolved-pill {
@@ -542,6 +644,72 @@ body.app-shell {
 
   .rule-editor-meta {
     grid-template-columns: 1fr;
+  }
+
+  .backup-browser-node {
+    padding: 0.7rem;
+  }
+
+  .backup-browser-node.nested {
+    margin-left: 0.45rem;
+  }
+
+  .backup-browser-select {
+    max-width: 100%;
+    margin-left: 0;
+    margin-top: 0.45rem;
+  }
+
+  .backup-run-side {
+    min-width: 0;
+    width: 100%;
+    text-align: left !important;
+  }
+
+  .running-backup-card .d-flex.justify-content-between,
+  .backup-run-card .d-flex.justify-content-between {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .backup-run-side .event-value {
+    margin-bottom: 0.35rem;
+  }
+
+  .backup-run-side form,
+  .backup-run-side a.btn {
+    width: 100%;
+  }
+
+  .backup-run-side .btn {
+    width: 100%;
+  }
+
+  .backup-run-log {
+    max-height: 13rem;
+    font-size: 0.76rem;
+    padding: 0.75rem;
+  }
+
+  .backup-source-group {
+    gap: 0.5rem;
+  }
+
+  .backup-source-group > .form-control,
+  .backup-source-group > .form-select,
+  .backup-source-group > .btn {
+    width: 100%;
+    flex: 0 0 100%;
+    border-radius: 0.75rem !important;
+  }
+
+  .backup-source-group > .btn {
+    margin-left: 0 !important;
+  }
+
+  .command-modal-block {
+    padding: 0.75rem;
+    font-size: 0.82rem;
   }
 }
 

@@ -2,8 +2,11 @@ from datetime import timedelta
 from collections import defaultdict
 
 from django.contrib import messages
+from django.db import OperationalError
+from django.http import JsonResponse
 from django.forms import modelformset_factory
 from django.db.models import Avg, Max
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils.decorators import method_decorator
 from django.utils import timezone
@@ -11,10 +14,18 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from .alerting import ensure_default_alert_rules, top_processes_for_alert_window
-from .forms import AlertRuleForm, MonitoringSettingsForm, ReportRuleForm
-from .models import AlertEvent, AlertRule, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
+from .backups import list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
+from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
 from .reporting import build_time_series_chart_data
+
+
+def _best_effort_reconcile_backups():
+    try:
+        mark_stale_running_backups()
+    except OperationalError:
+        pass
 
 
 class RedirectHomeView(View):
@@ -74,7 +85,6 @@ ReportRuleFormSet = modelformset_factory(
     extra=1,
     can_delete=True,
 )
-
 
 class SystemMonitorView(View):
     template_name = "monitor/system_monitor.html"
@@ -387,3 +397,202 @@ class ReportDetailView(View):
                 "settings_obj": MonitoringSettings.load(),
             },
         )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class BackupsView(View):
+    template_name = "monitor/backups.html"
+
+    def get(self, request):
+        _best_effort_reconcile_backups()
+        return render(request, self.template_name, self._context())
+
+    def post(self, request):
+        _best_effort_reconcile_backups()
+        if "stop_run" in request.POST:
+            backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=request.POST.get("stop_run"))
+            if request_backup_run_stop(backup_run):
+                messages.warning(request, f"Stop requested for backup '{backup_run.job.name}'.")
+            else:
+                messages.info(request, f"Backup '{backup_run.job.name}' is no longer running.")
+            return redirect("monitor:backups")
+
+        if "rerun_run" in request.POST:
+            backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=request.POST.get("rerun_run"))
+            running_run = BackupRun.objects.filter(job=backup_run.job, status="running").order_by("-started_at").first()
+            if running_run:
+                messages.warning(request, f"Backup '{backup_run.job.name}' is already running.")
+                return redirect("monitor:backups")
+            try:
+                start_background_backup(backup_run.job, launched_by="manual")
+            except OSError as exc:
+                messages.error(request, f"Backup '{backup_run.job.name}' could not start: {exc}")
+                return redirect("monitor:backups")
+            messages.success(request, f"Backup '{backup_run.job.name}' started again.")
+            return redirect("monitor:backups")
+
+        if "run_now" in request.POST:
+            job = get_object_or_404(BackupJob, pk=request.POST.get("run_now"))
+            running_run = BackupRun.objects.filter(job=job, status="running").order_by("-started_at").first()
+            if running_run:
+                messages.warning(request, f"Backup '{job.name}' is already running.")
+                return redirect("monitor:backups")
+
+            try:
+                start_background_backup(job, launched_by="manual")
+            except OSError as exc:
+                messages.error(request, f"Backup '{job.name}' could not start: {exc}")
+                return redirect("monitor:backups")
+            messages.success(request, f"Backup '{job.name}' started in background.")
+            return redirect("monitor:backups")
+
+        if "save_job" in request.POST:
+            job = get_object_or_404(BackupJob, pk=request.POST.get("save_job"))
+            form = BackupJobForm(request.POST, instance=job, prefix=f"job-{job.id}")
+            if form.is_valid():
+                instance = form.save(commit=False)
+                if instance.enabled and instance.next_run_at is None:
+                    instance.next_run_at = timezone.now() + timedelta(minutes=max(instance.schedule_minutes, 5))
+                instance.save()
+                messages.success(request, f"Backup job '{instance.name}' updated.")
+                return redirect("monitor:backups")
+            return render(request, self.template_name, self._context(job_form_overrides={job.id: form}, show_create=False))
+
+        if "delete_job" in request.POST:
+            job = get_object_or_404(BackupJob, pk=request.POST.get("delete_job"))
+            job_name = job.name
+            job.delete()
+            messages.success(request, f"Backup job '{job_name}' deleted.")
+            return redirect("monitor:backups")
+
+        if "create_job" in request.POST:
+            create_form = BackupJobForm(request.POST, prefix="new")
+            if create_form.is_valid():
+                instance = create_form.save(commit=False)
+                if instance.enabled and instance.next_run_at is None:
+                    instance.next_run_at = timezone.now() + timedelta(minutes=max(instance.schedule_minutes, 5))
+                instance.save()
+                messages.success(request, f"Backup job '{instance.name}' created.")
+                return redirect("monitor:backups")
+            return render(request, self.template_name, self._context(create_form=create_form, show_create=True))
+
+        return render(request, self.template_name, self._context())
+
+    def _context(self, job_form_overrides=None, create_form=None, show_create=False):
+        job_form_overrides = job_form_overrides or {}
+        latest_snapshot = SystemSnapshot.objects.order_by("-captured_at").first()
+        running_runs = list(BackupRun.objects.select_related("job").filter(status="running").order_by("-started_at")[:20])
+        recent_runs = list(BackupRun.objects.select_related("job").exclude(status="running").order_by("-started_at")[:8])
+        jobs = list(BackupJob.objects.all())
+        job_forms = [
+            {
+                "job": job,
+                "form": job_form_overrides.get(job.id) or BackupJobForm(instance=job, prefix=f"job-{job.id}"),
+            }
+            for job in jobs
+        ]
+        create_form = create_form or BackupJobForm(prefix="new")
+        return {
+            "latest_snapshot": latest_snapshot,
+            "running_runs": running_runs,
+            "running_runs_count": len(running_runs),
+            "recent_runs": recent_runs,
+            "job_forms": job_forms,
+            "jobs": jobs,
+            "jobs_count": len(jobs),
+            "recent_runs_count": len(recent_runs),
+            "browser_roots": list_browser_roots(),
+            "create_form": create_form,
+            "show_create": show_create,
+            "settings_obj": MonitoringSettings.load(),
+        }
+
+
+class BackupRunsView(View):
+    template_name = "monitor/backup_runs.html"
+
+    def get(self, request):
+        _best_effort_reconcile_backups()
+        query = (request.GET.get("q") or "").strip()
+        runs_qs = BackupRun.objects.select_related("job").order_by("-started_at")
+        if query:
+            runs_qs = runs_qs.filter(job__name__icontains=query)
+        paginator = Paginator(runs_qs, 20)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_obj": page_obj,
+                "query": query,
+                "settings_obj": MonitoringSettings.load(),
+            },
+        )
+
+
+class BackupTreeView(View):
+    def get(self, request):
+        host_path = request.GET.get("path", "/")
+        return JsonResponse({"items": list_directory_children(host_path)})
+
+
+class BackupRunStatusView(View):
+    def get(self, request, run_id):
+        backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=run_id)
+        return JsonResponse(
+            {
+                "id": backup_run.id,
+                "job_name": backup_run.job.name,
+                "status": backup_run.status,
+                "status_label": backup_run.get_status_display(),
+                "summary": backup_run.summary,
+                "exit_code": backup_run.exit_code,
+                "log_output": backup_run.log_output or "",
+                "process_pid": backup_run.process_pid,
+                "runner_label": backup_run.runner_label,
+                "launched_by": backup_run.get_launched_by_display(),
+                "heartbeat_at": backup_run.heartbeat_at.isoformat() if backup_run.heartbeat_at else None,
+                "last_output_at": backup_run.last_output_at.isoformat() if backup_run.last_output_at else None,
+                "finished_at": backup_run.finished_at.isoformat() if backup_run.finished_at else None,
+                "command_line": backup_run.command_line or "",
+            }
+        )
+
+
+class BackupRunDetailView(View):
+    template_name = "monitor/backup_run_detail.html"
+
+    def get(self, request, run_id):
+        _best_effort_reconcile_backups()
+        backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=run_id)
+        return render(
+            request,
+            self.template_name,
+            {
+                "backup_run": backup_run,
+                "settings_obj": MonitoringSettings.load(),
+            },
+        )
+
+    def post(self, request, run_id):
+        _best_effort_reconcile_backups()
+        backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=run_id)
+        if "stop_run" in request.POST:
+            if request_backup_run_stop(backup_run):
+                messages.warning(request, f"Stop requested for backup '{backup_run.job.name}'.")
+            else:
+                messages.info(request, f"Backup '{backup_run.job.name}' is no longer running.")
+            return redirect("monitor:backup-run-detail", run_id=backup_run.id)
+        if "rerun_run" in request.POST:
+            running_run = BackupRun.objects.filter(job=backup_run.job, status="running").order_by("-started_at").first()
+            if running_run:
+                messages.warning(request, f"Backup '{backup_run.job.name}' is already running.")
+                return redirect("monitor:backup-run-detail", run_id=backup_run.id)
+            try:
+                new_run = start_background_backup(backup_run.job, launched_by="manual")
+            except OSError as exc:
+                messages.error(request, f"Backup '{backup_run.job.name}' could not start: {exc}")
+                return redirect("monitor:backup-run-detail", run_id=backup_run.id)
+            messages.success(request, f"Backup '{backup_run.job.name}' started again.")
+            return redirect("monitor:backup-run-detail", run_id=new_run.id)
+        return redirect("monitor:backup-run-detail", run_id=backup_run.id)

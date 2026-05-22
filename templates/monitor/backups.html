@@ -1,0 +1,456 @@
+{% extends "base.html" %}
+
+{% block title %}Backups | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Backup center</p>
+    <h1 class="display-6 mb-1">Backup configuration</h1>
+    <p class="text-secondary mb-0">Configure backup jobs here. This page keeps only the current transfers and a short recent list visible; the full history lives in a dedicated runs view.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="badge text-bg-light border">Jobs {{ jobs_count }}</span>
+    <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
+    <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm">All backup runs</a>
+    <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="collapse" data-bs-target="#newBackupJob">New backup job</button>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <section class="panel-card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Running now</p>
+          <h2 class="h4 mb-0">Backups in progress</h2>
+        </div>
+        <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
+      </div>
+      <div class="alerts-feed">
+        {% for run in running_runs %}
+          <article class="alert-card report-card backup-run-card running-backup-card" data-backup-run-card data-run-id="{{ run.id }}" data-status-url="{% url 'monitor:backup-run-status' run.id %}" data-started-label="{{ run.started_at|date:'Y-m-d H:i:s' }}">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  <span class="live-pill" data-run-status-pill>RUNNING</span>
+                  <span class="chip compact-chip">{{ run.job.name }}</span>
+                </div>
+                <h3 class="h5 mb-2">{{ run.job.source_path }} → {{ run.job.remote_host }}</h3>
+                <div class="small text-secondary mb-3" data-run-meta>
+                  Started {{ run.started_at|date:"Y-m-d H:i:s" }} UTC
+                  {% if run.heartbeat_at %} • heartbeat {{ run.heartbeat_at|date:"H:i:s" }}{% endif %}
+                  {% if run.runner_label %} • runner {{ run.runner_label }}{% endif %}
+                </div>
+                <details class="backup-run-log-details" open>
+                  <summary>Live log</summary>
+                  <pre class="backup-run-log mb-0" data-run-log>{{ run.log_output|default:"Waiting for live output..." }}</pre>
+                </details>
+              </div>
+              <div class="text-end backup-run-side">
+                <div class="event-value" data-run-pid>{{ run.process_pid|default:"..." }}</div>
+                <div class="small text-secondary mb-2" data-run-launch>{{ run.get_launched_by_display }}</div>
+                <form method="post" class="mb-2">
+                  {% csrf_token %}
+                  <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm" data-run-stop>Stop run</button>
+                </form>
+                <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-outline-light btn-sm">Open run</a>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No backups are running right now.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel-card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Recent executions</p>
+          <h2 class="h4 mb-0">Latest finished runs</h2>
+        </div>
+        <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm">See all runs</a>
+      </div>
+      <div class="alerts-feed">
+        {% for run in recent_runs %}
+          <article class="alert-card report-card backup-run-card compact-history-card">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  {% if run.status == "success" %}
+                    <span class="live-pill">SUCCESS</span>
+                  {% elif run.status == "cancelled" %}
+                    <span class="resolved-pill">CANCELLED</span>
+                  {% elif run.status == "timed_out" %}
+                    <span class="severity-pill severity-warning">TIMED OUT</span>
+                  {% else %}
+                    <span class="severity-pill severity-critical">FAILED</span>
+                  {% endif %}
+                  <span class="chip compact-chip">{{ run.job.name }}</span>
+                </div>
+                <h3 class="h6 mb-1">{{ run.summary }}</h3>
+                <div class="small text-secondary">
+                  {{ run.started_at|date:"Y-m-d H:i:s" }} UTC
+                  {% if run.finished_at %} • finished {{ run.finished_at|date:"H:i:s" }}{% endif %}
+                  {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
+                </div>
+              </div>
+              <div class="text-end backup-run-side">
+                <div class="event-value">{{ run.exit_code }}</div>
+                <form method="post" class="mt-2">
+                  {% csrf_token %}
+                  <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
+                </form>
+                <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-outline-light btn-sm mt-2">Detail</a>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No finished backup runs yet.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="panel-card p-4 mb-4 collapse {% if show_create %}show{% endif %}" id="newBackupJob">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <p class="eyebrow mb-2">New job</p>
+      <h2 class="h4 mb-0">Create backup job</h2>
+    </div>
+  </div>
+  <form method="post" class="vstack gap-3">
+    {% csrf_token %}
+    {% for hidden in create_form.hidden_fields %}{{ hidden }}{% endfor %}
+    <input type="hidden" name="create_job" value="1">
+    <div class="row g-3">
+      <div class="col-md-4"><label class="form-label" for="{{ create_form.name.id_for_label }}">Job name</label>{{ create_form.name }}</div>
+      <div class="col-md-5">
+        <label class="form-label" for="{{ create_form.source_path.id_for_label }}">Source folder</label>
+        <div class="input-group flex-wrap backup-source-group">
+          {{ create_form.source_path }}
+          <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.source_path.id_for_label }}">Browse</button>
+        </div>
+      </div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
+      <div class="col-12"><label class="form-label" for="{{ create_form.description.id_for_label }}">Description</label>{{ create_form.description }}</div>
+      <div class="col-md-4"><label class="form-label" for="{{ create_form.remote_host.id_for_label }}">Hostname or IP</label>{{ create_form.remote_host }}</div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.remote_user.id_for_label }}">SSH user</label>{{ create_form.remote_user }}</div>
+      <div class="col-md-5"><label class="form-label" for="{{ create_form.remote_dir.id_for_label }}">Remote directory</label>{{ create_form.remote_dir }}</div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.connection_mode.id_for_label }}">Connection mode</label>{{ create_form.connection_mode }}</div>
+      <div class="col-md-2"><label class="form-label" for="{{ create_form.ssh_port.id_for_label }}">SSH port</label>{{ create_form.ssh_port }}</div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.auth_mode.id_for_label }}">Authentication</label>{{ create_form.auth_mode }}</div>
+      <div class="col-md-4"><label class="form-label" for="{{ create_form.ssh_password.id_for_label }}">SSH password</label>{{ create_form.ssh_password }}</div>
+      <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ create_form.cloudflare_auth_home }}</div>
+      <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ create_form.cloudflare_service_token_id }}</div>
+      <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ create_form.cloudflare_service_token_secret }}</div>
+      <div class="col-12">
+        <div class="form-text">
+          Use these Cloudflare fields only when <strong>Connection mode</strong> is <strong>Cloudflare</strong>.
+          <strong>SSH user</strong> and <strong>SSH password</strong> authenticate against the remote machine itself.
+          <strong>Cloudflare service token ID</strong> and <strong>Cloudflare service token secret</strong> authenticate against Cloudflare Access before SSH starts.
+          Leave the service token fields empty if this host already has a valid <code>.cloudflared</code> session and you set <strong>Cloudflare auth home on host</strong> to that host home directory, for example <code>/home/android18</code>.
+          Fill both token fields only when the backup container must pass Cloudflare Access without relying on an existing host login session.
+        </div>
+      </div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.max_size.id_for_label }}">Max file size</label>{{ create_form.max_size }}</div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.run_timeout_seconds.id_for_label }}">Hard timeout (s)</label>{{ create_form.run_timeout_seconds }}</div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ create_form.idle_timeout_seconds }}</div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ create_form.enabled }}</div></div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ create_form.delete_enabled }}</div></div>
+      <div class="col-md-3"><label class="form-label" for="{{ create_form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ create_form.install_public_key }}</div></div>
+      <div class="col-md-6"><label class="form-label" for="{{ create_form.password_file_path.id_for_label }}">Password file on host</label>{{ create_form.password_file_path }}</div>
+      <div class="col-md-6"><label class="form-label" for="{{ create_form.public_key_path.id_for_label }}">Public key path on host</label>{{ create_form.public_key_path }}</div>
+      <div class="col-12"><label class="form-label" for="{{ create_form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ create_form.exclude_patterns }}</div>
+    </div>
+    {% if create_form.errors %}
+      <div class="alert alert-danger mb-0">{{ create_form.errors }}</div>
+    {% endif %}
+    <div><button type="submit" class="btn btn-accent">Create backup job</button></div>
+  </form>
+</section>
+
+<section class="panel-card p-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <p class="eyebrow mb-2">Scheduler</p>
+      <h2 class="h4 mb-0">Configured backup jobs</h2>
+    </div>
+  </div>
+
+  <datalist id="backup-schedule-presets">
+    <option value="15"></option>
+    <option value="30"></option>
+    <option value="60"></option>
+    <option value="360"></option>
+    <option value="1440"></option>
+  </datalist>
+
+  <div class="vstack gap-3">
+    {% for item in job_forms %}
+      {% with form=item.form job=item.job %}
+      <section class="config-section alert-rule-card severity-info">
+        <form method="post" class="vstack gap-3">
+          {% csrf_token %}
+          {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+          <div class="rule-editor-hero">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+              <div class="d-flex align-items-center gap-3">
+                <div class="rule-editor-icon-wrap"><i class="bi bi-hdd-network rule-editor-icon"></i></div>
+                <div>
+                  <div class="rule-editor-kicker">Backup job</div>
+                  <div class="rule-editor-title">{{ job.name }}</div>
+                </div>
+              </div>
+              <div class="rule-editor-badges">
+                {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
+                <span class="chip compact-chip">{% if job.connection_mode == "cloudflare" %}Cloudflare SSH params{% else %}Standard SSH{% endif %}</span>
+                <span class="chip compact-chip">{{ job.schedule_minutes }}m cadence</span>
+                <span class="chip compact-chip">{{ job.run_timeout_seconds }}s timeout</span>
+                <span class="chip compact-chip">{{ job.idle_timeout_seconds }}s idle</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-md-4"><label class="form-label" for="{{ form.name.id_for_label }}">Job name</label>{{ form.name }}</div>
+            <div class="col-md-5">
+              <label class="form-label" for="{{ form.source_path.id_for_label }}">Source folder</label>
+              <div class="input-group flex-wrap backup-source-group">
+                {{ form.source_path }}
+                <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
+              </div>
+            </div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
+            <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
+            <div class="col-md-4"><label class="form-label" for="{{ form.remote_host.id_for_label }}">Hostname or IP</label>{{ form.remote_host }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.remote_user.id_for_label }}">SSH user</label>{{ form.remote_user }}</div>
+            <div class="col-md-5"><label class="form-label" for="{{ form.remote_dir.id_for_label }}">Remote directory</label>{{ form.remote_dir }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.connection_mode.id_for_label }}">Connection mode</label>{{ form.connection_mode }}</div>
+            <div class="col-md-2"><label class="form-label" for="{{ form.ssh_port.id_for_label }}">SSH port</label>{{ form.ssh_port }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.auth_mode.id_for_label }}">Authentication</label>{{ form.auth_mode }}</div>
+            <div class="col-md-4"><label class="form-label" for="{{ form.ssh_password.id_for_label }}">SSH password</label>{{ form.ssh_password }}</div>
+            <div class="col-md-6"><label class="form-label" for="{{ form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ form.cloudflare_auth_home }}</div>
+            <div class="col-md-6"><label class="form-label" for="{{ form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ form.cloudflare_service_token_id }}</div>
+            <div class="col-md-6"><label class="form-label" for="{{ form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ form.cloudflare_service_token_secret }}</div>
+            <div class="col-12">
+              <div class="form-text">
+                <strong>How this works:</strong> Cloudflare tokens are not the same as the SSH password.
+                The <strong>SSH user</strong> and <strong>SSH password</strong> are sent to the remote SSH server.
+                The <strong>Cloudflare service token ID</strong> and <strong>Cloudflare service token secret</strong> are only for Cloudflare Access, and are needed only if this container cannot reuse an existing host <code>.cloudflared</code> login via <strong>Cloudflare auth home on host</strong>.
+                If <strong>Cloudflare auth home on host</strong> points to a real host home with valid Cloudflare credentials, leaving the token fields empty is correct.
+              </div>
+            </div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.max_size.id_for_label }}">Max file size</label>{{ form.max_size }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.run_timeout_seconds.id_for_label }}">Hard timeout (s)</label>{{ form.run_timeout_seconds }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ form.idle_timeout_seconds }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ form.enabled }}</div></div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ form.delete_enabled }}</div></div>
+            <div class="col-md-3"><label class="form-label" for="{{ form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ form.install_public_key }}</div></div>
+            <div class="col-md-6"><label class="form-label" for="{{ form.password_file_path.id_for_label }}">Password file on host</label>{{ form.password_file_path }}</div>
+            <div class="col-md-6"><label class="form-label" for="{{ form.public_key_path.id_for_label }}">Public key path on host</label>{{ form.public_key_path }}</div>
+            <div class="col-12"><label class="form-label" for="{{ form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ form.exclude_patterns }}</div>
+          </div>
+
+          {% if form.errors %}
+            <div class="alert alert-danger mb-0">{{ form.errors }}</div>
+          {% endif %}
+
+          <div class="d-flex gap-2 flex-wrap">
+            <button type="submit" name="save_job" value="{{ job.id }}" class="btn btn-accent">Save config</button>
+            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light">Run backup now</button>
+            <button type="submit" name="delete_job" value="{{ job.id }}" class="btn btn-outline-danger">Delete job</button>
+          </div>
+        </form>
+      </section>
+      {% endwith %}
+    {% empty %}
+      <div class="text-secondary">No backup jobs configured yet.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="modal fade" id="backupFolderModal" tabindex="-1" aria-labelledby="backupFolderModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">Host folder browser</p>
+          <h2 class="h4 mb-0" id="backupFolderModalLabel">Pick a source folder</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="backup-browser" id="backupBrowser">
+          {% for root in browser_roots %}
+            <div class="backup-browser-node" data-path="{{ root.path }}">
+              <button type="button" class="btn btn-sm btn-outline-light backup-browser-toggle" data-path="{{ root.path }}">Open</button>
+              <button type="button" class="btn btn-link backup-browser-select" data-path="{{ root.path }}">{{ root.name }}</button>
+              <div class="backup-browser-children"></div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let activeBackupSourceInput = null;
+  const backupModalElement = document.getElementById("backupFolderModal");
+  const backupModal = backupModalElement ? bootstrap.Modal.getOrCreateInstance(backupModalElement) : null;
+
+  document.querySelectorAll(".backup-source-input").forEach((input) => {
+    input.addEventListener("focus", () => { activeBackupSourceInput = input; });
+  });
+
+  document.querySelectorAll(".backup-source-picker").forEach((button) => {
+    button.addEventListener("click", () => {
+      activeBackupSourceInput = document.getElementById(button.dataset.inputId);
+    });
+  });
+
+  function renderBackupChildren(container, items) {
+    container.innerHTML = "";
+    items.forEach((item) => {
+      const node = document.createElement("div");
+      node.className = "backup-browser-node nested";
+      node.dataset.path = item.path;
+      node.innerHTML = `
+        <button type="button" class="btn btn-sm btn-outline-light backup-browser-toggle" data-path="${item.path}">Open</button>
+        <button type="button" class="btn btn-link backup-browser-select" data-path="${item.path}">${item.name}</button>
+        <div class="backup-browser-children"></div>
+      `;
+      container.appendChild(node);
+    });
+  }
+
+  async function loadBackupChildren(path, targetNode) {
+    const childrenContainer = targetNode.querySelector(".backup-browser-children");
+    if (targetNode.dataset.loaded === "1") {
+      childrenContainer.classList.toggle("open");
+      return;
+    }
+    const response = await fetch(`{% url 'monitor:backup-tree' %}?path=${encodeURIComponent(path)}`);
+    const payload = await response.json();
+    renderBackupChildren(childrenContainer, payload.items || []);
+    childrenContainer.classList.add("open");
+    targetNode.dataset.loaded = "1";
+  }
+
+  document.addEventListener("click", async (event) => {
+    const toggle = event.target.closest(".backup-browser-toggle");
+    const select = event.target.closest(".backup-browser-select");
+    if (toggle) {
+      event.preventDefault();
+      const node = toggle.closest(".backup-browser-node");
+      await loadBackupChildren(toggle.dataset.path, node);
+    }
+    if (select) {
+      event.preventDefault();
+      if (activeBackupSourceInput) {
+        activeBackupSourceInput.value = select.dataset.path;
+        activeBackupSourceInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (backupModal) {
+        backupModal.hide();
+      }
+    }
+  });
+
+  function formatBackupTime(value) {
+    if (!value) return null;
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString().slice(11, 19);
+  }
+
+  function updateRunPill(pill, status) {
+    if (!pill) return;
+    pill.className = "live-pill";
+    if (status === "running") {
+      pill.textContent = "RUNNING";
+      return;
+    }
+    if (status === "success") {
+      pill.textContent = "SUCCESS";
+      return;
+    }
+    if (status === "cancelled") {
+      pill.className = "resolved-pill";
+      pill.textContent = "CANCELLED";
+      return;
+    }
+    if (status === "timed_out") {
+      pill.className = "severity-pill severity-warning";
+      pill.textContent = "TIMED OUT";
+      return;
+    }
+    pill.className = "severity-pill severity-critical";
+    pill.textContent = "FAILED";
+  }
+
+  async function pollBackupRunCard(card) {
+    try {
+      const response = await fetch(card.dataset.statusUrl, { headers: { "X-Requested-With": "fetch" } });
+      if (!response.ok) return;
+      const payload = await response.json();
+      const logNode = card.querySelector("[data-run-log]");
+      const metaNode = card.querySelector("[data-run-meta]");
+      const pidNode = card.querySelector("[data-run-pid]");
+      const launchNode = card.querySelector("[data-run-launch]");
+      const stopButton = card.querySelector("[data-run-stop]");
+      const pill = card.querySelector("[data-run-status-pill]");
+
+      if (logNode) {
+        const shouldStick = logNode.scrollHeight - logNode.scrollTop - logNode.clientHeight < 40;
+        if (logNode.textContent !== payload.log_output) {
+          logNode.textContent = payload.log_output || "Waiting for live output...";
+          if (shouldStick) {
+            logNode.scrollTop = logNode.scrollHeight;
+          }
+        }
+      }
+      if (metaNode) {
+        const heartbeat = formatBackupTime(payload.heartbeat_at);
+        metaNode.textContent = `Started ${card.dataset.startedLabel} UTC${heartbeat ? ` • heartbeat ${heartbeat}` : ""}${payload.runner_label ? ` • runner ${payload.runner_label}` : ""}`;
+      }
+      if (pidNode) pidNode.textContent = payload.process_pid || "...";
+      if (launchNode) launchNode.textContent = payload.launched_by || "";
+      updateRunPill(pill, payload.status);
+      if (stopButton && payload.status !== "running") {
+        stopButton.disabled = true;
+        stopButton.textContent = payload.status_label || payload.status;
+      }
+      if (payload.status !== "running") {
+        card.dataset.pollingDone = "1";
+      }
+    } catch (_) {
+    }
+  }
+
+  const backupRunCards = Array.from(document.querySelectorAll("[data-backup-run-card]"));
+  if (backupRunCards.length) {
+    backupRunCards.forEach((card) => {
+      const logNode = card.querySelector("[data-run-log]");
+      if (logNode) {
+        logNode.scrollTop = logNode.scrollHeight;
+      }
+      pollBackupRunCard(card);
+    });
+
+    const timer = window.setInterval(() => {
+      const activeCards = backupRunCards.filter((card) => card.dataset.pollingDone !== "1");
+      if (!activeCards.length) {
+        window.clearInterval(timer);
+        return;
+      }
+      activeCards.forEach((card) => pollBackupRunCard(card));
+    }, 2000);
+  }
+</script>
+{% endblock %}

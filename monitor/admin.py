@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AlertEvent, AlertRule, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 
 
 @admin.register(MonitoringSettings)
@@ -111,3 +111,38 @@ class ReportRunAdmin(admin.ModelAdmin):
     )
     list_filter = ("notification_sent", "rule")
     search_fields = ("title", "message", "rule__name")
+
+
+@admin.register(BackupJob)
+class BackupJobAdmin(admin.ModelAdmin):
+    list_display = (
+        "position",
+        "name",
+        "enabled",
+        "source_path",
+        "remote_host",
+        "remote_dir",
+        "schedule_minutes",
+        "run_timeout_seconds",
+        "idle_timeout_seconds",
+        "last_run_at",
+        "next_run_at",
+    )
+    list_display_links = ("name",)
+    list_editable = ("position", "enabled")
+
+
+@admin.register(BackupRun)
+class BackupRunAdmin(admin.ModelAdmin):
+    list_display = (
+        "started_at",
+        "job",
+        "status",
+        "exit_code",
+        "summary",
+        "launched_by",
+        "runner_label",
+        "created_remote_dir",
+    )
+    list_filter = ("status", "launched_by", "created_remote_dir", "job")
+    search_fields = ("job__name", "summary", "log_output")
