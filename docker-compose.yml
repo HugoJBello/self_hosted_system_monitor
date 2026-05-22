@@ -1,0 +1,41 @@
+services:
+  system_monitor_web:
+    build: .
+    container_name: system_monitor_web
+    restart: unless-stopped
+    ports:
+      - "8012:8000"
+    environment:
+      DJANGO_SECRET_KEY: "dev-unsafe-secret-key"
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: "*"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "http://localhost,http://127.0.0.1"
+      DJANGO_DB_PATH: "/app/data/db.sqlite3"
+      APP_SUBPATH: "/system_monitor"
+      SAMPLER_DEFAULT_INTERVAL: "60"
+      MONITOR_ROOT_PATH: "/hostfs"
+      MONITOR_PROCFS_PATH: "/hostfs/proc"
+    volumes:
+      - ./data:/app/data
+      - /:/hostfs:ro
+
+  system_monitor_sampler:
+    build: .
+    container_name: system_monitor_sampler
+    restart: unless-stopped
+    command: ["python", "manage.py", "run_sampler"]
+    environment:
+      DJANGO_SECRET_KEY: "dev-unsafe-secret-key"
+      DJANGO_DEBUG: "True"
+      DJANGO_ALLOWED_HOSTS: "*"
+      DJANGO_CSRF_TRUSTED_ORIGINS: "http://localhost,http://127.0.0.1"
+      DJANGO_DB_PATH: "/app/data/db.sqlite3"
+      APP_SUBPATH: "/system_monitor"
+      SAMPLER_DEFAULT_INTERVAL: "60"
+      MONITOR_ROOT_PATH: "/hostfs"
+      MONITOR_PROCFS_PATH: "/hostfs/proc"
+    volumes:
+      - ./data:/app/data
+      - /:/hostfs:ro
+    depends_on:
+      - system_monitor_web

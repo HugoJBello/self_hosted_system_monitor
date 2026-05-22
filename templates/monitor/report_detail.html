@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+
+{% block title %}Report Detail | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Report detail</p>
+    <h1 class="display-6 mb-1">{{ report.title }}</h1>
+    <p class="text-secondary mb-0">{{ report.message }}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="severity-pill severity-info">REPORT</span>
+    {% if report.notification_sent %}
+      <span class="live-pill">DELIVERED</span>
+    {% elif report.notification_status_code %}
+      <span class="resolved-pill">DELIVERY FAILED</span>
+    {% endif %}
+    <a href="{% url 'monitor:reports' %}" class="btn btn-outline-light btn-sm">Back to reports</a>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Report window</p>
+      <h2 class="h4 mb-1">{{ report_data.period_hours|default:0 }}h covered</h2>
+      <p class="text-secondary mb-0">{{ report_data.snapshot_count|default:0 }} samples</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">CPU average</p>
+      <h2 class="h4 mb-1">{{ report_data.aggregates.avg_cpu|default:0|floatformat:1 }}%</h2>
+      <p class="text-secondary mb-0">Peak {{ report_data.aggregates.max_cpu|default:0|floatformat:1 }}%</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Memory average</p>
+      <h2 class="h4 mb-1">{{ report_data.aggregates.avg_memory|default:0|floatformat:1 }}%</h2>
+      <p class="text-secondary mb-0">Peak {{ report_data.aggregates.max_memory|default:0|floatformat:1 }}%</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Disk average</p>
+      <h2 class="h4 mb-1">{{ report_data.aggregates.avg_disk|default:0|floatformat:1 }}%</h2>
+      <p class="text-secondary mb-0">Peak {{ report_data.aggregates.max_disk|default:0|floatformat:1 }}%</p>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-5">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">Narrative summary</p>
+      <h2 class="h4 mb-4">What happened in this period</h2>
+      <div class="vstack gap-3">
+        {% for line in report_data.summary_lines %}
+          <div class="mini-stat">
+            <strong>{{ line }}</strong>
+          </div>
+        {% empty %}
+          <div class="text-secondary">No summary available.</div>
+        {% endfor %}
+      </div>
+      <hr class="border-secondary-subtle my-4">
+      <div class="small text-secondary">Window {{ report_data.window_start }} UTC → {{ report_data.window_end }} UTC</div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-7">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">Overview</p>
+      <h2 class="h4 mb-4">Resources through the report window</h2>
+      <div class="chart-shell history-chart-shell"><canvas id="reportResourceChart"></canvas></div>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Network</p>
+      <h2 class="h4 mb-4">Send and receive rate</h2>
+      <div class="chart-shell history-chart-shell"><canvas id="reportNetworkChart"></canvas></div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Processes</p>
+      <h2 class="h4 mb-4">Total vs running processes</h2>
+      <div class="chart-shell history-chart-shell history-chart-shell-short"><canvas id="reportProcessChart"></canvas></div>
+    </section>
+  </div>
+</div>
+
+{% if chart_data.missing_periods %}
+  <section class="panel-card p-4 mb-4">
+    <p class="eyebrow mb-2">No data periods</p>
+    <h2 class="h4 mb-4">Observed gaps in this report</h2>
+    <div class="history-gap-list">
+      {% for gap in chart_data.missing_periods %}
+        <article class="history-gap-card">
+          <div class="history-gap-duration">{{ gap.duration }}</div>
+          <div class="small text-secondary">{{ gap.start }} UTC</div>
+          <div class="small text-secondary">{{ gap.end }} UTC</div>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endif %}
+
+<section class="panel-card p-4">
+  <p class="eyebrow mb-2">Processes</p>
+  <h2 class="h4 mb-4">Top recurring processes in this report</h2>
+  <div class="table-responsive">
+    <table class="table table-dark align-middle monitor-table compact-process-table">
+      <thead>
+        <tr>
+          <th>Process</th>
+          <th>Samples</th>
+          <th>CPU avg / peak</th>
+          <th>MEM avg / peak</th>
+          <th>Max RSS</th>
+          <th>States / last seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for process in report_data.top_processes %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ process.name }}</div>
+              <div class="small text-secondary">{{ process.username|default:"-" }}</div>
+            </td>
+            <td>{{ process.samples }}</td>
+            <td>{{ process.avg_cpu|floatformat:1 }}% / {{ process.peak_cpu|floatformat:1 }}%</td>
+            <td>{{ process.avg_memory|floatformat:1 }}% / {{ process.peak_memory|floatformat:1 }}%</td>
+            <td>{{ process.max_rss_mb|floatformat:1 }} MB</td>
+            <td class="small-cell">
+              <div class="small text-secondary">{{ process.statuses|join:", "|default:"-" }}</div>
+              <div class="small text-secondary">{{ process.last_seen_at|default:"-" }} UTC</div>
+            </td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="6" class="text-secondary">No process summary available for this report.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+{{ chart_data|json_script:"report-chart-data" }}
+<script>
+  const reportChartData = JSON.parse(document.getElementById("report-chart-data").textContent);
+  const reportLabels = reportChartData.labels || [];
+  const reportFullLabels = reportChartData.full_labels || reportLabels;
+  const reportDenseSeries = reportLabels.length > 40;
+
+  const reportNoDataOverlayPlugin = {
+    id: "reportNoDataOverlayPlugin",
+    beforeDatasetsDraw(chart) {
+      const hasData = reportChartData.has_data || [];
+      if (!hasData.length) {
+        return;
+      }
+      const {ctx, chartArea, scales} = chart;
+      const xScale = scales.x;
+      if (!chartArea || !xScale) {
+        return;
+      }
+      const step = hasData.length > 1
+        ? Math.abs(xScale.getPixelForValue(1) - xScale.getPixelForValue(0))
+        : chartArea.right - chartArea.left;
+      ctx.save();
+      let gapStart = null;
+      for (let index = 0; index < hasData.length; index += 1) {
+        const isGap = !hasData[index];
+        if (isGap && gapStart === null) {
+          gapStart = index;
+        }
+        const closesGap = gapStart !== null && (!isGap || index === hasData.length - 1);
+        if (closesGap) {
+          const gapEnd = isGap && index === hasData.length - 1 ? index : index - 1;
+          const left = Math.max(chartArea.left, xScale.getPixelForValue(gapStart) - (step / 2));
+          const right = Math.min(chartArea.right, xScale.getPixelForValue(gapEnd) + (step / 2));
+          ctx.fillStyle = "rgba(255, 255, 255, 0.06)";
+          ctx.fillRect(left, chartArea.top, right - left, chartArea.bottom - chartArea.top);
+          if (right - left > 48) {
+            ctx.fillStyle = "rgba(216, 225, 234, 0.72)";
+            ctx.font = "12px sans-serif";
+            ctx.textAlign = "center";
+            ctx.fillText("No data", left + ((right - left) / 2), chartArea.top + 18);
+          }
+          gapStart = null;
+        }
+      }
+      ctx.restore();
+    }
+  };
+  Chart.register(reportNoDataOverlayPlugin);
+
+  function reportLineDataset(label, data, borderColor, backgroundColor, fill = true) {
+    return {
+      label,
+      data,
+      borderColor,
+      backgroundColor,
+      tension: 0.2,
+      fill,
+      spanGaps: false,
+      borderWidth: 2,
+      pointRadius: reportDenseSeries ? 0 : 1.5,
+      pointHoverRadius: 4,
+      pointHitRadius: 10
+    };
+  }
+
+  function reportChartOptions() {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { color: "#d8e1ea", usePointStyle: true, boxWidth: 10, padding: 16 }
+        },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              const index = items[0]?.dataIndex ?? 0;
+              return reportFullLabels[index] || reportLabels[index];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: "#93a4b7", maxTicksLimit: window.innerWidth < 768 ? 4 : 8, maxRotation: 0, autoSkip: true },
+          grid: { color: "rgba(255, 255, 255, 0.05)" }
+        },
+        y: {
+          ticks: { color: "#93a4b7" },
+          grid: { color: "rgba(255, 255, 255, 0.08)" }
+        }
+      }
+    };
+  }
+
+  new Chart(document.getElementById("reportResourceChart"), {
+    type: "line",
+    data: {
+      labels: reportLabels,
+      datasets: [
+        reportLineDataset("CPU %", reportChartData.cpu, "#ff7a59", "rgba(255,122,89,0.15)"),
+        reportLineDataset("Memory %", reportChartData.memory, "#4dd4ac", "rgba(77,212,172,0.14)"),
+        reportLineDataset("Disk %", reportChartData.disk, "#8db5ff", "rgba(141,181,255,0.12)"),
+        reportLineDataset("Load avg (1m)", reportChartData.load, "#ffd166", "rgba(255,209,102,0.10)", false)
+      ]
+    },
+    options: reportChartOptions()
+  });
+
+  new Chart(document.getElementById("reportNetworkChart"), {
+    type: "line",
+    data: {
+      labels: reportLabels,
+      datasets: [
+        reportLineDataset("Sent kbps", reportChartData.net_sent, "#ff5d8f", "rgba(255,93,143,0.14)"),
+        reportLineDataset("Received kbps", reportChartData.net_recv, "#5dc6ff", "rgba(93,198,255,0.14)")
+      ]
+    },
+    options: reportChartOptions()
+  });
+
+  new Chart(document.getElementById("reportProcessChart"), {
+    type: "bar",
+    data: {
+      labels: reportLabels,
+      datasets: [
+        { label: "Total processes", data: reportChartData.proc_total, backgroundColor: "rgba(99,102,241,0.35)", borderColor: "#818cf8", borderWidth: 1, borderRadius: 4 },
+        { label: "Running processes", data: reportChartData.proc_running, backgroundColor: "rgba(52,211,153,0.35)", borderColor: "#34d399", borderWidth: 1, borderRadius: 4 }
+      ]
+    },
+    options: reportChartOptions()
+  });
+</script>
+{% endblock %}

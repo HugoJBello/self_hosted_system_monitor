@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Monitor | System Monitor{% endblock %}
+
+{% block content %}
+{% if latest_snapshot %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Live system view</p>
+    <h1 class="display-6 mb-1">Web system monitor</h1>
+    <p class="text-secondary mb-0">{{ latest_snapshot.hostname }} • {{ latest_snapshot.platform_label }} • refreshed every {{ settings_obj.sample_interval_seconds }}s</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="badge text-bg-light border">Captured {{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span>
+    <span class="badge text-bg-light border">Uptime {{ latest_snapshot.uptime_seconds }}s</span>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card cpu">
+      <p class="eyebrow mb-2">CPU</p>
+      <h2>{{ latest_snapshot.cpu_percent }}%</h2>
+      <p class="text-secondary mb-0">Logical {{ latest_snapshot.cpu_count_logical }} • Physical {{ latest_snapshot.cpu_count_physical }}</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card memory">
+      <p class="eyebrow mb-2">Memory</p>
+      <h2>{{ latest_snapshot.memory_percent }}%</h2>
+      <p class="text-secondary mb-0">{{ latest_snapshot.memory_used_mb }} / {{ latest_snapshot.memory_total_mb }} MB</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card disk">
+      <p class="eyebrow mb-2">Disk</p>
+      <h2>{{ latest_snapshot.disk_percent }}%</h2>
+      <p class="text-secondary mb-0">{{ latest_snapshot.disk_used_gb }} / {{ latest_snapshot.disk_total_gb }} GB</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card network">
+      <p class="eyebrow mb-2">Network</p>
+      <h2>{{ latest_snapshot.network_recv_rate_kbps }} kbps</h2>
+      <p class="text-secondary mb-0">Rx • Sent {{ latest_snapshot.network_sent_rate_kbps }} kbps</p>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-8">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Processor detail</p>
+          <h2 class="h4 mb-0">Per-core activity</h2>
+        </div>
+        <div class="text-secondary small">Load {{ latest_snapshot.load_avg_1 }} / {{ latest_snapshot.load_avg_5 }} / {{ latest_snapshot.load_avg_15 }}</div>
+      </div>
+      <div class="core-grid">
+        {% for core in latest_snapshot.per_cpu_percent %}
+          <div class="core-tile">
+            <div class="d-flex justify-content-between mb-2">
+              <span>CPU {{ forloop.counter0 }}</span>
+              <strong>{{ core }}%</strong>
+            </div>
+            <div class="progress dark-progress" role="progressbar" aria-valuenow="{{ core }}" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-bar" style="width: {{ core }}%"></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-4">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">System health</p>
+      <h2 class="h4 mb-4">Memory and processes</h2>
+      <div class="vstack gap-4">
+        <div>
+          <div class="d-flex justify-content-between mb-2"><span>RAM usage</span><strong>{{ latest_snapshot.memory_percent }}%</strong></div>
+          <div class="progress dark-progress"><div class="progress-bar bg-info" style="width: {{ latest_snapshot.memory_percent }}%"></div></div>
+        </div>
+        <div>
+          <div class="d-flex justify-content-between mb-2"><span>Swap usage</span><strong>{{ latest_snapshot.swap_percent }}%</strong></div>
+          <div class="progress dark-progress"><div class="progress-bar bg-warning" style="width: {{ latest_snapshot.swap_percent }}%"></div></div>
+        </div>
+        <div class="process-badges">
+          <span class="chip">Processes {{ latest_snapshot.process_count_total }}</span>
+          <span class="chip">Running {{ latest_snapshot.process_count_running }}</span>
+          <span class="chip">Sleeping {{ latest_snapshot.process_count_sleeping }}</span>
+          <span class="chip">Stopped {{ latest_snapshot.process_count_stopped }}</span>
+          <span class="chip">Zombie {{ latest_snapshot.process_count_zombie }}</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-5">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Storage layout</p>
+          <h2 class="h4 mb-0">Mounted devices</h2>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark align-middle monitor-table">
+          <thead>
+            <tr>
+              <th>Device</th>
+              <th>Mount</th>
+              <th>Used</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for disk in latest_snapshot.disk_devices %}
+              <tr>
+                <td>{{ disk.device }}</td>
+                <td>{{ disk.mountpoint }}</td>
+                <td>{{ disk.used_gb }} / {{ disk.total_gb }} GB ({{ disk.percent }}%)</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="3" class="text-secondary">No disk detail available.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-7">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Top processes</p>
+          <h2 class="h4 mb-0">Htop-inspired process table</h2>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark align-middle monitor-table">
+          <thead>
+            <tr>
+              <th>PID</th>
+              <th>Name</th>
+              <th>Status</th>
+              <th>CPU %</th>
+              <th>MEM %</th>
+              <th>RSS MB</th>
+              <th>Threads</th>
+              <th>User</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for process in latest_snapshot.processes.all %}
+              <tr>
+                <td>{{ process.pid }}</td>
+                <td>
+                  <div class="fw-semibold">{{ process.name }}</div>
+                  <div class="small text-secondary text-truncate process-command">{{ process.command|default:"-" }}</div>
+                </td>
+                <td>{{ process.status }}</td>
+                <td>{{ process.cpu_percent }}</td>
+                <td>{{ process.memory_percent }}</td>
+                <td>{{ process.memory_rss_mb }}</td>
+                <td>{{ process.threads }}</td>
+                <td>{{ process.username|default:"-" }}</td>
+              </tr>
+            {% empty %}
+              <tr><td colspan="8" class="text-secondary">No process data captured yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+{% else %}
+<section class="panel-card p-5 text-center">
+  <p class="eyebrow mb-2">Waiting for data</p>
+  <h1 class="h3 mb-3">No snapshots available yet</h1>
+  <p class="text-secondary mb-0">Start the sampler container or wait for the first collection cycle.</p>
+</section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if settings_obj.sample_interval_seconds %}
+<script>
+  window.setTimeout(() => window.location.reload(), {{ settings_obj.sample_interval_seconds }} * 1000);
+</script>
+{% endif %}
+{% endblock %}

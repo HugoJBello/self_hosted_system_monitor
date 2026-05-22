@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="System Monitor favicon">
+  <rect width="64" height="64" rx="14" fill="#08111f"/>
+  <rect x="14" y="16" width="36" height="24" rx="4" fill="#10233a" stroke="#5dc6ff" stroke-width="2"/>
+  <rect x="18" y="20" width="28" height="16" rx="2" fill="#0b1727"/>
+  <path d="M20 31h5l3-6 4 12 3-8h9" fill="none" stroke="#4dd4ac" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5"/>
+  <path d="M26 46h12" fill="none" stroke="#d8e1ea" stroke-linecap="round" stroke-width="2.5"/>
+  <path d="M22 50h20" fill="none" stroke="#d8e1ea" stroke-linecap="round" stroke-width="2.5"/>
+</svg>
