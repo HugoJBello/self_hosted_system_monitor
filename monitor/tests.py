@@ -723,7 +723,7 @@ class BackupHelpersTests(TestCase):
         hint = _cloudflare_error_hint(job, "websocket: bad handshake\nConnection closed by UNKNOWN port 65535")
         self.assertIn("Cloudflare SSH handshake failed", hint)
 
-    def test_cloudflare_mode_requires_service_tokens(self):
+    def test_cloudflare_mode_allows_blank_auth_home_and_blank_service_tokens(self):
         response = self.client.post(
             self._path("monitor:backups"),
             {
@@ -752,8 +752,7 @@ class BackupHelpersTests(TestCase):
                 "new-position": "0",
             },
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Cloudflare mode needs either a host auth home with an existing cloudflared session or a service token pair.")
+        self.assertEqual(response.status_code, 302)
 
     def test_cloudflare_mode_accepts_host_auth_home_without_service_tokens(self):
         response = self.client.post(
@@ -785,6 +784,38 @@ class BackupHelpersTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 302)
+
+    def test_cloudflare_mode_rejects_partial_service_token_pair(self):
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "create_job": "1",
+                "new-name": "CF backup",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-source_path": "/home/test/Documents",
+                "new-schedule_minutes": "30",
+                "new-remote_host": "ssh.example.com",
+                "new-remote_user": "backup",
+                "new-remote_dir": "/srv/backups/test",
+                "new-ssh_port": "22",
+                "new-connection_mode": "cloudflare",
+                "new-auth_mode": "password_value",
+                "new-ssh_password": "secret",
+                "new-cloudflare_auth_home": "",
+                "new-cloudflare_service_token_id": "token-id",
+                "new-cloudflare_service_token_secret": "",
+                "new-password_file_path": "",
+                "new-public_key_path": "",
+                "new-max_size": "100m",
+                "new-run_timeout_seconds": "7200",
+                "new-idle_timeout_seconds": "900",
+                "new-exclude_patterns": "",
+                "new-position": "0",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "If you use Cloudflare service tokens, fill both the ID and the secret.")
 
     def test_cloudflare_command_env_maps_host_home(self):
         job = BackupJob(

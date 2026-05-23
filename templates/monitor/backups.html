@@ -13,7 +13,8 @@
     <span class="badge text-bg-light border">Jobs {{ jobs_count }}</span>
     <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
     <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm">All backup runs</a>
-    <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="collapse" data-bs-target="#newBackupJob">New backup job</button>
+    <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#cloudflareInfoModal">Cloudflare help</button>
+    <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#newBackupJobModal">New backup job</button>
   </div>
 </div>
 
@@ -114,77 +115,6 @@
   </div>
 </div>
 
-<section class="panel-card p-4 mb-4 collapse {% if show_create %}show{% endif %}" id="newBackupJob">
-  <div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-      <p class="eyebrow mb-2">New job</p>
-      <h2 class="h4 mb-0">Create backup job</h2>
-    </div>
-  </div>
-  <form method="post" class="vstack gap-3">
-    {% csrf_token %}
-    {% for hidden in create_form.hidden_fields %}{{ hidden }}{% endfor %}
-    <input type="hidden" name="create_job" value="1">
-    <div class="row g-3">
-      <div class="col-md-4"><label class="form-label" for="{{ create_form.name.id_for_label }}">Job name</label>{{ create_form.name }}</div>
-      <div class="col-md-5">
-        <label class="form-label" for="{{ create_form.source_path.id_for_label }}">Source folder</label>
-        <div class="input-group flex-wrap backup-source-group">
-          {{ create_form.source_path }}
-          <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.source_path.id_for_label }}">Browse</button>
-        </div>
-      </div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
-      <div class="col-12"><label class="form-label" for="{{ create_form.description.id_for_label }}">Description</label>{{ create_form.description }}</div>
-      <div class="col-md-4"><label class="form-label" for="{{ create_form.remote_host.id_for_label }}">Hostname or IP</label>{{ create_form.remote_host }}</div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.remote_user.id_for_label }}">SSH user</label>{{ create_form.remote_user }}</div>
-      <div class="col-md-5"><label class="form-label" for="{{ create_form.remote_dir.id_for_label }}">Remote directory</label>{{ create_form.remote_dir }}</div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.connection_mode.id_for_label }}">Connection mode</label>{{ create_form.connection_mode }}</div>
-      <div class="col-md-2"><label class="form-label" for="{{ create_form.ssh_port.id_for_label }}">SSH port</label>{{ create_form.ssh_port }}</div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.auth_mode.id_for_label }}">Authentication</label>{{ create_form.auth_mode }}</div>
-      <div class="col-md-4"><label class="form-label" for="{{ create_form.ssh_password.id_for_label }}">SSH password</label>{{ create_form.ssh_password }}</div>
-      <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ create_form.cloudflare_auth_home }}</div>
-      <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ create_form.cloudflare_service_token_id }}</div>
-      <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ create_form.cloudflare_service_token_secret }}</div>
-      <div class="col-12">
-        <div class="form-text">
-          Use these Cloudflare fields only when <strong>Connection mode</strong> is <strong>Cloudflare</strong>.
-          <strong>SSH user</strong> and <strong>SSH password</strong> authenticate against the remote machine itself.
-          <strong>Cloudflare service token ID</strong> and <strong>Cloudflare service token secret</strong> authenticate against Cloudflare Access before SSH starts.
-          Leave the service token fields empty if this host already has a valid <code>.cloudflared</code> session and you set <strong>Cloudflare auth home on host</strong> to that host home directory, for example <code>/home/android18</code>.
-          Fill both token fields only when the backup container must pass Cloudflare Access without relying on an existing host login session.
-        </div>
-      </div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.max_size.id_for_label }}">Max file size</label>{{ create_form.max_size }}</div>
-      <div class="col-md-3">
-        <label class="form-label" for="{{ create_form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
-        {{ create_form.run_timeout_seconds }}
-        <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ create_form.run_timeout_seconds.id_for_label }}">
-          <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
-          <select class="form-select" data-timeout-unit>
-            <option value="minutes">minutes</option>
-            <option value="hours">hours</option>
-            <option value="seconds">seconds</option>
-          </select>
-        </div>
-        <div class="form-text">This is the maximum total runtime for one backup.</div>
-      </div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ create_form.idle_timeout_seconds }}</div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ create_form.enabled }}</div></div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ create_form.delete_enabled }}</div></div>
-      <div class="col-md-3"><label class="form-label" for="{{ create_form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ create_form.install_public_key }}</div></div>
-      <div class="col-md-6"><label class="form-label" for="{{ create_form.password_file_path.id_for_label }}">Password file on host</label>{{ create_form.password_file_path }}</div>
-      <div class="col-md-6"><label class="form-label" for="{{ create_form.public_key_path.id_for_label }}">Public key path on host</label>{{ create_form.public_key_path }}</div>
-      <div class="col-12"><label class="form-label" for="{{ create_form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ create_form.exclude_patterns }}</div>
-      <div class="col-12"><div class="form-text">A backup job never overlaps with itself. If its schedule fires again while that same job is still running, the scheduler waits until the current run has finished before considering the next slot.</div></div>
-    </div>
-    {% if create_form.errors %}
-      <div class="alert alert-danger mb-0">{{ create_form.errors }}</div>
-    {% endif %}
-    <div><button type="submit" class="btn btn-accent">Create backup job</button></div>
-  </form>
-</section>
-
 <section class="panel-card p-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
@@ -245,15 +175,16 @@
             <div class="col-md-2"><label class="form-label" for="{{ form.ssh_port.id_for_label }}">SSH port</label>{{ form.ssh_port }}</div>
             <div class="col-md-3"><label class="form-label" for="{{ form.auth_mode.id_for_label }}">Authentication</label>{{ form.auth_mode }}</div>
             <div class="col-md-4"><label class="form-label" for="{{ form.ssh_password.id_for_label }}">SSH password</label>{{ form.ssh_password }}</div>
+            <div class="col-12 d-flex justify-content-end">
+              <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#cloudflareInfoModal">Cloudflare help</button>
+            </div>
             <div class="col-md-6"><label class="form-label" for="{{ form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ form.cloudflare_auth_home }}</div>
             <div class="col-md-6"><label class="form-label" for="{{ form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ form.cloudflare_service_token_id }}</div>
             <div class="col-md-6"><label class="form-label" for="{{ form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ form.cloudflare_service_token_secret }}</div>
             <div class="col-12">
               <div class="form-text">
-                <strong>How this works:</strong> Cloudflare tokens are not the same as the SSH password.
-                The <strong>SSH user</strong> and <strong>SSH password</strong> are sent to the remote SSH server.
-                The <strong>Cloudflare service token ID</strong> and <strong>Cloudflare service token secret</strong> are only for Cloudflare Access, and are needed only if this container cannot reuse an existing host <code>.cloudflared</code> login via <strong>Cloudflare auth home on host</strong>.
-                If <strong>Cloudflare auth home on host</strong> points to a real host home with valid Cloudflare credentials, leaving the token fields empty is correct.
+                Leave all Cloudflare fields empty if this job already works without them.
+                If you need them, open <strong>Cloudflare help</strong> for the exact meaning of each field and how to get it.
               </div>
             </div>
             <div class="col-md-3"><label class="form-label" for="{{ form.max_size.id_for_label }}">Max file size</label>{{ form.max_size }}</div>
@@ -298,6 +229,126 @@
   </div>
 </section>
 
+<div class="modal fade" id="newBackupJobModal" tabindex="-1" aria-labelledby="newBackupJobModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">New job</p>
+          <h2 class="h4 mb-0" id="newBackupJobModalLabel">Create backup job</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <form method="post" class="vstack gap-3">
+          {% csrf_token %}
+          {% for hidden in create_form.hidden_fields %}{{ hidden }}{% endfor %}
+          <input type="hidden" name="create_job" value="1">
+          <div class="row g-3">
+            <div class="col-md-4"><label class="form-label" for="{{ create_form.name.id_for_label }}">Job name</label>{{ create_form.name }}</div>
+            <div class="col-md-5">
+              <label class="form-label" for="{{ create_form.source_path.id_for_label }}">Source folder</label>
+              <div class="input-group flex-wrap backup-source-group">
+                {{ create_form.source_path }}
+                <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.source_path.id_for_label }}">Browse</button>
+              </div>
+            </div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
+            <div class="col-12"><label class="form-label" for="{{ create_form.description.id_for_label }}">Description</label>{{ create_form.description }}</div>
+            <div class="col-md-4"><label class="form-label" for="{{ create_form.remote_host.id_for_label }}">Hostname or IP</label>{{ create_form.remote_host }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.remote_user.id_for_label }}">SSH user</label>{{ create_form.remote_user }}</div>
+            <div class="col-md-5"><label class="form-label" for="{{ create_form.remote_dir.id_for_label }}">Remote directory</label>{{ create_form.remote_dir }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.connection_mode.id_for_label }}">Connection mode</label>{{ create_form.connection_mode }}</div>
+            <div class="col-md-2"><label class="form-label" for="{{ create_form.ssh_port.id_for_label }}">SSH port</label>{{ create_form.ssh_port }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.auth_mode.id_for_label }}">Authentication</label>{{ create_form.auth_mode }}</div>
+            <div class="col-md-4"><label class="form-label" for="{{ create_form.ssh_password.id_for_label }}">SSH password</label>{{ create_form.ssh_password }}</div>
+            <div class="col-12 d-flex justify-content-end">
+              <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#cloudflareInfoModal">Cloudflare help</button>
+            </div>
+            <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ create_form.cloudflare_auth_home }}</div>
+            <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ create_form.cloudflare_service_token_id }}</div>
+            <div class="col-md-6"><label class="form-label" for="{{ create_form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ create_form.cloudflare_service_token_secret }}</div>
+            <div class="col-12">
+              <div class="form-text">
+                Leave all Cloudflare fields empty if this job already works without them.
+                If you need them, open <strong>Cloudflare help</strong> for the exact meaning of each field and how to get it.
+              </div>
+            </div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.max_size.id_for_label }}">Max file size</label>{{ create_form.max_size }}</div>
+            <div class="col-md-3">
+              <label class="form-label" for="{{ create_form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
+              {{ create_form.run_timeout_seconds }}
+              <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ create_form.run_timeout_seconds.id_for_label }}">
+                <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+                <select class="form-select" data-timeout-unit>
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                  <option value="seconds">seconds</option>
+                </select>
+              </div>
+              <div class="form-text">This is the maximum total runtime for one backup.</div>
+            </div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ create_form.idle_timeout_seconds }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ create_form.enabled }}</div></div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ create_form.delete_enabled }}</div></div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ create_form.install_public_key }}</div></div>
+            <div class="col-md-6"><label class="form-label" for="{{ create_form.password_file_path.id_for_label }}">Password file on host</label>{{ create_form.password_file_path }}</div>
+            <div class="col-md-6"><label class="form-label" for="{{ create_form.public_key_path.id_for_label }}">Public key path on host</label>{{ create_form.public_key_path }}</div>
+            <div class="col-12"><label class="form-label" for="{{ create_form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ create_form.exclude_patterns }}</div>
+            <div class="col-12"><div class="form-text">A backup job never overlaps with itself. If its schedule fires again while that same job is still running, the scheduler waits until the current run has finished before considering the next slot.</div></div>
+          </div>
+          {% if create_form.errors %}
+            <div class="alert alert-danger mb-0">{{ create_form.errors }}</div>
+          {% endif %}
+          <div class="d-flex justify-content-end"><button type="submit" class="btn btn-accent">Create backup job</button></div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="cloudflareInfoModal" tabindex="-1" aria-labelledby="cloudflareInfoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">Cloudflare SSH</p>
+          <h2 class="h4 mb-0" id="cloudflareInfoModalLabel">When these fields are needed</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="vstack gap-3">
+          <div class="command-modal-block">
+            <strong>Most common case</strong><br>
+            If the backup already works with <strong>Connection mode = Cloudflare</strong> and the Cloudflare fields empty, leave them empty. They are not mandatory.
+          </div>
+          <div class="command-modal-block">
+            <strong>Cloudflare auth home on host</strong><br>
+            Use this only when the host already has a valid <code>cloudflared</code> login session and you want the container to reuse it.
+            The value is normally the host home directory that contains <code>.cloudflared</code>, for example <code>/home/android18</code>.
+            Using <code>/</code> is not the intended value; if blank works, prefer blank.
+          </div>
+          <div class="command-modal-block">
+            <strong>How to get the auth home</strong><br>
+            On the host machine, log in with <code>cloudflared</code> as you normally would. The resulting credentials usually live under <code>~/.cloudflared</code>, so the field should be that user home, not the <code>.cloudflared</code> subdirectory itself.
+          </div>
+          <div class="command-modal-block">
+            <strong>Service token ID and secret</strong><br>
+            These are only for Cloudflare Access. They are not the SSH password.
+            Use them only if the container must authenticate to Cloudflare without reusing an existing host session.
+            They come from the Cloudflare Zero Trust dashboard where Access service tokens are created.
+          </div>
+          <div class="command-modal-block">
+            <strong>SSH user and SSH password</strong><br>
+            These are separate and are sent to the remote SSH server itself after the Cloudflare layer.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="backupFolderModal" tabindex="-1" aria-labelledby="backupFolderModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content backup-modal-shell">
@@ -327,8 +378,14 @@
 {% block scripts %}
 <script>
   let activeBackupSourceInput = null;
+  const createBackupModalElement = document.getElementById("newBackupJobModal");
+  const createBackupModal = createBackupModalElement ? bootstrap.Modal.getOrCreateInstance(createBackupModalElement) : null;
   const backupModalElement = document.getElementById("backupFolderModal");
   const backupModal = backupModalElement ? bootstrap.Modal.getOrCreateInstance(backupModalElement) : null;
+
+  if (createBackupModal && {{ show_create|yesno:"true,false" }}) {
+    createBackupModal.show();
+  }
 
   document.querySelectorAll(".backup-source-input").forEach((input) => {
     input.addEventListener("focus", () => { activeBackupSourceInput = input; });

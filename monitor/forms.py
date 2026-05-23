@@ -281,13 +281,6 @@ class BackupJobForm(forms.ModelForm):
         if install_public_key and not public_key_path:
             self.add_error("public_key_path", "Public key installation needs a public key path.")
         if connection_mode == "cloudflare":
-            has_service_tokens = bool(cloudflare_service_token_id and cloudflare_service_token_secret)
-            has_auth_home = bool(cloudflare_auth_home)
-            if not has_service_tokens and not has_auth_home:
-                self.add_error(
-                    "cloudflare_auth_home",
-                    "Cloudflare mode needs either a host auth home with an existing cloudflared session or a service token pair.",
-                )
             if bool(cloudflare_service_token_id) != bool(cloudflare_service_token_secret):
                 self.add_error(
                     "cloudflare_service_token_secret",
