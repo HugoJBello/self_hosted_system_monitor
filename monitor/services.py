@@ -8,6 +8,7 @@ from datetime import datetime, timezone as dt_timezone
 
 import psutil
 from django.db import transaction
+from django.db import OperationalError
 from django.utils import timezone
 
 from .alerting import evaluate_alerts
@@ -164,7 +165,6 @@ def _process_rows(limit):
     }
 
 
-@transaction.atomic
 def collect_snapshot():
     settings_obj = MonitoringSettings.load()
     hostname = socket.gethostname()
@@ -183,49 +183,56 @@ def collect_snapshot():
     disks = _disk_devices()
     process_data = _process_rows(settings_obj.top_process_limit)
 
-    snapshot = SystemSnapshot.objects.create(
-        hostname=hostname,
-        platform_label=platform_label,
-        boot_time=boot_dt,
-        uptime_seconds=uptime,
-        cpu_percent=cpu_percent,
-        cpu_count_logical=psutil.cpu_count() or 0,
-        cpu_count_physical=psutil.cpu_count(logical=False) or 0,
-        load_avg_1=round(load_avg[0], 2),
-        load_avg_5=round(load_avg[1], 2),
-        load_avg_15=round(load_avg[2], 2),
-        per_cpu_percent=per_cpu,
-        memory_total_mb=_mb(memory.total),
-        memory_used_mb=_mb(memory.used),
-        memory_available_mb=_mb(memory.available),
-        memory_percent=round(memory.percent, 2),
-        swap_total_mb=_mb(swap.total),
-        swap_used_mb=_mb(swap.used),
-        swap_percent=round(swap.percent, 2),
-        disk_total_gb=_gb(disk.total),
-        disk_used_gb=_gb(disk.used),
-        disk_free_gb=_gb(disk.free),
-        disk_percent=round(disk.percent, 2),
-        network_sent_mb=network["sent_mb"],
-        network_recv_mb=network["recv_mb"],
-        network_sent_rate_kbps=network["sent_rate_kbps"],
-        network_recv_rate_kbps=network["recv_rate_kbps"],
-        process_count_total=process_data["total"],
-        process_count_running=process_data["running"],
-        process_count_sleeping=process_data["sleeping"],
-        process_count_stopped=process_data["stopped"],
-        process_count_zombie=process_data["zombie"],
-        process_status_counts=process_data["status_counts"],
-        disk_devices=disks,
-    )
+    with transaction.atomic():
+        snapshot = SystemSnapshot.objects.create(
+            hostname=hostname,
+            platform_label=platform_label,
+            boot_time=boot_dt,
+            uptime_seconds=uptime,
+            cpu_percent=cpu_percent,
+            cpu_count_logical=psutil.cpu_count() or 0,
+            cpu_count_physical=psutil.cpu_count(logical=False) or 0,
+            load_avg_1=round(load_avg[0], 2),
+            load_avg_5=round(load_avg[1], 2),
+            load_avg_15=round(load_avg[2], 2),
+            per_cpu_percent=per_cpu,
+            memory_total_mb=_mb(memory.total),
+            memory_used_mb=_mb(memory.used),
+            memory_available_mb=_mb(memory.available),
+            memory_percent=round(memory.percent, 2),
+            swap_total_mb=_mb(swap.total),
+            swap_used_mb=_mb(swap.used),
+            swap_percent=round(swap.percent, 2),
+            disk_total_gb=_gb(disk.total),
+            disk_used_gb=_gb(disk.used),
+            disk_free_gb=_gb(disk.free),
+            disk_percent=round(disk.percent, 2),
+            network_sent_mb=network["sent_mb"],
+            network_recv_mb=network["recv_mb"],
+            network_sent_rate_kbps=network["sent_rate_kbps"],
+            network_recv_rate_kbps=network["recv_rate_kbps"],
+            process_count_total=process_data["total"],
+            process_count_running=process_data["running"],
+            process_count_sleeping=process_data["sleeping"],
+            process_count_stopped=process_data["stopped"],
+            process_count_zombie=process_data["zombie"],
+            process_status_counts=process_data["status_counts"],
+            disk_devices=disks,
+        )
 
-    ProcessSnapshot.objects.bulk_create(
-        [ProcessSnapshot(snapshot=snapshot, **row) for row in process_data["rows"]]
-    )
+        ProcessSnapshot.objects.bulk_create(
+            [ProcessSnapshot(snapshot=snapshot, **row) for row in process_data["rows"]]
+        )
 
-    evaluate_alerts(snapshot, settings_obj=settings_obj)
-    dispatch_scheduled_reports(snapshot, settings_obj=settings_obj)
-    prune_old_snapshots(settings_obj.history_retention_days)
+    for action, label in [
+        (lambda: evaluate_alerts(snapshot, settings_obj=settings_obj), "evaluate alerts"),
+        (lambda: dispatch_scheduled_reports(snapshot, settings_obj=settings_obj), "dispatch reports"),
+        (lambda: prune_old_snapshots(settings_obj.history_retention_days), "prune old snapshots"),
+    ]:
+        try:
+            action()
+        except OperationalError as exc:
+            logger.warning("Skipping %s because the database is busy: %s", label, exc)
     return snapshot
 
 

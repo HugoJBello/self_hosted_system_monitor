@@ -9,8 +9,9 @@ import sys
 import time
 import traceback
 import logging
+import json
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -35,6 +36,7 @@ DEFAULT_STOP_EXIT_CODE = 130
 DEFAULT_TIMEOUT_EXIT_CODE = 124
 RSYNC_PARTIAL_SUCCESS_EXIT_CODES = {23, 24}
 BACKUP_NICE_LEVEL = 19
+BACKUP_STOP_POLL_INTERVAL_SECONDS = 2
 BROWSER_ROOTS = [
     "/home",
     "/media",
@@ -120,6 +122,63 @@ def _lower_current_process_priority():
         os.nice(BACKUP_NICE_LEVEL)
     except OSError:
         logger.warning("Could not lower backup worker nice level.", exc_info=True)
+
+
+def _backup_runtime_root():
+    db_path = os.getenv("DJANGO_DB_PATH", "/app/data/db.sqlite3")
+    runtime_root = Path(db_path).resolve().parent / "backup_runtime"
+    runtime_root.mkdir(parents=True, exist_ok=True)
+    return runtime_root
+
+
+def _runtime_state_path(run_id):
+    return _backup_runtime_root() / f"run_{int(run_id)}.json"
+
+
+def _runtime_stop_path(run_id):
+    return _backup_runtime_root() / f"run_{int(run_id)}.stop"
+
+
+def _write_runtime_state(run_id, payload):
+    runtime_path = _runtime_state_path(run_id)
+    tmp_path = runtime_path.with_suffix(".tmp")
+    tmp_path.write_text(json.dumps(payload, ensure_ascii=True), encoding="utf-8")
+    tmp_path.replace(runtime_path)
+
+
+def _load_runtime_state(run_id):
+    runtime_path = _runtime_state_path(run_id)
+    if not runtime_path.exists():
+        return None
+    try:
+        return json.loads(runtime_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def get_runtime_state(run_id):
+    return _load_runtime_state(run_id)
+
+
+def _remove_runtime_files(run_id):
+    for path in (_runtime_state_path(run_id), _runtime_stop_path(run_id)):
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            continue
+        except OSError:
+            logger.warning("Could not remove backup runtime file %s", path, exc_info=True)
+
+
+def _request_runtime_stop(run_id):
+    try:
+        _runtime_stop_path(run_id).touch()
+    except OSError:
+        logger.warning("Could not create runtime stop flag for backup run %s", run_id, exc_info=True)
+
+
+def _runtime_stop_requested(run_id):
+    return _runtime_stop_path(run_id).exists()
 
 
 def _hostfs_path(host_path):
@@ -708,24 +767,24 @@ def create_running_backup_run(job, *, launched_by="manual"):
     )
 
 
-def append_backup_run_log(backup_run, message):
-    lines = [part for part in [backup_run.log_output.strip(), message.strip()] if part]
-    backup_run.log_output = "\n".join(lines)[-BACKUP_LOG_LIMIT:]
-    now = timezone.now()
-    backup_run.heartbeat_at = now
-    backup_run.last_output_at = now
-    _with_db_retry(
-        lambda: backup_run.save(update_fields=["log_output", "heartbeat_at", "last_output_at"]),
-        label="append backup run log",
-    )
-
-
-def heartbeat_backup_run(backup_run, *, force=False):
-    now = timezone.now()
-    if not force and backup_run.heartbeat_at and (now - backup_run.heartbeat_at).total_seconds() < BACKUP_HEARTBEAT_INTERVAL_SECONDS:
-        return
-    backup_run.heartbeat_at = now
-    _with_db_retry(lambda: backup_run.save(update_fields=["heartbeat_at"]), label="backup heartbeat")
+def _runtime_state_from_backup_run(backup_run, *, log_output=None, heartbeat_at=None, last_output_at=None):
+    heartbeat_value = heartbeat_at or backup_run.heartbeat_at
+    last_output_value = last_output_at or backup_run.last_output_at
+    return {
+        "id": backup_run.id,
+        "status": backup_run.status,
+        "summary": backup_run.summary,
+        "exit_code": backup_run.exit_code,
+        "log_output": (log_output if log_output is not None else backup_run.log_output or "")[-BACKUP_LOG_LIMIT:],
+        "process_pid": backup_run.process_pid,
+        "runner_label": backup_run.runner_label,
+        "command_line": backup_run.command_line or "",
+        "heartbeat_at": heartbeat_value.isoformat() if heartbeat_value else None,
+        "last_output_at": last_output_value.isoformat() if last_output_value else None,
+        "finished_at": backup_run.finished_at.isoformat() if backup_run.finished_at else None,
+        "launched_by": backup_run.get_launched_by_display(),
+        "status_label": backup_run.get_status_display(),
+    }
 
 
 def mark_backup_run_worker_started(backup_run):
@@ -736,14 +795,14 @@ def mark_backup_run_worker_started(backup_run):
         lambda: backup_run.save(update_fields=["process_pid", "runner_label", "heartbeat_at"]),
         label="mark backup worker started",
     )
+    _write_runtime_state(backup_run.id, _runtime_state_from_backup_run(backup_run))
 
 
-def stop_requested(backup_run):
-    return _with_db_retry(
-        lambda: BackupRun.objects.filter(pk=backup_run.pk, stop_requested_at__isnull=False).exists(),
-        default=False,
-        label="check stop requested",
-    )
+def stop_requested(run_id, *, last_checked_at=None):
+    now_monotonic = time.monotonic()
+    if last_checked_at is not None and now_monotonic - last_checked_at < BACKUP_STOP_POLL_INTERVAL_SECONDS:
+        return False, last_checked_at
+    return _runtime_stop_requested(run_id), now_monotonic
 
 
 def request_backup_run_stop(backup_run):
@@ -755,6 +814,7 @@ def request_backup_run_stop(backup_run):
         lambda: backup_run.save(update_fields=["stop_requested_at", "summary"]),
         label="request backup stop",
     )
+    _request_runtime_stop(backup_run.id)
     if not backup_run.process_pid:
         result = BackupExecutionResult(
             False,
@@ -801,6 +861,8 @@ def finalize_backup_run(backup_run, result, *, finished_at=None):
         ),
         label="finalize backup run",
     )
+    _write_runtime_state(backup_run.id, _runtime_state_from_backup_run(backup_run))
+    _remove_runtime_files(backup_run.id)
     return backup_run
 
 
@@ -818,9 +880,11 @@ def execute_backup_job(job, *, backup_run=None):
     started_at = timezone.now()
     pending_log_lines = []
     last_log_flush = time.monotonic()
+    stop_poll_checked_at = 0.0
+    runtime_log_output = (backup_run.log_output if backup_run is not None else "") or ""
 
     def flush_pending_logs(*, force=False):
-        nonlocal pending_log_lines, last_log_flush
+        nonlocal pending_log_lines, last_log_flush, runtime_log_output
         if backup_run is None or not pending_log_lines:
             return
         now_monotonic = time.monotonic()
@@ -830,7 +894,20 @@ def execute_backup_job(job, *, backup_run=None):
             and now_monotonic - last_log_flush < BACKUP_LOG_FLUSH_INTERVAL_SECONDS
         ):
             return
-        append_backup_run_log(backup_run, "\n".join(pending_log_lines))
+        new_log = "\n".join(part for part in [runtime_log_output.strip(), "\n".join(pending_log_lines).strip()] if part)
+        runtime_log_output = new_log[-BACKUP_LOG_LIMIT:]
+        now = timezone.now()
+        backup_run.heartbeat_at = now
+        backup_run.last_output_at = now
+        _write_runtime_state(
+            backup_run.id,
+            _runtime_state_from_backup_run(
+                backup_run,
+                log_output=runtime_log_output,
+                heartbeat_at=backup_run.heartbeat_at,
+                last_output_at=backup_run.last_output_at,
+            ),
+        )
         pending_log_lines = []
         last_log_flush = now_monotonic
 
@@ -843,8 +920,26 @@ def execute_backup_job(job, *, backup_run=None):
         if backup_run is not None:
             log_callback = buffered_log_callback
             mark_backup_run_worker_started(backup_run)
-            heartbeat = lambda force=False: (flush_pending_logs(force=force), heartbeat_backup_run(backup_run, force=force))
-            should_stop = lambda: stop_requested(backup_run)
+            def heartbeat(force=False):
+                nonlocal runtime_log_output
+                flush_pending_logs(force=force)
+                now = timezone.now()
+                if not force and backup_run.heartbeat_at and (now - backup_run.heartbeat_at).total_seconds() < BACKUP_HEARTBEAT_INTERVAL_SECONDS:
+                    return
+                backup_run.heartbeat_at = now
+                _write_runtime_state(
+                    backup_run.id,
+                    _runtime_state_from_backup_run(
+                        backup_run,
+                        log_output=runtime_log_output,
+                        heartbeat_at=backup_run.heartbeat_at,
+                        last_output_at=backup_run.last_output_at,
+                    ),
+                )
+            def should_stop():
+                nonlocal stop_poll_checked_at
+                stop_now, stop_poll_checked_at = stop_requested(backup_run.id, last_checked_at=stop_poll_checked_at)
+                return stop_now
         else:
             heartbeat = None
             should_stop = None
@@ -858,6 +953,13 @@ def execute_backup_job(job, *, backup_run=None):
         backup_run = record_backup_run(job, result, started_at=started_at, finished_at=finished_at)
     else:
         flush_pending_logs(force=True)
+        runtime_text = runtime_log_output.strip()
+        result_text = result.log_output.strip()
+        if runtime_text:
+            combined_parts = [runtime_text]
+            if result_text and result_text not in runtime_text:
+                combined_parts.append(result_text)
+            result.log_output = "\n\n".join(combined_parts)[-BACKUP_LOG_LIMIT:]
         if backup_run.started_at is None:
             backup_run.started_at = started_at
         finalize_backup_run(backup_run, result, finished_at=finished_at)
@@ -895,7 +997,17 @@ def mark_stale_running_backups(snapshot_time=None):
     )
     updated = []
     for backup_run in stale_runs:
-        timestamps = [value for value in [backup_run.last_output_at, backup_run.heartbeat_at, backup_run.started_at] if value is not None]
+        runtime_state = _load_runtime_state(backup_run.id)
+        runtime_heartbeat = None
+        runtime_last_output = None
+        if runtime_state:
+            try:
+                runtime_heartbeat = datetime.fromisoformat(runtime_state.get("heartbeat_at")) if runtime_state.get("heartbeat_at") else None
+                runtime_last_output = datetime.fromisoformat(runtime_state.get("last_output_at")) if runtime_state.get("last_output_at") else None
+            except ValueError:
+                runtime_heartbeat = None
+                runtime_last_output = None
+        timestamps = [value for value in [runtime_last_output, runtime_heartbeat, backup_run.last_output_at, backup_run.heartbeat_at, backup_run.started_at] if value is not None]
         reference_time = max(timestamps) if timestamps else None
         if backup_run.stop_requested_at and not _pid_is_alive(backup_run.process_pid):
             result = BackupExecutionResult(

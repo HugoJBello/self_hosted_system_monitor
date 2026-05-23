@@ -14,7 +14,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from .alerting import ensure_default_alert_rules, top_processes_for_alert_window
-from .backups import list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
+from .backups import get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
 from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
@@ -539,22 +539,23 @@ class BackupTreeView(View):
 class BackupRunStatusView(View):
     def get(self, request, run_id):
         backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=run_id)
+        runtime_state = get_runtime_state(run_id) if backup_run.status == "running" else None
         return JsonResponse(
             {
                 "id": backup_run.id,
                 "job_name": backup_run.job.name,
-                "status": backup_run.status,
-                "status_label": backup_run.get_status_display(),
-                "summary": backup_run.summary,
-                "exit_code": backup_run.exit_code,
-                "log_output": backup_run.log_output or "",
-                "process_pid": backup_run.process_pid,
-                "runner_label": backup_run.runner_label,
+                "status": (runtime_state or {}).get("status") or backup_run.status,
+                "status_label": (runtime_state or {}).get("status_label") or backup_run.get_status_display(),
+                "summary": (runtime_state or {}).get("summary") or backup_run.summary,
+                "exit_code": (runtime_state or {}).get("exit_code", backup_run.exit_code),
+                "log_output": (runtime_state or {}).get("log_output") or backup_run.log_output or "",
+                "process_pid": (runtime_state or {}).get("process_pid") or backup_run.process_pid,
+                "runner_label": (runtime_state or {}).get("runner_label") or backup_run.runner_label,
                 "launched_by": backup_run.get_launched_by_display(),
-                "heartbeat_at": backup_run.heartbeat_at.isoformat() if backup_run.heartbeat_at else None,
-                "last_output_at": backup_run.last_output_at.isoformat() if backup_run.last_output_at else None,
-                "finished_at": backup_run.finished_at.isoformat() if backup_run.finished_at else None,
-                "command_line": backup_run.command_line or "",
+                "heartbeat_at": (runtime_state or {}).get("heartbeat_at") or (backup_run.heartbeat_at.isoformat() if backup_run.heartbeat_at else None),
+                "last_output_at": (runtime_state or {}).get("last_output_at") or (backup_run.last_output_at.isoformat() if backup_run.last_output_at else None),
+                "finished_at": (runtime_state or {}).get("finished_at") or (backup_run.finished_at.isoformat() if backup_run.finished_at else None),
+                "command_line": (runtime_state or {}).get("command_line") or backup_run.command_line or "",
             }
         )
 

@@ -1,3 +1,6 @@
+import os
+import tempfile
+
 from django.utils import timezone
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -415,6 +418,37 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(job.source_path, "/home/test/UpdatedDocuments")
         self.assertEqual(job.ssh_password, "secret")
         self.assertEqual(job.cloudflare_service_token_secret, "token-secret")
+
+    def test_backup_run_status_prefers_runtime_state_for_running_job(self):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="running",
+            summary="DB summary",
+            log_output="DB log",
+        )
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"DJANGO_DB_PATH": f"{tmpdir}/db.sqlite3"}):
+            runtime_root = os.path.join(tmpdir, "backup_runtime")
+            os.makedirs(runtime_root, exist_ok=True)
+            runtime_file = os.path.join(runtime_root, f"run_{backup_run.id}.json")
+            with open(runtime_file, "w", encoding="utf-8") as handle:
+                handle.write(
+                    '{"status":"running","status_label":"Running","summary":"Runtime summary","log_output":"Runtime log","process_pid":123,'
+                    '"runner_label":"worker-1","heartbeat_at":"2026-05-23T10:00:00+00:00","last_output_at":"2026-05-23T10:00:00+00:00"}'
+                )
+            response = self.client.get(self._path("monitor:backup-run-status", args=[backup_run.id]))
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["summary"], "Runtime summary")
+        self.assertEqual(payload["log_output"], "Runtime log")
+        self.assertEqual(payload["process_pid"], 123)
 
     def test_backup_run_detail_page_loads(self):
         job = BackupJob.objects.create(
@@ -839,10 +873,12 @@ class BackupHelpersTests(TestCase):
             remote_user="backup",
             remote_dir="/srv/backups/test",
         )
-        backup_run = BackupRun.objects.create(job=job, status="running", summary="Running")
-        self.assertTrue(request_backup_run_stop(backup_run))
-        backup_run.refresh_from_db()
-        self.assertIsNotNone(backup_run.stop_requested_at)
+        backup_run = BackupRun.objects.create(job=job, status="running", summary="Running", process_pid=123)
+        with tempfile.TemporaryDirectory() as tmpdir, patch.dict(os.environ, {"DJANGO_DB_PATH": f"{tmpdir}/db.sqlite3"}):
+            self.assertTrue(request_backup_run_stop(backup_run))
+            backup_run.refresh_from_db()
+            self.assertIsNotNone(backup_run.stop_requested_at)
+            self.assertTrue(os.path.exists(os.path.join(tmpdir, "backup_runtime", f"run_{backup_run.id}.stop")))
 
     def test_mark_stale_running_backups_fails_orphaned_run(self):
         job = BackupJob.objects.create(
