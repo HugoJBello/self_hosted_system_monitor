@@ -319,6 +319,103 @@ class MonitorViewsTests(TestCase):
         backup_run.refresh_from_db()
         self.assertIsNotNone(backup_run.stop_requested_at)
 
+    def test_backup_job_edit_does_not_require_hidden_position_field(self):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            connection_mode="direct",
+            auth_mode="key",
+            position=7,
+        )
+
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "save_job": str(job.id),
+                f"job-{job.id}-name": job.name,
+                f"job-{job.id}-description": job.description,
+                f"job-{job.id}-enabled": "on",
+                f"job-{job.id}-source_path": "/home/test/NewDocuments",
+                f"job-{job.id}-schedule_minutes": "30",
+                f"job-{job.id}-remote_host": job.remote_host,
+                f"job-{job.id}-remote_user": job.remote_user,
+                f"job-{job.id}-remote_dir": job.remote_dir,
+                f"job-{job.id}-ssh_port": "22",
+                f"job-{job.id}-connection_mode": "direct",
+                f"job-{job.id}-cloudflare_auth_home": "",
+                f"job-{job.id}-cloudflare_service_token_id": "",
+                f"job-{job.id}-cloudflare_service_token_secret": "",
+                f"job-{job.id}-auth_mode": "key",
+                f"job-{job.id}-password_file_path": "",
+                f"job-{job.id}-ssh_password": "",
+                f"job-{job.id}-public_key_path": "",
+                f"job-{job.id}-max_size": "100m",
+                f"job-{job.id}-run_timeout_seconds": "7200",
+                f"job-{job.id}-idle_timeout_seconds": "900",
+                f"job-{job.id}-exclude_patterns": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertEqual(job.source_path, "/home/test/NewDocuments")
+        self.assertEqual(job.position, 7)
+
+    def test_backup_job_edit_preserves_saved_cloudflare_and_password_values(self):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="ssh.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            connection_mode="cloudflare",
+            cloudflare_auth_home="/home/android18",
+            cloudflare_service_token_id="token-id",
+            cloudflare_service_token_secret="token-secret",
+            auth_mode="password_value",
+            ssh_password="secret",
+            position=3,
+        )
+
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "save_job": str(job.id),
+                f"job-{job.id}-name": job.name,
+                f"job-{job.id}-description": job.description,
+                f"job-{job.id}-enabled": "on",
+                f"job-{job.id}-source_path": "/home/test/UpdatedDocuments",
+                f"job-{job.id}-schedule_minutes": "30",
+                f"job-{job.id}-remote_host": job.remote_host,
+                f"job-{job.id}-remote_user": job.remote_user,
+                f"job-{job.id}-remote_dir": job.remote_dir,
+                f"job-{job.id}-ssh_port": "22",
+                f"job-{job.id}-connection_mode": "cloudflare",
+                f"job-{job.id}-cloudflare_auth_home": "/home/android18",
+                f"job-{job.id}-cloudflare_service_token_id": "token-id",
+                f"job-{job.id}-cloudflare_service_token_secret": "",
+                f"job-{job.id}-auth_mode": "password_value",
+                f"job-{job.id}-password_file_path": "",
+                f"job-{job.id}-ssh_password": "",
+                f"job-{job.id}-public_key_path": "",
+                f"job-{job.id}-max_size": "100m",
+                f"job-{job.id}-run_timeout_seconds": "7200",
+                f"job-{job.id}-idle_timeout_seconds": "900",
+                f"job-{job.id}-exclude_patterns": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertEqual(job.source_path, "/home/test/UpdatedDocuments")
+        self.assertEqual(job.ssh_password, "secret")
+        self.assertEqual(job.cloudflare_service_token_secret, "token-secret")
+
     def test_backup_run_detail_page_loads(self):
         job = BackupJob.objects.create(
             name="Documents backup",

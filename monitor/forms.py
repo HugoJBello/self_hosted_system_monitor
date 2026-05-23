@@ -170,7 +170,6 @@ class BackupJobForm(forms.ModelForm):
             "run_timeout_seconds",
             "idle_timeout_seconds",
             "exclude_patterns",
-            "position",
         )
         widgets = {
             "name": forms.TextInput(attrs={"class": "form-control"}),
@@ -196,7 +195,6 @@ class BackupJobForm(forms.ModelForm):
             "run_timeout_seconds": forms.NumberInput(attrs={"class": "form-control d-none backup-timeout-seconds", "min": 60, "max": 604800, "step": 60}),
             "idle_timeout_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 30, "max": 86400, "step": 30}),
             "exclude_patterns": forms.Textarea(attrs={"class": "form-control", "rows": 3, "placeholder": "*.tmp\nnode_modules/"}),
-            "position": forms.NumberInput(attrs={"class": "form-control", "min": 0}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -236,6 +234,14 @@ class BackupJobForm(forms.ModelForm):
             raise forms.ValidationError("Password file path must be absolute.")
         return value
 
+    def clean_ssh_password(self):
+        value = (self.cleaned_data.get("ssh_password") or "").strip()
+        if value:
+            return value
+        if self.instance.pk:
+            return self.instance.ssh_password
+        return value
+
     def clean_public_key_path(self):
         value = self.cleaned_data["public_key_path"].strip()
         if value and not value.startswith("/"):
@@ -246,6 +252,14 @@ class BackupJobForm(forms.ModelForm):
         value = self.cleaned_data["cloudflare_auth_home"].strip()
         if value and not value.startswith("/"):
             raise forms.ValidationError("Cloudflare auth home must be an absolute host path.")
+        return value
+
+    def clean_cloudflare_service_token_secret(self):
+        value = (self.cleaned_data.get("cloudflare_service_token_secret") or "").strip()
+        if value:
+            return value
+        if self.instance.pk:
+            return self.instance.cloudflare_service_token_secret
         return value
 
     def clean(self):
