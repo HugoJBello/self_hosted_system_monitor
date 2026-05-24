@@ -401,6 +401,7 @@ class AlertDetailView(View):
         )
         chart_data = {
             "labels": [item.captured_at.strftime("%H:%M:%S") for item in context_snapshots],
+            "label_datetimes": [item.captured_at.isoformat() for item in context_snapshots],
             "metric_values": [getattr(item, event.metric, 0) for item in context_snapshots],
             "threshold": [event.threshold for _ in context_snapshots],
         }

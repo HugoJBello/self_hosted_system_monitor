@@ -61,6 +61,9 @@ def build_time_series_chart_data(snapshots, *, hours, sample_interval_seconds, w
     chart_data = {
         "labels": [],
         "full_labels": [],
+        "label_datetimes": [],
+        "range_start_isos": [],
+        "range_end_isos": [],
         "has_data": [],
         "missing_periods": [],
         "bucket_seconds": bucket_seconds,
@@ -75,6 +78,9 @@ def build_time_series_chart_data(snapshots, *, hours, sample_interval_seconds, w
         bucket_end = min(window_end, bucket_start + timedelta(seconds=bucket_seconds))
         midpoint = bucket_start + (bucket_end - bucket_start) / 2
         chart_data["labels"].append(format_history_tick(midpoint, hours))
+        chart_data["label_datetimes"].append(midpoint.isoformat())
+        chart_data["range_start_isos"].append(bucket_start.isoformat())
+        chart_data["range_end_isos"].append(bucket_end.isoformat())
         chart_data["full_labels"].append(
             f"{bucket_start.strftime('%Y-%m-%d %H:%M:%S')} UTC to {bucket_end.strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )

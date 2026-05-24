@@ -1,4 +1,5 @@
 from django import forms
+from zoneinfo import available_timezones
 
 from .models import AlertRule, BackupJob, MonitoringSettings, ReportRule
 
@@ -22,6 +23,8 @@ class MonitoringSettingsForm(forms.ModelForm):
             "notifications_default_action",
             "notifications_timeout_seconds",
             "app_public_base_url",
+            "display_time_mode",
+            "display_timezone",
         )
         widgets = {
             "sample_interval_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 10, "step": 5}),
@@ -39,7 +42,42 @@ class MonitoringSettingsForm(forms.ModelForm):
             "notifications_default_action": forms.TextInput(attrs={"class": "form-control", "placeholder": "notify"}),
             "notifications_timeout_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 300}),
             "app_public_base_url": forms.URLInput(attrs={"class": "form-control", "placeholder": "https://monitor.example.com/system_monitor"}),
+            "display_time_mode": forms.Select(attrs={"class": "form-select js-display-time-mode"}),
+            "display_timezone": forms.Select(attrs={"class": "form-select js-display-timezone"}),
         }
+
+    COMMON_TIMEZONES = [
+        "Europe/Madrid",
+        "Atlantic/Canary",
+        "Europe/London",
+        "Europe/Berlin",
+        "Europe/Paris",
+        "Europe/Rome",
+        "Europe/Lisbon",
+        "America/New_York",
+        "America/Chicago",
+        "America/Denver",
+        "America/Los_Angeles",
+        "America/Mexico_City",
+        "America/Bogota",
+        "America/Santiago",
+        "America/Argentina/Buenos_Aires",
+        "UTC",
+    ]
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        timezone_choices = []
+        seen = set()
+        for value in self.COMMON_TIMEZONES + sorted(available_timezones()):
+            if value in seen:
+                continue
+            seen.add(value)
+            timezone_choices.append((value, value.replace("_", " ")))
+        self.fields["display_timezone"].choices = timezone_choices
+        self.fields["display_time_mode"].label = "Date and time mode"
+        self.fields["display_timezone"].label = "Fixed display timezone"
+        self.fields["display_timezone"].required = False
 
     def clean_notifications_default_channels(self):
         value = self.cleaned_data["notifications_default_channels"].strip()
@@ -49,6 +87,14 @@ class MonitoringSettingsForm(forms.ModelForm):
         if invalid:
             raise forms.ValidationError("Channels must be any combination of email, telegram, and xmpp.")
         return ";".join(channels)
+
+    def clean_display_timezone(self):
+        value = (self.cleaned_data.get("display_timezone") or "").strip()
+        if not value:
+            return self.instance.display_timezone or "Europe/Madrid"
+        if value not in available_timezones():
+            raise forms.ValidationError("Choose a valid timezone.")
+        return value
 
 
 class AlertRuleForm(forms.ModelForm):

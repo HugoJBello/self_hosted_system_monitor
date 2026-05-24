@@ -1,6 +1,10 @@
 {% load static %}
 <!doctype html>
-<html lang="en">
+<html
+  lang="en"
+  data-display-time-mode="{{ monitoring_settings.display_time_mode|default:'browser' }}"
+  data-display-timezone="{{ monitoring_settings.display_timezone|default:'Europe/Madrid' }}"
+>
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -47,11 +51,61 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script>
-      function formatLocalDateTime(isoValue, style) {
+      const timezoneLocaleMap = {
+        "Europe/Madrid": "es-ES",
+        "Atlantic/Canary": "es-ES",
+        "Europe/Paris": "fr-FR",
+        "Europe/Berlin": "de-DE",
+        "Europe/Rome": "it-IT",
+        "Europe/Lisbon": "pt-PT",
+        "Europe/London": "en-GB",
+        "America/Mexico_City": "es-MX",
+        "America/Argentina/Buenos_Aires": "es-AR",
+        "America/Bogota": "es-CO",
+        "America/Santiago": "es-CL",
+        "America/New_York": "en-US",
+        "America/Chicago": "en-US",
+        "America/Denver": "en-US",
+        "America/Los_Angeles": "en-US",
+        "UTC": "en-GB"
+      };
+
+      function getDisplayTimeMode() {
+        return document.documentElement.dataset.displayTimeMode || "browser";
+      }
+
+      function getConfiguredTimeZone() {
+        if (getDisplayTimeMode() === "fixed") {
+          return document.documentElement.dataset.displayTimezone || "Europe/Madrid";
+        }
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      }
+
+      function detectBrowserLocale() {
+        const preferred = Array.isArray(navigator.languages) && navigator.languages.length
+          ? navigator.languages
+          : [navigator.language].filter(Boolean);
+        const explicitLocale = preferred.find((value) => value && value !== "en" && !value.toLowerCase().startsWith("en-"));
+        if (explicitLocale) {
+          return explicitLocale;
+        }
+        return preferred[0] || undefined;
+      }
+
+      function detectDisplayLocale() {
+        const timeZone = getConfiguredTimeZone();
+        if (getDisplayTimeMode() === "fixed") {
+          return timezoneLocaleMap[timeZone] || detectBrowserLocale() || undefined;
+        }
+        return detectBrowserLocale() || timezoneLocaleMap[timeZone] || undefined;
+      }
+
+      function formatConfiguredDateTime(isoValue, style) {
         if (!isoValue) return "";
         const date = new Date(isoValue);
         if (Number.isNaN(date.getTime())) return "";
-        const locale = navigator.language || undefined;
+        const locale = detectDisplayLocale();
+        const timeZone = getConfiguredTimeZone();
         const presets = {
           datetime: { dateStyle: "medium", timeStyle: "medium" },
           datetime-short: { dateStyle: "short", timeStyle: "short" },
@@ -60,12 +114,18 @@
           time-short: { timeStyle: "short" },
           date: { dateStyle: "medium" },
         };
-        return new Intl.DateTimeFormat(locale, presets[style] || presets.datetime).format(date);
+        return new Intl.DateTimeFormat(locale, { ...(presets[style] || presets.datetime), timeZone }).format(date);
+      }
+
+      function formatConfiguredRange(startIso, endIso, style = "datetime-short") {
+        const start = formatConfiguredDateTime(startIso, style);
+        const end = formatConfiguredDateTime(endIso, style);
+        return start && end ? `${start} → ${end}` : start || end || "";
       }
 
       function applyBrowserLocaleDates(root = document) {
         root.querySelectorAll("[data-local-datetime]").forEach((node) => {
-          const formatted = formatLocalDateTime(node.dataset.localDatetime, node.dataset.localStyle || "datetime");
+          const formatted = formatConfiguredDateTime(node.dataset.localDatetime, node.dataset.localStyle || "datetime");
           if (formatted) {
             node.textContent = formatted;
           }
@@ -73,10 +133,16 @@
       }
 
       document.addEventListener("DOMContentLoaded", () => {
+        const locale = detectDisplayLocale();
+        if (locale) {
+          document.documentElement.lang = locale;
+        }
         applyBrowserLocaleDates(document);
       });
 
       window.applyBrowserLocaleDates = applyBrowserLocaleDates;
+      window.formatConfiguredDateTime = formatConfiguredDateTime;
+      window.formatConfiguredRange = formatConfiguredRange;
     </script>
     {% block scripts %}{% endblock %}
   </body>

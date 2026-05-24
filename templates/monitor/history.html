@@ -36,8 +36,8 @@
       {% for gap in chart_data.missing_periods %}
         <article class="history-gap-card">
           <div class="history-gap-duration">{{ gap.duration }}</div>
-          <div class="small text-secondary">{{ gap.start }} UTC</div>
-          <div class="small text-secondary">{{ gap.end }} UTC</div>
+          <div class="small text-secondary"><span data-local-datetime="{{ gap.start_iso }}" data-local-style="datetime-short">{{ gap.start }}</span></div>
+          <div class="small text-secondary"><span data-local-datetime="{{ gap.end_iso }}" data-local-style="datetime-short">{{ gap.end }}</span></div>
         </article>
       {% endfor %}
     </div>
@@ -122,7 +122,7 @@
           <p class="text-secondary mb-0">First you get the aggregated view across the selected period. Immediately below it, you get the latest point-in-time snapshot for that same window.</p>
         </div>
         {% if latest_snapshot %}
-          <span class="chip">Latest process snapshot <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></span>
+          <span class="chip">Latest process snapshot <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }}</span></span>
         {% endif %}
       </div>
       <div class="process-analysis-stack">
@@ -160,7 +160,7 @@
                     <td class="small-cell">
                       <div class="small text-secondary">{{ process.statuses|join:", "|default:"-" }}</div>
                       {% if process.last_seen_at %}
-                        <div class="small text-secondary"><span data-local-datetime="{{ process.last_seen_at|date:'c' }}" data-local-style="datetime-short">{{ process.last_seen_at|date:"Y-m-d H:i:s" }} UTC</span></div>
+                        <div class="small text-secondary"><span data-local-datetime="{{ process.last_seen_at|date:'c' }}" data-local-style="datetime-short">{{ process.last_seen_at|date:"Y-m-d H:i:s" }}</span></div>
                       {% endif %}
                     </td>
                     <td class="process-command-cell">
@@ -294,8 +294,12 @@
 {{ chart_data|json_script:"history-chart-data" }}
 <script>
   const chartData = JSON.parse(document.getElementById("history-chart-data").textContent);
-  const labels = chartData.labels;
-  const fullLabels = chartData.full_labels || labels;
+  const labelMoments = chartData.label_datetimes || [];
+  const rangeStartIsos = chartData.range_start_isos || [];
+  const rangeEndIsos = chartData.range_end_isos || [];
+  const labels = labelMoments.map((iso, index) => (
+    window.formatConfiguredDateTime(iso, chartData.bucket_seconds >= 86400 ? "date" : "time-short") || chartData.labels[index]
+  ));
   const denseSeries = labels.length > 40;
 
   const noDataOverlayPlugin = {
@@ -380,7 +384,7 @@
           callbacks: {
             title(items) {
               const index = items[0]?.dataIndex ?? 0;
-              return fullLabels[index] || labels[index];
+              return window.formatConfiguredRange(rangeStartIsos[index], rangeEndIsos[index], "datetime-short") || labels[index];
             }
           }
         }

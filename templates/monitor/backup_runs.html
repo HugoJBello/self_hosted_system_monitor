@@ -44,9 +44,9 @@
             </div>
             <h3 class="h6 mb-1">{{ run.summary }}</h3>
             <div class="small text-secondary">
-              Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }} UTC</span>
-              {% if run.finished_at %} • Finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="datetime-short">{{ run.finished_at|date:"Y-m-d H:i:s" }} UTC</span>{% endif %}
-              {% if run.heartbeat_at %} • Heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ run.heartbeat_at|date:"Y-m-d H:i:s" }} UTC</span>{% endif %}
+              Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
+              {% if run.finished_at %} • Finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="datetime-short">{{ run.finished_at|date:"Y-m-d H:i:s" }}</span>{% endif %}
+              {% if run.heartbeat_at %} • Heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ run.heartbeat_at|date:"Y-m-d H:i:s" }}</span>{% endif %}
               {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
             </div>
           </div>

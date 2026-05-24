@@ -50,35 +50,6 @@ def platform_icon_class(platform_label):
 
 
 @register.filter
-def platform_icon_glyph(platform_label):
-    value = _platform_key(platform_label)
-    mapping = [
-        ("ubuntu", "Ub"),
-        ("debian", "Db"),
-        ("fedora", "Fd"),
-        ("arch", "Ar"),
-        ("manjaro", "Mj"),
-        ("linux mint", "Mi"),
-        ("pop!_os", "Po"),
-        ("centos", "Ce"),
-        ("red hat", "Rh"),
-        ("rocky", "Ry"),
-        ("alma", "Al"),
-        ("opensuse", "Su"),
-        ("suse", "Su"),
-        ("raspbian", "Pi"),
-        ("mac", "Mc"),
-        ("darwin", "Mc"),
-        ("windows", "Win"),
-        ("linux", "Ln"),
-    ]
-    for needle, glyph in mapping:
-        if needle in value:
-            return glyph
-    return "OS"
-
-
-@register.filter
 def platform_tone_class(platform_label):
     value = _platform_key(platform_label)
     mapping = [

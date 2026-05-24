@@ -66,7 +66,7 @@
         {% endfor %}
       </div>
       <hr class="border-secondary-subtle my-4">
-      <div class="small text-secondary">Window <span data-local-datetime="{{ report.window_start|date:'c' }}" data-local-style="datetime-short">{{ report_data.window_start }} UTC</span> → <span data-local-datetime="{{ report.window_end|date:'c' }}" data-local-style="datetime-short">{{ report_data.window_end }} UTC</span></div>
+      <div class="small text-secondary">Window <span data-local-datetime="{{ report.window_start|date:'c' }}" data-local-style="datetime-short">{{ report_data.window_start }}</span> → <span data-local-datetime="{{ report.window_end|date:'c' }}" data-local-style="datetime-short">{{ report_data.window_end }}</span></div>
     </section>
   </div>
   <div class="col-12 col-xl-7">
@@ -103,8 +103,8 @@
       {% for gap in chart_data.missing_periods %}
         <article class="history-gap-card">
           <div class="history-gap-duration">{{ gap.duration }}</div>
-          <div class="small text-secondary"><span data-local-datetime="{{ gap.start_iso }}" data-local-style="datetime-short">{{ gap.start }} UTC</span></div>
-          <div class="small text-secondary"><span data-local-datetime="{{ gap.end_iso }}" data-local-style="datetime-short">{{ gap.end }} UTC</span></div>
+          <div class="small text-secondary"><span data-local-datetime="{{ gap.start_iso }}" data-local-style="datetime-short">{{ gap.start }}</span></div>
+          <div class="small text-secondary"><span data-local-datetime="{{ gap.end_iso }}" data-local-style="datetime-short">{{ gap.end }}</span></div>
         </article>
       {% endfor %}
     </div>
@@ -139,7 +139,7 @@
             <td>{{ process.max_rss_mb|floatformat:1 }} MB</td>
             <td class="small-cell">
               <div class="small text-secondary">{{ process.statuses|join:", "|default:"-" }}</div>
-              <div class="small text-secondary">{% if process.last_seen_at %}<span data-local-datetime="{{ process.last_seen_at|date:'c' }}" data-local-style="datetime-short">{{ process.last_seen_at }} UTC</span>{% else %}-{% endif %}</div>
+              <div class="small text-secondary">{% if process.last_seen_at %}<span data-local-datetime="{{ process.last_seen_at|date:'c' }}" data-local-style="datetime-short">{{ process.last_seen_at }}</span>{% else %}-{% endif %}</div>
             </td>
           </tr>
         {% empty %}
@@ -155,8 +155,12 @@
 {{ chart_data|json_script:"report-chart-data" }}
 <script>
   const reportChartData = JSON.parse(document.getElementById("report-chart-data").textContent);
-  const reportLabels = reportChartData.labels || [];
-  const reportFullLabels = reportChartData.full_labels || reportLabels;
+  const reportLabelMoments = reportChartData.label_datetimes || [];
+  const reportRangeStartIsos = reportChartData.range_start_isos || [];
+  const reportRangeEndIsos = reportChartData.range_end_isos || [];
+  const reportLabels = reportLabelMoments.map((iso, index) => (
+    window.formatConfiguredDateTime(iso, reportChartData.bucket_seconds >= 86400 ? "date" : "time-short") || reportChartData.labels[index]
+  ));
   const reportDenseSeries = reportLabels.length > 40;
 
   const reportNoDataOverlayPlugin = {
@@ -232,7 +236,7 @@
           callbacks: {
             title(items) {
               const index = items[0]?.dataIndex ?? 0;
-              return reportFullLabels[index] || reportLabels[index];
+              return window.formatConfiguredRange(reportRangeStartIsos[index], reportRangeEndIsos[index], "datetime-short") || reportLabels[index];
             }
           }
         }

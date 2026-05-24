@@ -25,7 +25,7 @@
   <div class="col-12 col-xl-4">
     <section class="panel-card p-4 h-100">
       <p class="eyebrow mb-2">Trigger snapshot</p>
-      <h2 class="h4 mb-4"><span data-local-datetime="{{ trigger_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ trigger_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></h2>
+      <h2 class="h4 mb-4"><span data-local-datetime="{{ trigger_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ trigger_snapshot.captured_at|date:"Y-m-d H:i:s" }}</span></h2>
       <div class="stat-stack">
         <div class="mini-stat">
           <span class="label">Rule</span>
@@ -189,10 +189,13 @@
 {% block scripts %}
 <script>
   const detailData = JSON.parse(document.getElementById("alert-detail-chart-data").textContent);
+  const detailLabels = (detailData.label_datetimes || []).map((iso, index) => (
+    window.formatConfiguredDateTime(iso, "time-short") || detailData.labels[index]
+  ));
   new Chart(document.getElementById("alertMetricChart"), {
     type: "line",
     data: {
-      labels: detailData.labels,
+      labels: detailLabels,
       datasets: [
         {
           label: "Observed metric",
@@ -214,7 +217,17 @@
     },
     options: {
       responsive: true,
-      plugins: { legend: { labels: { color: "#d8e1ea" } } },
+      plugins: {
+        legend: { labels: { color: "#d8e1ea" } },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              const index = items[0]?.dataIndex ?? 0;
+              return window.formatConfiguredDateTime((detailData.label_datetimes || [])[index], "datetime-short") || detailLabels[index];
+            }
+          }
+        }
+      },
       scales: { x: { ticks: { color: "#93a4b7" } }, y: { ticks: { color: "#93a4b7" } } }
     }
   });

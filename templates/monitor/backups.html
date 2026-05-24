@@ -39,7 +39,7 @@
                 </div>
                 <h3 class="h5 mb-2">{{ run.job.source_path }} → {{ run.job.destination_label }}</h3>
                 <div class="small text-secondary mb-3" data-run-meta>
-                  Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }} UTC</span>
+                  Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
                   {% if run.heartbeat_at %} • heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="time-short">{{ run.heartbeat_at|date:"H:i:s" }}</span>{% endif %}
                   {% if run.runner_label %} • runner {{ run.runner_label }}{% endif %}
                 </div>
@@ -92,7 +92,7 @@
                 </div>
                 <h3 class="h6 mb-1">{{ run.summary }}</h3>
                 <div class="small text-secondary">
-                  <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }} UTC</span>
+                  <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
                   {% if run.finished_at %} • finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="time-short">{{ run.finished_at|date:"H:i:s" }}</span>{% endif %}
                   {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
                 </div>

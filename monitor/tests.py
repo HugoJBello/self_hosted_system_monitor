@@ -107,6 +107,8 @@ class MonitorViewsTests(TestCase):
                 "sample_interval_seconds": 120,
                 "top_process_limit": 10,
                 "history_retention_days": 14,
+                "display_time_mode": "fixed",
+                "display_timezone": "Europe/Madrid",
                 "notifications_enabled": "on",
                 "notifications_api_url": "http://127.0.0.1:49231/notifications/api/receive/",
                 "notifications_api_token": "token-123",
@@ -125,6 +127,8 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(settings_obj.sample_interval_seconds, 120)
         self.assertEqual(settings_obj.top_process_limit, 10)
         self.assertEqual(settings_obj.history_retention_days, 14)
+        self.assertEqual(settings_obj.display_time_mode, "fixed")
+        self.assertEqual(settings_obj.display_timezone, "Europe/Madrid")
         self.assertTrue(settings_obj.notifications_enabled)
         self.assertEqual(settings_obj.notifications_default_channels, "email;telegram")
 
@@ -137,6 +141,8 @@ class MonitorViewsTests(TestCase):
                 "sample_interval_seconds": 60,
                 "top_process_limit": 8,
                 "history_retention_days": 30,
+                "display_time_mode": "browser",
+                "display_timezone": "Europe/Madrid",
                 "notifications_enabled": "on",
                 "notifications_api_url": "http://127.0.0.1:49231/notifications/api/receive/",
                 "notifications_api_token": "token-123",
@@ -153,6 +159,12 @@ class MonitorViewsTests(TestCase):
         )
         self.assertRedirects(response, reverse("monitor:settings"), fetch_redirect_response=False)
         self.assertTrue(mock_send_json_notification.called)
+
+    def test_settings_page_exposes_global_time_display_controls(self):
+        response = self.client.get(self._path("monitor:settings"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Date and Time Display")
+        self.assertContains(response, "Fixed timezone")
 
     def test_alerts_page_loads(self):
         response = self.client.get(self._path("monitor:alerts"))

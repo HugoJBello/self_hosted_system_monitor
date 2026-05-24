@@ -9,8 +9,8 @@
       <div class="d-flex justify-content-between align-items-start mb-4">
         <div>
           <p class="eyebrow mb-2">Configuration</p>
-          <h1 class="h3 mb-1">Sampling and notifications</h1>
-          <p class="text-secondary mb-0">Control collection frequency and the external notifications service integration.</p>
+          <h1 class="h3 mb-1">Sampling, time display and notifications</h1>
+          <p class="text-secondary mb-0">Control collection frequency, the global date/time presentation, and the external notifications service integration.</p>
         </div>
         <span class="badge text-bg-light border">SQLite persisted</span>
       </div>
@@ -33,6 +33,22 @@
               <label class="form-label" for="{{ form.history_retention_days.id_for_label }}">History retention (days)</label>
               {{ form.history_retention_days }}
               <div class="form-text">Older snapshots are removed after new collections.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="config-section">
+          <h2 class="h5 mb-3">Date and Time Display</h2>
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="form-label" for="{{ form.display_time_mode.id_for_label }}">Display mode</label>
+              {{ form.display_time_mode }}
+              <div class="form-text">`Browser locale` follows each device. `Fixed timezone` forces the same clock for all users and all charts.</div>
+            </div>
+            <div class="col-md-7">
+              <label class="form-label" for="{{ form.display_timezone.id_for_label }}">Fixed timezone</label>
+              {{ form.display_timezone }}
+              <div class="form-text">Used only when `Fixed timezone for all users` is selected.</div>
             </div>
           </div>
         </section>
@@ -124,6 +140,10 @@
           <strong>{{ settings_obj.history_retention_days }} days</strong>
         </div>
         <div class="mini-stat">
+          <span class="label">Date/time display</span>
+          <strong>{% if settings_obj.display_time_mode == "fixed" %}{{ settings_obj.display_timezone }}{% else %}Browser locale{% endif %}</strong>
+        </div>
+        <div class="mini-stat">
           <span class="label">Notifications API</span>
           <strong>{% if settings_obj.notifications_enabled %}Enabled{% else %}Disabled{% endif %}</strong>
         </div>
@@ -141,4 +161,26 @@
     </section>
   </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.addEventListener("DOMContentLoaded", () => {
+    const modeField = document.querySelector(".js-display-time-mode");
+    const timezoneField = document.querySelector(".js-display-timezone");
+    if (!modeField || !timezoneField) {
+      return;
+    }
+    const timezoneWrapper = timezoneField.closest(".col-md-7");
+    const syncTimezoneVisibility = () => {
+      const hidden = modeField.value !== "fixed";
+      if (timezoneWrapper) {
+        timezoneWrapper.classList.toggle("opacity-50", hidden);
+      }
+      timezoneField.disabled = hidden;
+    };
+    modeField.addEventListener("change", syncTimezoneVisibility);
+    syncTimezoneVisibility();
+  });
+</script>
 {% endblock %}

@@ -14,7 +14,7 @@
     <span class="badge text-bg-light border">Rules {{ rules_count }}</span>
     <span class="badge text-bg-light border">Active alerts {{ active_events_count }}</span>
     {% if latest_snapshot %}
-      <span class="badge text-bg-light border">Last sample <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></span>
+      <span class="badge text-bg-light border">Last sample <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }}</span></span>
     {% endif %}
   </div>
 </div>
@@ -46,7 +46,7 @@
                 <h3 class="h5 mb-2">{{ event.title }}</h3>
                 <p class="text-secondary mb-2">{{ event.message }}</p>
                 <div class="small text-secondary">
-                  Rule: {{ event.rule.name }} • Metric: {{ alert_metrics|get_item:event.metric|default:event.metric }} • Triggered <span data-local-datetime="{{ event.triggered_at|date:'c' }}" data-local-style="datetime-short">{{ event.triggered_at|date:"Y-m-d H:i:s" }} UTC</span>
+                  Rule: {{ event.rule.name }} • Metric: {{ alert_metrics|get_item:event.metric|default:event.metric }} • Triggered <span data-local-datetime="{{ event.triggered_at|date:'c' }}" data-local-style="datetime-short">{{ event.triggered_at|date:"Y-m-d H:i:s" }}</span>
                 </div>
                 {% if event.notification_status_code %}
                   <div class="small text-secondary mt-1">Notification HTTP {{ event.notification_status_code }}{% if event.notification_sent %} delivered{% else %} failed{% endif %}</div>

@@ -12,6 +12,11 @@ def _env_bool(name, default=False):
 
 
 class MonitoringSettings(models.Model):
+    DISPLAY_TIME_MODE_CHOICES = [
+        ("browser", "Browser locale and timezone"),
+        ("fixed", "Fixed timezone for all users"),
+    ]
+
     sample_interval_seconds = models.PositiveIntegerField(
         default=60,
         validators=[MinValueValidator(10), MaxValueValidator(3600)],
@@ -47,6 +52,15 @@ class MonitoringSettings(models.Model):
         default="",
         max_length=500,
     )
+    display_time_mode = models.CharField(
+        max_length=16,
+        choices=DISPLAY_TIME_MODE_CHOICES,
+        default="browser",
+    )
+    display_timezone = models.CharField(
+        max_length=64,
+        default="Europe/Madrid",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
@@ -73,6 +87,8 @@ class MonitoringSettings(models.Model):
                 "notifications_default_action": os.getenv("NOTIFICATIONS_DEFAULT_ACTION", "notify"),
                 "notifications_timeout_seconds": int(os.getenv("NOTIFICATIONS_TIMEOUT_SECONDS", "10")),
                 "app_public_base_url": os.getenv("SYSTEM_MONITOR_PUBLIC_BASE_URL", ""),
+                "display_time_mode": os.getenv("SYSTEM_MONITOR_DISPLAY_TIME_MODE", "browser"),
+                "display_timezone": os.getenv("SYSTEM_MONITOR_DISPLAY_TIMEZONE", "Europe/Madrid"),
             },
         )
         return settings_obj

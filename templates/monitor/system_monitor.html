@@ -13,7 +13,6 @@
     <p class="text-secondary mb-0 d-flex flex-wrap align-items-center gap-2">
       <span>{{ latest_snapshot.hostname }}</span>
       <span class="os-chip {{ latest_snapshot.platform_label|platform_tone_class }}">
-        <span class="os-symbol" aria-hidden="true">{{ latest_snapshot.platform_label|platform_icon_glyph }}</span>
         <i class="{{ latest_snapshot.platform_label|platform_icon_class }}" aria-hidden="true"></i>
         <span>{{ latest_snapshot.platform_label }}</span>
       </span>
@@ -21,7 +20,7 @@
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
-    <span class="badge text-bg-light border">Captured <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></span>
+    <span class="badge text-bg-light border">Captured <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }}</span></span>
     <span class="badge text-bg-light border">Uptime {{ latest_snapshot.uptime_seconds|human_uptime }}</span>
     <form method="get" class="d-flex align-items-center gap-2">
       <input type="hidden" name="sort" value="{{ sort }}">
