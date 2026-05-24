@@ -25,6 +25,22 @@ body.app-shell {
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.nav-icon-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  background: linear-gradient(135deg, rgba(255, 122, 89, 0.24), rgba(93, 198, 255, 0.22));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #fff4ec;
+}
+
+.topbar .nav-link i {
+  opacity: 0.92;
+}
+
 .panel-card {
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -123,6 +139,34 @@ body.app-shell {
   border: 1px solid rgba(255, 255, 255, 0.07);
   color: var(--text);
 }
+
+.os-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.os-tone-ubuntu { color: #ff9a6b; }
+.os-tone-debian { color: #ff7aa2; }
+.os-tone-fedora { color: #7cb7ff; }
+.os-tone-arch { color: #69d1ff; }
+.os-tone-manjaro { color: #4dd4ac; }
+.os-tone-mint { color: #8fe388; }
+.os-tone-pop { color: #67d1d5; }
+.os-tone-centos { color: #d79dff; }
+.os-tone-redhat { color: #ff8a8a; }
+.os-tone-rocky { color: #77d19c; }
+.os-tone-alma { color: #8fb3ff; }
+.os-tone-suse { color: #90e26d; }
+.os-tone-raspberry { color: #ff7ac6; }
+.os-tone-macos { color: #d6dde8; }
+.os-tone-windows { color: #7ec0ff; }
+.os-tone-linux { color: #ffe082; }
+.os-tone-generic { color: #d6dde8; }
 
 .process-badges {
   display: flex;

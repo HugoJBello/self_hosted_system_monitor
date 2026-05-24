@@ -13,18 +13,21 @@
   <body class="app-shell">
     <nav class="navbar navbar-expand-lg navbar-dark topbar">
       <div class="container-fluid px-4">
-        <a class="navbar-brand fw-semibold" href="{% url 'monitor:system-monitor' %}">System Monitor</a>
+        <a class="navbar-brand fw-semibold d-inline-flex align-items-center gap-2" href="{% url 'monitor:system-monitor' %}">
+          <span class="nav-icon-badge"><i class="bi bi-activity"></i></span>
+          <span>System Monitor</span>
+        </a>
         <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav">
           <span class="navbar-toggler-icon"></span>
         </button>
         <div class="collapse navbar-collapse" id="mainNav">
           <ul class="navbar-nav ms-auto gap-lg-2">
-            <li class="nav-item"><a class="nav-link" href="{% url 'monitor:system-monitor' %}">Monitor</a></li>
-            <li class="nav-item"><a class="nav-link" href="{% url 'monitor:history' %}">History</a></li>
-            <li class="nav-item"><a class="nav-link" href="{% url 'monitor:alerts' %}">Alerts</a></li>
-            <li class="nav-item"><a class="nav-link" href="{% url 'monitor:reports' %}">Reports</a></li>
-            <li class="nav-item"><a class="nav-link" href="{% url 'monitor:backups' %}">Backups</a></li>
-            <li class="nav-item"><a class="nav-link" href="{% url 'monitor:settings' %}">Settings</a></li>
+            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:system-monitor' %}"><i class="bi bi-speedometer2"></i><span>Monitor</span></a></li>
+            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:history' %}"><i class="bi bi-clock-history"></i><span>History</span></a></li>
+            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:alerts' %}"><i class="bi bi-bell"></i><span>Alerts</span></a></li>
+            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:reports' %}"><i class="bi bi-graph-up-arrow"></i><span>Reports</span></a></li>
+            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:backups' %}"><i class="bi bi-hdd-network"></i><span>Backups</span></a></li>
+            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:settings' %}"><i class="bi bi-sliders"></i><span>Settings</span></a></li>
           </ul>
         </div>
       </div>
@@ -43,6 +46,38 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script>
+      function formatLocalDateTime(isoValue, style) {
+        if (!isoValue) return "";
+        const date = new Date(isoValue);
+        if (Number.isNaN(date.getTime())) return "";
+        const locale = navigator.language || undefined;
+        const presets = {
+          datetime: { dateStyle: "medium", timeStyle: "medium" },
+          datetime-short: { dateStyle: "short", timeStyle: "short" },
+          datetime-compact: { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" },
+          time: { timeStyle: "medium" },
+          time-short: { timeStyle: "short" },
+          date: { dateStyle: "medium" },
+        };
+        return new Intl.DateTimeFormat(locale, presets[style] || presets.datetime).format(date);
+      }
+
+      function applyBrowserLocaleDates(root = document) {
+        root.querySelectorAll("[data-local-datetime]").forEach((node) => {
+          const formatted = formatLocalDateTime(node.dataset.localDatetime, node.dataset.localStyle || "datetime");
+          if (formatted) {
+            node.textContent = formatted;
+          }
+        });
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        applyBrowserLocaleDates(document);
+      });
+
+      window.applyBrowserLocaleDates = applyBrowserLocaleDates;
+    </script>
     {% block scripts %}{% endblock %}
   </body>
 </html>

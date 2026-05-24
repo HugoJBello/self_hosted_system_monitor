@@ -25,7 +25,7 @@
   <div class="col-12 col-xl-4">
     <section class="panel-card p-4 h-100">
       <p class="eyebrow mb-2">Trigger snapshot</p>
-      <h2 class="h4 mb-4">{{ trigger_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</h2>
+      <h2 class="h4 mb-4"><span data-local-datetime="{{ trigger_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ trigger_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></h2>
       <div class="stat-stack">
         <div class="mini-stat">
           <span class="label">Rule</span>
@@ -97,7 +97,7 @@
           <tbody>
             {% for snapshot in context_snapshots %}
               <tr{% if snapshot.id == trigger_snapshot.id %} class="table-active"{% endif %}>
-                <td>{{ snapshot.captured_at|date:"H:i:s" }}</td>
+                <td><span data-local-datetime="{{ snapshot.captured_at|date:'c' }}" data-local-style="time-short">{{ snapshot.captured_at|date:"H:i:s" }}</span></td>
                 <td>{{ snapshot|get_attr:event.metric|default:0 }}</td>
                 <td>{{ snapshot.cpu_percent }}</td>
                 <td>{{ snapshot.memory_percent }}</td>

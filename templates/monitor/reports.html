@@ -13,7 +13,7 @@
     <span class="badge text-bg-light border">Rules {{ rules_count }}</span>
     <span class="badge text-bg-light border">Recent reports {{ recent_reports_count }}</span>
     {% if latest_snapshot %}
-      <span class="badge text-bg-light border">Last sample {{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span>
+      <span class="badge text-bg-light border">Last sample <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></span>
     {% endif %}
   </div>
 </div>
@@ -46,7 +46,7 @@
                   <h3 class="h5 mb-2">{{ report.title }}</h3>
                   <p class="text-secondary mb-2">{{ report.message }}</p>
                   <div class="small text-secondary">
-                    Rule: {{ report.rule.name }} • Window {{ report.window_start|date:"Y-m-d H:i" }} → {{ report.window_end|date:"Y-m-d H:i" }} UTC
+                    Rule: {{ report.rule.name }} • Window <span data-local-datetime="{{ report.window_start|date:'c' }}" data-local-style="datetime-compact">{{ report.window_start|date:"Y-m-d H:i" }}</span> → <span data-local-datetime="{{ report.window_end|date:'c' }}" data-local-style="datetime-compact">{{ report.window_end|date:"Y-m-d H:i" }} UTC</span>
                   </div>
                   {% if report.notification_status_code %}
                     <div class="small text-secondary mt-1">Notification HTTP {{ report.notification_status_code }}{% if report.notification_sent %} delivered{% else %} failed{% endif %}</div>
@@ -116,7 +116,7 @@
           <span>Window {{ rule.period_hours }}h</span>
           <span>Every {{ rule.cadence_hours }}h</span>
           <span>{% if rule.send_notifications %}Notifies{% else %}Stored only{% endif %}</span>
-          <span>Next {{ rule.next_run_at|date:"Y-m-d H:i"|default:"-" }} UTC</span>
+          <span>Next {% if rule.next_run_at %}<span data-local-datetime="{{ rule.next_run_at|date:'c' }}" data-local-style="datetime-compact">{{ rule.next_run_at|date:"Y-m-d H:i" }} UTC</span>{% else %}-{% endif %}</span>
         </div>
       </article>
     {% endfor %}
@@ -153,7 +153,7 @@
               <span class="rule-meta-chip"><i class="bi bi-clock-history"></i> Covers {{ form.instance.period_hours|default:24 }} hour{{ form.instance.period_hours|default:24|pluralize }}</span>
               <span class="rule-meta-chip"><i class="bi bi-arrow-repeat"></i> Runs every {{ form.instance.cadence_hours|default:24 }} hour{{ form.instance.cadence_hours|default:24|pluralize }}</span>
               <span class="rule-meta-chip"><i class="bi bi-send"></i> {% if form.instance.send_notifications %}Sends notifications{% else %}Stored only{% endif %}</span>
-              <span class="rule-meta-chip"><i class="bi bi-calendar-event"></i> Next {{ form.instance.next_run_at|date:"Y-m-d H:i"|default:"auto-scheduled" }}</span>
+              <span class="rule-meta-chip"><i class="bi bi-calendar-event"></i> Next {% if form.instance.next_run_at %}<span data-local-datetime="{{ form.instance.next_run_at|date:'c' }}" data-local-style="datetime-compact">{{ form.instance.next_run_at|date:"Y-m-d H:i" }}</span>{% else %}auto-scheduled{% endif %}</span>
             </div>
           </div>
 

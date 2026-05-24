@@ -30,7 +30,7 @@
       </div>
       <div class="alerts-feed">
         {% for run in running_runs %}
-          <article class="alert-card report-card backup-run-card running-backup-card" data-backup-run-card data-run-id="{{ run.id }}" data-status-url="{% url 'monitor:backup-run-status' run.id %}" data-started-label="{{ run.started_at|date:'Y-m-d H:i:s' }}">
+          <article class="alert-card report-card backup-run-card running-backup-card" data-backup-run-card data-run-id="{{ run.id }}" data-status-url="{% url 'monitor:backup-run-status' run.id %}" data-started-label="{{ run.started_at|date:'c' }}">
             <div class="d-flex justify-content-between align-items-start gap-3">
               <div class="flex-grow-1">
                 <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
@@ -39,8 +39,8 @@
                 </div>
                 <h3 class="h5 mb-2">{{ run.job.source_path }} → {{ run.job.destination_label }}</h3>
                 <div class="small text-secondary mb-3" data-run-meta>
-                  Started {{ run.started_at|date:"Y-m-d H:i:s" }} UTC
-                  {% if run.heartbeat_at %} • heartbeat {{ run.heartbeat_at|date:"H:i:s" }}{% endif %}
+                  Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }} UTC</span>
+                  {% if run.heartbeat_at %} • heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="time-short">{{ run.heartbeat_at|date:"H:i:s" }}</span>{% endif %}
                   {% if run.runner_label %} • runner {{ run.runner_label }}{% endif %}
                 </div>
                 <details class="backup-run-log-details" open>
@@ -92,8 +92,8 @@
                 </div>
                 <h3 class="h6 mb-1">{{ run.summary }}</h3>
                 <div class="small text-secondary">
-                  {{ run.started_at|date:"Y-m-d H:i:s" }} UTC
-                  {% if run.finished_at %} • finished {{ run.finished_at|date:"H:i:s" }}{% endif %}
+                  <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }} UTC</span>
+                  {% if run.finished_at %} • finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="time-short">{{ run.finished_at|date:"H:i:s" }}</span>{% endif %}
                   {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
                 </div>
               </div>
@@ -497,9 +497,7 @@
 
   function formatBackupTime(value) {
     if (!value) return null;
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toISOString().slice(11, 19);
+    return formatLocalDateTime(value, "time-short");
   }
 
   function updateRunPill(pill, status) {
@@ -550,7 +548,7 @@
       }
       if (metaNode) {
         const heartbeat = formatBackupTime(payload.heartbeat_at);
-        metaNode.textContent = `Started ${card.dataset.startedLabel} UTC${heartbeat ? ` • heartbeat ${heartbeat}` : ""}${payload.runner_label ? ` • runner ${payload.runner_label}` : ""}`;
+        metaNode.textContent = `Started ${formatLocalDateTime(card.dataset.startedLabel, "datetime-short")}${heartbeat ? ` • heartbeat ${heartbeat}` : ""}${payload.runner_label ? ` • runner ${payload.runner_label}` : ""}`;
       }
       if (pidNode) pidNode.textContent = payload.process_pid || "...";
       if (launchNode) launchNode.textContent = payload.launched_by || "";

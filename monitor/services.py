@@ -41,6 +41,21 @@ def _safe_load_avg():
         return (0.0, 0.0, 0.0)
 
 
+def _platform_label():
+    system_name = platform.system()
+    release = platform.release()
+    if system_name != "Linux":
+        return f"{system_name} {release}".strip()
+    try:
+        info = platform.freedesktop_os_release()
+    except (AttributeError, OSError):
+        info = {}
+    distro_name = (info.get("PRETTY_NAME") or info.get("NAME") or "").strip().strip('"')
+    if distro_name:
+        return distro_name
+    return f"Linux {release}".strip()
+
+
 def _network_stats():
     global _LAST_NETWORK_SAMPLE
 
@@ -168,7 +183,7 @@ def _process_rows(limit):
 def collect_snapshot():
     settings_obj = MonitoringSettings.load()
     hostname = socket.gethostname()
-    platform_label = f"{platform.system()} {platform.release()}"
+    platform_label = _platform_label()
 
     boot_dt = datetime.fromtimestamp(psutil.boot_time(), tz=dt_timezone.utc)
     uptime = int(time.time() - psutil.boot_time())

@@ -88,6 +88,8 @@ def build_time_series_chart_data(snapshots, *, hours, sample_interval_seconds, w
                     {
                         "start": missing_start.strftime("%Y-%m-%d %H:%M:%S"),
                         "end": missing_end.strftime("%Y-%m-%d %H:%M:%S"),
+                        "start_iso": missing_start.isoformat(),
+                        "end_iso": missing_end.isoformat(),
                         "duration": format_duration((missing_end - missing_start).total_seconds()),
                     }
                 )
@@ -106,6 +108,8 @@ def build_time_series_chart_data(snapshots, *, hours, sample_interval_seconds, w
             {
                 "start": missing_start.strftime("%Y-%m-%d %H:%M:%S"),
                 "end": window_end.strftime("%Y-%m-%d %H:%M:%S"),
+                "start_iso": missing_start.isoformat(),
+                "end_iso": window_end.isoformat(),
                 "duration": format_duration((window_end - missing_start).total_seconds()),
             }
         )

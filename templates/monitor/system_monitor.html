@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load monitor_extras %}
 
 {% block title %}Monitor | System Monitor{% endblock %}
 
@@ -8,11 +9,15 @@
   <div>
     <p class="eyebrow mb-2">Live system view</p>
     <h1 class="display-6 mb-1">Web system monitor</h1>
-    <p class="text-secondary mb-0">{{ latest_snapshot.hostname }} • {{ latest_snapshot.platform_label }} • refreshed every {{ settings_obj.sample_interval_seconds }}s</p>
+    <p class="text-secondary mb-0 d-flex flex-wrap align-items-center gap-2">
+      <span>{{ latest_snapshot.hostname }}</span>
+      <span class="os-chip {{ latest_snapshot.platform_label|platform_tone_class }}"><i class="{{ latest_snapshot.platform_label|platform_icon_class }}"></i><span>{{ latest_snapshot.platform_label }}</span></span>
+      <span>refreshed every {{ settings_obj.sample_interval_seconds }}s</span>
+    </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
-    <span class="badge text-bg-light border">Captured {{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span>
-    <span class="badge text-bg-light border">Uptime {{ latest_snapshot.uptime_seconds }}s</span>
+    <span class="badge text-bg-light border">Captured <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></span>
+    <span class="badge text-bg-light border">Uptime {{ latest_snapshot.uptime_seconds|human_uptime }}</span>
   </div>
 </div>
 
