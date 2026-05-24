@@ -4,6 +4,7 @@
 {% block title %}Monitor | System Monitor{% endblock %}
 
 {% block content %}
+{% with sort=process_sort dir=process_dir per_page=process_per_page auto_refresh=auto_refresh_seconds %}
 {% if latest_snapshot %}
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
   <div>
@@ -11,13 +12,31 @@
     <h1 class="display-6 mb-1">Web system monitor</h1>
     <p class="text-secondary mb-0 d-flex flex-wrap align-items-center gap-2">
       <span>{{ latest_snapshot.hostname }}</span>
-      <span class="os-chip {{ latest_snapshot.platform_label|platform_tone_class }}"><i class="{{ latest_snapshot.platform_label|platform_icon_class }}"></i><span>{{ latest_snapshot.platform_label }}</span></span>
+      <span class="os-chip {{ latest_snapshot.platform_label|platform_tone_class }}">
+        <span class="os-symbol" aria-hidden="true">{{ latest_snapshot.platform_label|platform_icon_glyph }}</span>
+        <i class="{{ latest_snapshot.platform_label|platform_icon_class }}" aria-hidden="true"></i>
+        <span>{{ latest_snapshot.platform_label }}</span>
+      </span>
       <span>refreshed every {{ settings_obj.sample_interval_seconds }}s</span>
     </p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <span class="badge text-bg-light border">Captured <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }} UTC</span></span>
     <span class="badge text-bg-light border">Uptime {{ latest_snapshot.uptime_seconds|human_uptime }}</span>
+    <form method="get" class="d-flex align-items-center gap-2">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+      <input type="hidden" name="process_page" value="1">
+      <input type="hidden" name="per_page" value="{{ per_page }}">
+      <label class="small text-secondary" for="autoRefreshSelect">Autorefresh</label>
+      <select id="autoRefreshSelect" name="auto_refresh" class="form-select form-select-sm bg-transparent text-light border-secondary-subtle" onchange="this.form.submit()">
+        <option value="0" {% if auto_refresh == 0 %}selected{% endif %}>Off</option>
+        <option value="15" {% if auto_refresh == 15 %}selected{% endif %}>15s</option>
+        <option value="30" {% if auto_refresh == 30 %}selected{% endif %}>30s</option>
+        <option value="60" {% if auto_refresh == 60 %}selected{% endif %}>60s</option>
+        <option value="120" {% if auto_refresh == 120 %}selected{% endif %}>120s</option>
+      </select>
+    </form>
   </div>
 </div>
 
@@ -139,26 +158,42 @@
     <section class="panel-card p-4 h-100">
       <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <p class="eyebrow mb-2">Top processes</p>
+          <p class="eyebrow mb-2">Live processes</p>
           <h2 class="h4 mb-0">Htop-inspired process table</h2>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 small text-secondary">
+          <span>Showing {{ live_process_page.start_index }}-{{ live_process_page.end_index }} of {{ live_process_page.paginator.count }}</span>
+          <form method="get" class="d-flex align-items-center gap-2">
+            <input type="hidden" name="sort" value="{{ sort }}">
+            <input type="hidden" name="dir" value="{{ dir }}">
+            <input type="hidden" name="process_page" value="1">
+            <input type="hidden" name="auto_refresh" value="{{ auto_refresh }}">
+            <label for="perPageSelect" class="small text-secondary">Per page</label>
+            <select id="perPageSelect" name="per_page" class="form-select form-select-sm bg-transparent text-light border-secondary-subtle" onchange="this.form.submit()">
+              <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+              <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+              <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+              <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
+            </select>
+          </form>
         </div>
       </div>
       <div class="table-responsive">
-        <table class="table table-dark align-middle monitor-table">
+        <table class="table table-dark align-middle monitor-table process-table-live">
           <thead>
             <tr>
-              <th>PID</th>
-              <th>Name</th>
-              <th>Status</th>
-              <th>CPU %</th>
-              <th>MEM %</th>
-              <th>RSS MB</th>
-              <th>Threads</th>
-              <th>User</th>
+              <th><a class="process-sort-link" href="?sort=pid&dir={% if sort == 'pid' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">PID</a></th>
+              <th><a class="process-sort-link" href="?sort=name&dir={% if sort == 'name' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Name</a></th>
+              <th><a class="process-sort-link" href="?sort=status&dir={% if sort == 'status' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Status</a></th>
+              <th><a class="process-sort-link" href="?sort=cpu_percent&dir={% if sort == 'cpu_percent' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">CPU %</a></th>
+              <th><a class="process-sort-link" href="?sort=memory_percent&dir={% if sort == 'memory_percent' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">MEM %</a></th>
+              <th><a class="process-sort-link" href="?sort=memory_rss_mb&dir={% if sort == 'memory_rss_mb' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">RSS MB</a></th>
+              <th><a class="process-sort-link" href="?sort=threads&dir={% if sort == 'threads' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Threads</a></th>
+              <th><a class="process-sort-link" href="?sort=username&dir={% if sort == 'username' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">User</a></th>
             </tr>
           </thead>
           <tbody>
-            {% for process in latest_snapshot.processes.all %}
+            {% for process in live_process_page %}
               <tr>
                 <td>{{ process.pid }}</td>
                 <td>
@@ -178,6 +213,19 @@
           </tbody>
         </table>
       </div>
+      {% if live_process_page and live_process_page.paginator.num_pages > 1 %}
+        <div class="d-flex justify-content-between align-items-center gap-2 mt-3 flex-wrap">
+          <div class="small text-secondary">Page {{ live_process_page.number }} of {{ live_process_page.paginator.num_pages }}</div>
+          <div class="d-flex gap-2 flex-wrap">
+            {% if live_process_page.has_previous %}
+              <a class="btn btn-outline-light btn-sm" href="?sort={{ sort }}&dir={{ dir }}&process_page={{ live_process_page.previous_page_number }}&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Previous</a>
+            {% endif %}
+            {% if live_process_page.has_next %}
+              <a class="btn btn-outline-light btn-sm" href="?sort={{ sort }}&dir={{ dir }}&process_page={{ live_process_page.next_page_number }}&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Next</a>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
     </section>
   </div>
 </div>
@@ -188,12 +236,13 @@
   <p class="text-secondary mb-0">Start the sampler container or wait for the first collection cycle.</p>
 </section>
 {% endif %}
+{% endwith %}
 {% endblock %}
 
 {% block scripts %}
-{% if settings_obj.sample_interval_seconds %}
+{% if auto_refresh_seconds %}
 <script>
-  window.setTimeout(() => window.location.reload(), {{ settings_obj.sample_interval_seconds }} * 1000);
+  window.setTimeout(() => window.location.reload(), {{ auto_refresh_seconds }} * 1000);
 </script>
 {% endif %}
 {% endblock %}

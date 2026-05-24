@@ -63,6 +63,38 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:home"))
         self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
 
+    def test_system_monitor_page_supports_process_sort_and_pagination(self):
+        snapshot = self._create_snapshot(timezone.now(), platform_label="Arch Linux")
+        ProcessSnapshot.objects.create(
+            snapshot=snapshot,
+            pid=100,
+            name="zeta",
+            username="alice",
+            status="running",
+            cpu_percent=10,
+            memory_percent=1,
+            memory_rss_mb=10,
+            threads=1,
+            command="zeta",
+        )
+        ProcessSnapshot.objects.create(
+            snapshot=snapshot,
+            pid=200,
+            name="alpha",
+            username="bob",
+            status="sleeping",
+            cpu_percent=20,
+            memory_percent=2,
+            memory_rss_mb=20,
+            threads=2,
+            command="alpha",
+        )
+
+        response = self.client.get(self._path("monitor:system-monitor"), {"sort": "name", "dir": "asc", "per_page": "25", "auto_refresh": "30"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Autorefresh")
+        self.assertContains(response, "Arch Linux")
+
     def test_settings_page_uses_singleton(self):
         response = self.client.get(self._path("monitor:settings"))
         self.assertEqual(response.status_code, 200)

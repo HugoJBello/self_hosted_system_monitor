@@ -19,6 +19,7 @@ from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportR
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
 from .reporting import build_time_series_chart_data
+from .services import _process_rows
 
 
 def _best_effort_reconcile_backups():
@@ -95,9 +96,54 @@ class SystemMonitorView(View):
             .order_by("-captured_at")
             .first()
         )
+        sort = request.GET.get("sort", "cpu_percent")
+        direction = request.GET.get("dir", "desc")
+        try:
+            process_page_number = max(int(request.GET.get("process_page", "1")), 1)
+        except ValueError:
+            process_page_number = 1
+        try:
+            process_per_page = min(max(int(request.GET.get("per_page", "25")), 10), 200)
+        except ValueError:
+            process_per_page = 25
+        try:
+            auto_refresh_seconds = max(int(request.GET.get("auto_refresh", "0")), 0)
+        except ValueError:
+            auto_refresh_seconds = 0
+
+        live_process_page = None
+        process_sort_fields = {
+            "pid": "pid",
+            "name": "name",
+            "status": "status",
+            "cpu_percent": "cpu_percent",
+            "memory_percent": "memory_percent",
+            "memory_rss_mb": "memory_rss_mb",
+            "threads": "threads",
+            "username": "username",
+        }
+        sort = sort if sort in process_sort_fields else "cpu_percent"
+        direction = "asc" if direction == "asc" else "desc"
+        if latest_snapshot:
+            live_process_rows = _process_rows(None)["rows"]
+
+            def process_sort_key(item):
+                value = item.get(process_sort_fields[sort])
+                if isinstance(value, str):
+                    return value.lower()
+                return value if value is not None else 0
+
+            live_process_rows.sort(key=process_sort_key, reverse=(direction == "desc"))
+            live_process_page = Paginator(live_process_rows, process_per_page).get_page(process_page_number)
+
         context = {
             "latest_snapshot": latest_snapshot,
             "settings_obj": MonitoringSettings.load(),
+            "live_process_page": live_process_page,
+            "process_sort": sort,
+            "process_dir": direction,
+            "process_per_page": process_per_page,
+            "auto_refresh_seconds": auto_refresh_seconds,
         }
         return render(request, self.template_name, context)
 

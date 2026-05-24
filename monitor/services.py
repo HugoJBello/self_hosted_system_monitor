@@ -41,15 +41,28 @@ def _safe_load_avg():
         return (0.0, 0.0, 0.0)
 
 
+def _host_os_release():
+    os_release_path = os.path.join(HOST_ROOT_PATH, "etc", "os-release")
+    data = {}
+    try:
+        with open(os_release_path, encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or "=" not in line or line.startswith("#"):
+                    continue
+                key, value = line.split("=", 1)
+                data[key] = value.strip().strip('"')
+    except OSError:
+        return {}
+    return data
+
+
 def _platform_label():
     system_name = platform.system()
     release = platform.release()
     if system_name != "Linux":
         return f"{system_name} {release}".strip()
-    try:
-        info = platform.freedesktop_os_release()
-    except (AttributeError, OSError):
-        info = {}
+    info = _host_os_release()
     distro_name = (info.get("PRETTY_NAME") or info.get("NAME") or "").strip().strip('"')
     if distro_name:
         return distro_name

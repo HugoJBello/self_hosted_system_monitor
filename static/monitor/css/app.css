@@ -150,6 +150,28 @@ body.app-shell {
   background: rgba(255, 255, 255, 0.05);
 }
 
+.os-symbol {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: inherit;
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1;
+}
+
+.os-chip i {
+  font-size: 1.05rem;
+  filter: drop-shadow(0 0 0.35rem rgba(255, 255, 255, 0.16));
+}
+
 .os-tone-ubuntu { color: #ff9a6b; }
 .os-tone-debian { color: #ff7aa2; }
 .os-tone-fedora { color: #7cb7ff; }
@@ -167,6 +189,20 @@ body.app-shell {
 .os-tone-windows { color: #7ec0ff; }
 .os-tone-linux { color: #ffe082; }
 .os-tone-generic { color: #d6dde8; }
+
+.process-sort-link {
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.process-sort-link:hover {
+  color: #5dc6ff;
+}
+
+.process-table-live th {
+  font-weight: 600;
+}
 
 .process-badges {
   display: flex;
