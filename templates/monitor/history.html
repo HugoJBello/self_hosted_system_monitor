@@ -294,12 +294,15 @@
 {{ chart_data|json_script:"history-chart-data" }}
 <script>
   const chartData = JSON.parse(document.getElementById("history-chart-data").textContent);
+  const serverLabels = chartData.labels || [];
   const labelMoments = chartData.label_datetimes || [];
   const rangeStartIsos = chartData.range_start_isos || [];
   const rangeEndIsos = chartData.range_end_isos || [];
-  const labels = labelMoments.map((iso, index) => (
-    window.formatConfiguredDateTime(iso, chartData.bucket_seconds >= 86400 ? "date" : "time-short") || chartData.labels[index]
-  ));
+  const labels = labelMoments.length
+    ? labelMoments.map((iso, index) => (
+        window.formatConfiguredDateTime(iso, chartData.bucket_seconds >= 86400 ? "date" : "time-short") || serverLabels[index]
+      ))
+    : serverLabels;
   const denseSeries = labels.length > 40;
 
   const noDataOverlayPlugin = {
@@ -384,7 +387,11 @@
           callbacks: {
             title(items) {
               const index = items[0]?.dataIndex ?? 0;
-              return window.formatConfiguredRange(rangeStartIsos[index], rangeEndIsos[index], "datetime-short") || labels[index];
+              return (
+                window.formatConfiguredRange(rangeStartIsos[index], rangeEndIsos[index], "datetime-short")
+                || (chartData.full_labels || [])[index]
+                || labels[index]
+              );
             }
           }
         }

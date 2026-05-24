@@ -108,10 +108,10 @@
         const timeZone = getConfiguredTimeZone();
         const presets = {
           datetime: { dateStyle: "medium", timeStyle: "medium" },
-          datetime-short: { dateStyle: "short", timeStyle: "short" },
-          datetime-compact: { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" },
+          "datetime-short": { dateStyle: "short", timeStyle: "short" },
+          "datetime-compact": { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" },
           time: { timeStyle: "medium" },
-          time-short: { timeStyle: "short" },
+          "time-short": { timeStyle: "short" },
           date: { dateStyle: "medium" },
         };
         return new Intl.DateTimeFormat(locale, { ...(presets[style] || presets.datetime), timeZone }).format(date);
