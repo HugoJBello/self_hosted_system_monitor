@@ -150,7 +150,10 @@ class BackupJobForm(forms.ModelForm):
             "name",
             "description",
             "enabled",
+            "backup_type",
             "source_path",
+            "local_dest_path",
+            "trigger_on_mount",
             "schedule_minutes",
             "remote_host",
             "remote_user",
@@ -175,7 +178,10 @@ class BackupJobForm(forms.ModelForm):
             "name": forms.TextInput(attrs={"class": "form-control"}),
             "description": forms.Textarea(attrs={"class": "form-control", "rows": 2}),
             "enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "backup_type": forms.Select(attrs={"class": "form-select backup-type-select"}),
             "source_path": forms.TextInput(attrs={"class": "form-control backup-source-input", "placeholder": "/home/user/Documents"}),
+            "local_dest_path": forms.TextInput(attrs={"class": "form-control backup-destination-input", "placeholder": "/media/usb/backups/laptop"}),
+            "trigger_on_mount": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "schedule_minutes": forms.NumberInput(attrs={"class": "form-control", "min": 5, "max": 43200, "step": 5, "list": "backup-schedule-presets"}),
             "remote_host": forms.TextInput(attrs={"class": "form-control", "placeholder": "backup-host.example.com"}),
             "remote_user": forms.TextInput(attrs={"class": "form-control", "placeholder": "backupuser"}),
@@ -199,10 +205,13 @@ class BackupJobForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["backup_type"].required = False
         self.fields["source_path"].label = "Source folder"
+        self.fields["local_dest_path"].label = "Destination folder"
         self.fields["remote_host"].label = "Hostname or IP"
         self.fields["remote_user"].label = "SSH user"
         self.fields["ssh_password"].label = "SSH password"
+        self.fields["backup_type"].label = "Backup type"
         self.fields["connection_mode"].label = "Connection mode"
         self.fields["auth_mode"].label = "Authentication"
         self.fields["cloudflare_service_token_id"].label = "Cloudflare service token ID"
@@ -212,6 +221,10 @@ class BackupJobForm(forms.ModelForm):
         self.fields["public_key_path"].label = "Public key path on host"
         self.fields["run_timeout_seconds"].label = "Hard timeout (seconds)"
         self.fields["idle_timeout_seconds"].label = "Idle timeout (seconds)"
+        self.fields["backup_type"].choices = [
+            ("remote", "Remote SSH or Cloudflare"),
+            ("local", "Local folder clone"),
+        ]
         self.fields["connection_mode"].choices = [
             ("direct", "Standard SSH"),
             ("cloudflare", "This host needs Cloudflare SSH params"),
@@ -226,6 +239,12 @@ class BackupJobForm(forms.ModelForm):
         value = self.cleaned_data["source_path"].strip()
         if not value.startswith("/"):
             raise forms.ValidationError("Source path must be an absolute host path.")
+        return value
+
+    def clean_local_dest_path(self):
+        value = (self.cleaned_data.get("local_dest_path") or "").strip()
+        if value and not value.startswith("/"):
+            raise forms.ValidationError("Destination path must be an absolute host path.")
         return value
 
     def clean_password_file_path(self):
@@ -264,7 +283,10 @@ class BackupJobForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        backup_type = cleaned_data.get("backup_type") or "remote"
+        cleaned_data["backup_type"] = backup_type
         auth_mode = cleaned_data.get("auth_mode")
+        local_dest_path = (cleaned_data.get("local_dest_path") or "").strip()
         password_file_path = (cleaned_data.get("password_file_path") or "").strip()
         ssh_password = (cleaned_data.get("ssh_password") or "").strip()
         public_key_path = (cleaned_data.get("public_key_path") or "").strip()
@@ -274,18 +296,31 @@ class BackupJobForm(forms.ModelForm):
         cloudflare_service_token_id = (cleaned_data.get("cloudflare_service_token_id") or "").strip()
         cloudflare_service_token_secret = (cleaned_data.get("cloudflare_service_token_secret") or "").strip()
 
-        if auth_mode == "password_file" and not password_file_path:
-            self.add_error("password_file_path", "Password file auth needs an absolute file path.")
-        if auth_mode == "password_value" and not ssh_password:
-            self.add_error("ssh_password", "Saved password auth needs a password.")
-        if install_public_key and not public_key_path:
-            self.add_error("public_key_path", "Public key installation needs a public key path.")
-        if connection_mode == "cloudflare":
-            if bool(cloudflare_service_token_id) != bool(cloudflare_service_token_secret):
-                self.add_error(
-                    "cloudflare_service_token_secret",
-                    "If you use Cloudflare service tokens, fill both the ID and the secret.",
-                )
+        if backup_type == "local":
+            if not local_dest_path:
+                self.add_error("local_dest_path", "Local backups need a destination folder on this machine.")
+        else:
+            remote_host = (cleaned_data.get("remote_host") or "").strip()
+            remote_user = (cleaned_data.get("remote_user") or "").strip()
+            remote_dir = (cleaned_data.get("remote_dir") or "").strip()
+            if not remote_host:
+                self.add_error("remote_host", "Remote backups need a hostname or IP.")
+            if not remote_user:
+                self.add_error("remote_user", "Remote backups need an SSH user.")
+            if not remote_dir:
+                self.add_error("remote_dir", "Remote backups need a remote directory.")
+            if auth_mode == "password_file" and not password_file_path:
+                self.add_error("password_file_path", "Password file auth needs an absolute file path.")
+            if auth_mode == "password_value" and not ssh_password:
+                self.add_error("ssh_password", "Saved password auth needs a password.")
+            if install_public_key and not public_key_path:
+                self.add_error("public_key_path", "Public key installation needs a public key path.")
+            if connection_mode == "cloudflare":
+                if bool(cloudflare_service_token_id) != bool(cloudflare_service_token_secret):
+                    self.add_error(
+                        "cloudflare_service_token_secret",
+                        "If you use Cloudflare service tokens, fill both the ID and the secret.",
+                    )
         run_timeout_seconds = cleaned_data.get("run_timeout_seconds") or 0
         idle_timeout_seconds = cleaned_data.get("idle_timeout_seconds") or 0
         if idle_timeout_seconds and run_timeout_seconds and idle_timeout_seconds >= run_timeout_seconds:

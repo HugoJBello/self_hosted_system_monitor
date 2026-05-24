@@ -326,6 +326,10 @@ class ReportRun(models.Model):
 
 
 class BackupJob(models.Model):
+    BACKUP_TYPE_CHOICES = [
+        ("remote", "Remote SSH/Cloudflare"),
+        ("local", "Local folder clone"),
+    ]
     CONNECTION_CHOICES = [
         ("direct", "Direct SSH"),
         ("cloudflare", "Cloudflare Access SSH"),
@@ -339,14 +343,18 @@ class BackupJob(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     enabled = models.BooleanField(default=True)
+    backup_type = models.CharField(max_length=16, choices=BACKUP_TYPE_CHOICES, default="remote")
     source_path = models.CharField(max_length=500, help_text="Host path, for example /home/user/Documents")
+    local_dest_path = models.CharField(max_length=500, blank=True, default="")
+    trigger_on_mount = models.BooleanField(default=False)
+    last_mount_was_available = models.BooleanField(default=False)
     schedule_minutes = models.PositiveIntegerField(
         default=60,
         validators=[MinValueValidator(5), MaxValueValidator(60 * 24 * 30)],
     )
-    remote_host = models.CharField(max_length=255)
-    remote_user = models.CharField(max_length=255)
-    remote_dir = models.CharField(max_length=500)
+    remote_host = models.CharField(max_length=255, blank=True, default="")
+    remote_user = models.CharField(max_length=255, blank=True, default="")
+    remote_dir = models.CharField(max_length=500, blank=True, default="")
     ssh_port = models.PositiveIntegerField(
         default=22,
         validators=[MinValueValidator(1), MaxValueValidator(65535)],
@@ -388,6 +396,19 @@ class BackupJob(models.Model):
     @property
     def exclude_patterns_list(self):
         return [line.strip() for line in self.exclude_patterns.splitlines() if line.strip()]
+
+    @property
+    def is_local(self):
+        return self.backup_type == "local"
+
+    @property
+    def destination_label(self):
+        if self.is_local:
+            return self.local_dest_path or "(local destination not set)"
+        host = self.remote_host or "(remote host not set)"
+        remote_dir = self.remote_dir or "/"
+        user = f"{self.remote_user}@" if self.remote_user else ""
+        return f"{user}{host}:{remote_dir}"
 
     def __str__(self):
         return self.name

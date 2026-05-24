@@ -37,6 +37,7 @@ DEFAULT_TIMEOUT_EXIT_CODE = 124
 RSYNC_PARTIAL_SUCCESS_EXIT_CODES = {23, 24}
 BACKUP_NICE_LEVEL = 19
 BACKUP_STOP_POLL_INTERVAL_SECONDS = 2
+MOUNT_SENSITIVE_ROOTS = ("/media", "/mnt", "/run/media")
 BROWSER_ROOTS = [
     "/home",
     "/media",
@@ -197,6 +198,68 @@ def _ensure_local_source(job):
     return source_path
 
 
+def _host_mounts_file():
+    procfs_path = os.getenv("MONITOR_PROCFS_PATH", "/hostfs/proc")
+    return os.path.join(procfs_path, "mounts")
+
+
+def _decode_mount_path(value):
+    return (
+        value.replace("\\040", " ")
+        .replace("\\011", "\t")
+        .replace("\\012", "\n")
+        .replace("\\134", "\\")
+    )
+
+
+def _mounted_host_paths():
+    mounts = set()
+    mounts_file = _host_mounts_file()
+    try:
+        with open(mounts_file, encoding="utf-8") as handle:
+            for line in handle:
+                parts = line.split()
+                if len(parts) < 2:
+                    continue
+                mounts.add(os.path.normpath(_decode_mount_path(parts[1])))
+    except OSError:
+        return set()
+    return mounts
+
+
+def _path_is_on_sensitive_mount(path, mounted_paths=None):
+    normalized = os.path.normpath(path)
+    if not normalized.startswith(MOUNT_SENSITIVE_ROOTS):
+        return True
+    mounted_paths = mounted_paths if mounted_paths is not None else _mounted_host_paths()
+    for mount_path in mounted_paths:
+        if mount_path == "/":
+            continue
+        if normalized == mount_path or normalized.startswith(f"{mount_path.rstrip('/')}/"):
+            return True
+    return False
+
+
+def _local_destination_is_available(job, mounted_paths=None):
+    destination_path = os.path.normpath((job.local_dest_path or "").strip() or "/")
+    if not destination_path.startswith("/"):
+        return False
+    return _path_is_on_sensitive_mount(destination_path, mounted_paths=mounted_paths)
+
+
+def _ensure_local_destination(job):
+    if not (job.local_dest_path or "").strip():
+        raise ValueError("Local backup destination path is required.")
+    mounted_paths = _mounted_host_paths()
+    if not _local_destination_is_available(job, mounted_paths=mounted_paths):
+        raise RuntimeError(f"Local destination is not mounted right now: {job.local_dest_path}")
+    destination_path = _hostfs_path(job.local_dest_path)
+    os.makedirs(destination_path, exist_ok=True)
+    if not os.path.isdir(destination_path):
+        raise FileNotFoundError(f"Local destination directory is not available inside container mapping: {job.local_dest_path}")
+    return destination_path
+
+
 def _proxy_command(job):
     if job.connection_mode != "cloudflare":
         return None
@@ -257,6 +320,11 @@ def _ssh_target(job):
 
 def _remote_rsync_target(job):
     return f"{job.remote_user}@{_normalized_remote_host(job)}:{job.remote_dir.rstrip('/')}/"
+
+
+def _local_rsync_target(job):
+    destination_path = _ensure_local_destination(job)
+    return f"{destination_path.rstrip('/')}/"
 
 
 def _resolve_password(job):
@@ -577,11 +645,15 @@ def _rsync_command(job, source_path, password, use_key_auth):
     for pattern in job.exclude_patterns_list:
         base_cmd.extend(["--exclude", pattern])
 
+    if job.is_local:
+        return [
+            *base_cmd,
+            f"{source_path.rstrip('/')}/",
+            _local_rsync_target(job),
+        ]
+
     ssh_command = _ssh_base_cmd(job, for_rsync=True)
-    if job.connection_mode == "direct":
-        ssh_command = f"{ssh_command} -o User={shlex.quote(job.remote_user)}"
-    else:
-        ssh_command = f"{ssh_command} -o User={shlex.quote(job.remote_user)}"
+    ssh_command = f"{ssh_command} -o User={shlex.quote(job.remote_user)}"
 
     rsync_cmd = [
         *base_cmd,
@@ -604,19 +676,24 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
 
     _lower_current_process_priority()
     source_path = _ensure_local_source(job)
-    normalized_host = _normalized_remote_host(job)
-    password = _resolve_password(job)
-    command_preview = _format_command(_with_low_priority(_rsync_command(job, source_path, password, use_key_auth=not bool(password))))
+    if job.is_local:
+        normalized_target = job.local_dest_path
+        password = ""
+        command_preview = _format_command(_with_low_priority(_rsync_command(job, source_path, "", use_key_auth=True)))
+    else:
+        normalized_target = _normalized_remote_host(job)
+        password = _resolve_password(job)
+        command_preview = _format_command(_with_low_priority(_rsync_command(job, source_path, password, use_key_auth=not bool(password))))
     log_lines = [
         f"Starting backup job {job.name}",
         f"Source: {job.source_path}",
-        f"Target: {job.remote_user}@{normalized_host}:{job.remote_dir}",
+        f"Target: {job.destination_label}",
         f"Runner: {_runner_label()}",
         f"Configured timeout: {job.run_timeout_seconds}s",
         f"Configured idle timeout: {job.idle_timeout_seconds}s",
         f"Planned rsync command: {command_preview}",
     ]
-    if job.connection_mode == "cloudflare":
+    if not job.is_local and job.connection_mode == "cloudflare":
         auth_home = (job.cloudflare_auth_home or "").strip()
         if auth_home:
             log_lines.append(f"Cloudflare auth home: {auth_home}")
@@ -627,32 +704,39 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
     for line in log_lines:
         push_log(line)
 
-    created_remote_dir, ensure_output = _ensure_remote_directory(
-        job,
-        password if password else "",
-        heartbeat_callback=heartbeat_callback,
-        should_stop=should_stop,
-    )
-    if ensure_output:
+    if job.is_local:
+        created_remote_dir = False
+        ensure_output = f"Local destination ready: {job.local_dest_path}"
         log_lines.append(ensure_output)
         push_log(ensure_output)
+        use_key_auth = True
+    else:
+        created_remote_dir, ensure_output = _ensure_remote_directory(
+            job,
+            password if password else "",
+            heartbeat_callback=heartbeat_callback,
+            should_stop=should_stop,
+        )
+        if ensure_output:
+            log_lines.append(ensure_output)
+            push_log(ensure_output)
 
-    public_key_output = _install_public_key(
-        job,
-        password,
-        heartbeat_callback=heartbeat_callback,
-        should_stop=should_stop,
-    )
-    if public_key_output:
-        log_lines.append(public_key_output)
-        push_log(public_key_output)
+        public_key_output = _install_public_key(
+            job,
+            password,
+            heartbeat_callback=heartbeat_callback,
+            should_stop=should_stop,
+        )
+        if public_key_output:
+            log_lines.append(public_key_output)
+            push_log(public_key_output)
 
-    use_key_auth = _key_auth_works(job, heartbeat_callback=heartbeat_callback, should_stop=should_stop)
-    auth_message = "Key-based auth works." if use_key_auth else "Key-based auth unavailable, using password mode."
-    log_lines.append(auth_message)
-    push_log(auth_message)
-    if not use_key_auth and not password:
-        raise RuntimeError("Key authentication failed and no password-based auth is configured.")
+        use_key_auth = _key_auth_works(job, heartbeat_callback=heartbeat_callback, should_stop=should_stop)
+        auth_message = "Key-based auth works." if use_key_auth else "Key-based auth unavailable, using password mode."
+        log_lines.append(auth_message)
+        push_log(auth_message)
+        if not use_key_auth and not password:
+            raise RuntimeError("Key authentication failed and no password-based auth is configured.")
 
     rsync_cmd = _with_low_priority(_rsync_command(job, source_path, password, use_key_auth))
     push_log(f"Starting rsync transfer with command: {_format_command(rsync_cmd)}")
@@ -697,7 +781,7 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
             created_remote_dir=created_remote_dir,
         )
     if command_result.exit_code == 0:
-        summary = f"Backup finished to {normalized_host}:{job.remote_dir}"
+        summary = f"Backup finished to {job.destination_label}"
         return BackupExecutionResult(
             True,
             command_result.exit_code,
@@ -874,6 +958,15 @@ def _advance_job_schedule(job, finished_at):
         next_run_at += cadence
     job.next_run_at = next_run_at
     job.save(update_fields=["last_run_at", "next_run_at", "updated_at"])
+
+
+def _skip_job_schedule(job, skipped_at):
+    next_run_at = job.next_run_at or skipped_at
+    cadence = timedelta(minutes=max(job.schedule_minutes, 5))
+    while next_run_at <= skipped_at:
+        next_run_at += cadence
+    job.next_run_at = next_run_at
+    job.save(update_fields=["next_run_at", "updated_at"])
 
 
 def execute_backup_job(job, *, backup_run=None):
@@ -1060,9 +1153,28 @@ def dispatch_scheduled_backups(snapshot_time=None):
     except Exception:
         logger.exception("Failed to reconcile stale backup runs.")
     due_jobs = BackupJob.objects.filter(enabled=True, next_run_at__isnull=False, next_run_at__lte=snapshot_time).order_by("position", "id")
+    mounted_paths = _mounted_host_paths()
+    local_jobs = BackupJob.objects.filter(enabled=True, backup_type="local").order_by("position", "id")
     runs = []
+    for job in local_jobs:
+        was_mounted = job.last_mount_was_available
+        mounted_now = _local_destination_is_available(job, mounted_paths=mounted_paths)
+        fields_to_update = []
+        if was_mounted != mounted_now:
+            job.last_mount_was_available = mounted_now
+            fields_to_update.extend(["last_mount_was_available", "updated_at"])
+        if mounted_now and job.trigger_on_mount and not BackupRun.objects.filter(job=job, status="running").exists() and not was_mounted:
+            try:
+                runs.append(start_background_backup(job, launched_by="scheduler"))
+            except Exception:
+                logger.exception("Failed to launch mount-triggered local backup job %s.", job.id)
+        if fields_to_update:
+            job.save(update_fields=fields_to_update)
     for job in due_jobs:
         if BackupRun.objects.filter(job=job, status="running").exists():
+            continue
+        if job.is_local and not _local_destination_is_available(job, mounted_paths=mounted_paths):
+            _skip_job_schedule(job, snapshot_time)
             continue
         try:
             runs.append(start_background_backup(job, launched_by="scheduler"))
@@ -1073,10 +1185,21 @@ def dispatch_scheduled_backups(snapshot_time=None):
 
 def list_browser_roots():
     roots = []
+    seen_paths = set()
     for root_path in BROWSER_ROOTS:
         absolute_path = _hostfs_path(root_path)
         if os.path.isdir(absolute_path):
             roots.append({"path": root_path, "name": root_path.strip("/") or "/"})
+            seen_paths.add(root_path)
+    for mount_path in sorted(_mounted_host_paths()):
+        if not mount_path.startswith(MOUNT_SENSITIVE_ROOTS):
+            continue
+        if mount_path in seen_paths:
+            continue
+        absolute_path = _hostfs_path(mount_path)
+        if os.path.isdir(absolute_path):
+            roots.append({"path": mount_path, "name": f"Mounted: {mount_path}"})
+            seen_paths.add(mount_path)
     return roots
 
 

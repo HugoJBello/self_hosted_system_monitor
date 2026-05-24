@@ -78,16 +78,16 @@
           <strong>{{ backup_run.job.source_path }}</strong>
         </div>
         <div class="mini-stat">
-          <span class="label">Remote</span>
-          <strong>{{ backup_run.job.remote_user }}@{{ backup_run.job.remote_host }}</strong>
+          <span class="label">Type</span>
+          <strong>{% if backup_run.job.is_local %}Local folder clone{% else %}Remote SSH backup{% endif %}</strong>
         </div>
         <div class="mini-stat">
           <span class="label">Destination</span>
-          <strong>{{ backup_run.job.remote_dir }}</strong>
+          <strong>{{ backup_run.job.destination_label }}</strong>
         </div>
         <div class="mini-stat">
           <span class="label">Mode</span>
-          <strong>{{ backup_run.job.get_connection_mode_display }} • {{ backup_run.job.get_auth_mode_display }}</strong>
+          <strong>{% if backup_run.job.is_local %}{% if backup_run.job.trigger_on_mount %}Run on mount • {% endif %}Local rsync{% else %}{{ backup_run.job.get_connection_mode_display }} • {{ backup_run.job.get_auth_mode_display }}{% endif %}</strong>
         </div>
         <div class="mini-stat">
           <span class="label">Timeouts</span>
@@ -106,8 +106,8 @@
           <strong data-run-last-output>{{ backup_run.last_output_at|date:"Y-m-d H:i:s"|default:"-" }}</strong>
         </div>
         <div class="mini-stat">
-          <span class="label">Remote dir created</span>
-          <strong>{% if backup_run.created_remote_dir %}Yes{% else %}No{% endif %}</strong>
+          <span class="label">{% if backup_run.job.is_local %}Destination mount trigger{% else %}Remote dir created{% endif %}</span>
+          <strong>{% if backup_run.job.is_local %}{% if backup_run.job.trigger_on_mount %}Enabled{% else %}Disabled{% endif %}{% else %}{% if backup_run.created_remote_dir %}Yes{% else %}No{% endif %}{% endif %}</strong>
         </div>
       </div>
     </section>

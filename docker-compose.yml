@@ -17,7 +17,7 @@ services:
       MONITOR_PROCFS_PATH: "/hostfs/proc"
     volumes:
       - ./data:/app/data
-      - /:/hostfs:ro
+      - /:/hostfs
 
   system_monitor_sampler:
     build: .
@@ -58,6 +58,6 @@ services:
       MONITOR_PROCFS_PATH: "/hostfs/proc"
     volumes:
       - ./data:/app/data
-      - /:/hostfs:ro
+      - /:/hostfs
     depends_on:
       - system_monitor_web

@@ -7,7 +7,7 @@ from django.urls import reverse
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -418,6 +418,53 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(job.source_path, "/home/test/UpdatedDocuments")
         self.assertEqual(job.ssh_password, "secret")
         self.assertEqual(job.cloudflare_service_token_secret, "token-secret")
+
+    def test_backup_job_edit_supports_local_backup_fields(self):
+        job = BackupJob.objects.create(
+            name="USB clone",
+            backup_type="local",
+            source_path="/home/test/Documents",
+            local_dest_path="/media/usb/docs",
+            trigger_on_mount=False,
+            schedule_minutes=30,
+        )
+
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "save_job": str(job.id),
+                f"job-{job.id}-name": job.name,
+                f"job-{job.id}-description": job.description,
+                f"job-{job.id}-enabled": "on",
+                f"job-{job.id}-backup_type": "local",
+                f"job-{job.id}-source_path": "/home/test/UpdatedDocuments",
+                f"job-{job.id}-local_dest_path": "/media/usb/updated-docs",
+                f"job-{job.id}-trigger_on_mount": "on",
+                f"job-{job.id}-schedule_minutes": "30",
+                f"job-{job.id}-remote_host": "",
+                f"job-{job.id}-remote_user": "",
+                f"job-{job.id}-remote_dir": "",
+                f"job-{job.id}-ssh_port": "22",
+                f"job-{job.id}-connection_mode": "direct",
+                f"job-{job.id}-cloudflare_auth_home": "",
+                f"job-{job.id}-cloudflare_service_token_id": "",
+                f"job-{job.id}-cloudflare_service_token_secret": "",
+                f"job-{job.id}-auth_mode": "key",
+                f"job-{job.id}-password_file_path": "",
+                f"job-{job.id}-ssh_password": "",
+                f"job-{job.id}-public_key_path": "",
+                f"job-{job.id}-max_size": "100m",
+                f"job-{job.id}-run_timeout_seconds": "7200",
+                f"job-{job.id}-idle_timeout_seconds": "900",
+                f"job-{job.id}-exclude_patterns": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertEqual(job.backup_type, "local")
+        self.assertEqual(job.local_dest_path, "/media/usb/updated-docs")
+        self.assertTrue(job.trigger_on_mount)
 
     def test_backup_run_status_prefers_runtime_state_for_running_job(self):
         job = BackupJob.objects.create(
@@ -850,6 +897,83 @@ class BackupHelpersTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "If you use Cloudflare service tokens, fill both the ID and the secret.")
+
+    @patch("monitor.backups._run_streaming_command")
+    @patch("monitor.backups._ensure_local_destination", return_value="/hostfs/media/usb/docs")
+    @patch("monitor.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
+    def test_local_backup_job_uses_local_rsync_target(
+        self,
+        mock_ensure_local_source,
+        mock_ensure_local_destination,
+        mock_run_streaming_command,
+    ):
+        job = BackupJob.objects.create(
+            name="USB clone",
+            backup_type="local",
+            source_path="/home/test/Documents",
+            local_dest_path="/media/usb/docs",
+            schedule_minutes=30,
+        )
+        mock_run_streaming_command.return_value = StreamingCommandResult(0, "", "")
+
+        result = run_backup_job(job)
+
+        self.assertTrue(result.ok)
+        command = mock_run_streaming_command.call_args.args[0]
+        self.assertIn("/hostfs/home/test/Documents/", command)
+        self.assertIn("/hostfs/media/usb/docs/", command)
+
+    @patch("monitor.backups.start_background_backup")
+    @patch("monitor.backups._local_destination_is_available", return_value=False)
+    @patch("monitor.backups.mark_stale_running_backups", return_value=[])
+    def test_dispatch_scheduled_backups_skips_unmounted_local_jobs(
+        self,
+        mock_mark_stale,
+        mock_destination_available,
+        mock_start_background,
+    ):
+        job = BackupJob.objects.create(
+            name="USB clone",
+            backup_type="local",
+            source_path="/home/test/Documents",
+            local_dest_path="/media/usb/docs",
+            schedule_minutes=30,
+            next_run_at=timezone.now() - timezone.timedelta(minutes=1),
+        )
+
+        dispatch_scheduled_backups(timezone.now())
+
+        job.refresh_from_db()
+        self.assertGreater(job.next_run_at, timezone.now() - timezone.timedelta(seconds=1))
+        mock_start_background.assert_not_called()
+
+    @patch("monitor.backups.start_background_backup")
+    @patch("monitor.backups._local_destination_is_available", return_value=True)
+    @patch("monitor.backups._mounted_host_paths", return_value={"/media/usb"})
+    @patch("monitor.backups.mark_stale_running_backups", return_value=[])
+    def test_dispatch_scheduled_backups_triggers_local_job_when_mount_appears(
+        self,
+        mock_mark_stale,
+        mock_mounted_paths,
+        mock_destination_available,
+        mock_start_background,
+    ):
+        job = BackupJob.objects.create(
+            name="USB clone",
+            backup_type="local",
+            source_path="/home/test/Documents",
+            local_dest_path="/media/usb/docs",
+            trigger_on_mount=True,
+            last_mount_was_available=False,
+            schedule_minutes=30,
+            next_run_at=timezone.now() + timezone.timedelta(minutes=20),
+        )
+
+        dispatch_scheduled_backups(timezone.now())
+
+        job.refresh_from_db()
+        self.assertTrue(job.last_mount_was_available)
+        mock_start_background.assert_called_once_with(job, launched_by="scheduler")
 
     def test_cloudflare_command_env_maps_host_home(self):
         job = BackupJob(
