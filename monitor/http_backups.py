@@ -94,7 +94,7 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
-def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None, create_root=False):
+def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None, create_root=False, include_hashes=True):
     absolute_root = _hostfs_path(host_root_path)
     if create_root:
         os.makedirs(absolute_root, exist_ok=True)
@@ -132,11 +132,13 @@ def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None
             if max_size and stat.st_size > max_size:
                 skipped.append({"path": relative_path, "reason": "too_large", "size": stat.st_size})
                 continue
-            files[relative_path] = {
+            metadata = {
                 "size": stat.st_size,
                 "mtime_ns": stat.st_mtime_ns,
-                "sha256": _sha256_file(absolute_path),
             }
+            if include_hashes:
+                metadata["sha256"] = _sha256_file(absolute_path)
+            files[relative_path] = metadata
     return {"root_path": host_root_path, "files": files, "skipped": skipped}
 
 
@@ -170,6 +172,7 @@ def http_backup_manifest_view(request):
             exclude_patterns=payload.get("exclude_patterns") or [],
             max_size_bytes=payload.get("max_size_bytes"),
             create_root=bool(payload.get("create_root")),
+            include_hashes=payload.get("include_hashes", True),
         )
     except Exception as exc:
         return _json_error(exc)
@@ -364,7 +367,16 @@ def _changed_files(source_files, dest_files):
     changed = []
     for relative_path, metadata in sorted(source_files.items()):
         other = dest_files.get(relative_path)
-        if not other or other.get("size") != metadata.get("size") or other.get("sha256") != metadata.get("sha256"):
+        if not other:
+            changed.append(relative_path)
+            continue
+        source_hash = metadata.get("sha256")
+        dest_hash = other.get("sha256")
+        if source_hash and dest_hash:
+            differs = other.get("size") != metadata.get("size") or dest_hash != source_hash
+        else:
+            differs = other.get("size") != metadata.get("size") or other.get("mtime_ns") != metadata.get("mtime_ns")
+        if differs:
             changed.append(relative_path)
     return changed
 
@@ -393,6 +405,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     common_payload = {
         "exclude_patterns": job.exclude_patterns_list,
         "max_size_bytes": max_size_bytes,
+        "include_hashes": False,
     }
 
     log(f"HTTP backup mode: {job.http_direction}")
@@ -400,6 +413,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     log(f"Remote path: {job.http_remote_path}")
     log(f"Max file size: {max_size_bytes} bytes")
     log(f"HTTP request timeout: {timeout}s")
+    log("HTTP manifest comparison: size and mtime.")
     if job.http_direction == "pull":
         local_root = job.local_dest_path
         remote_root = job.http_remote_path

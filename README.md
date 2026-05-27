@@ -56,6 +56,7 @@ Change this password immediately from the account password page. The default adm
 - `DJANGO_ALLOWED_HOSTS`: default `*`
 - `DJANGO_CSRF_TRUST_ANY_ORIGIN`: default `False`; set `True` to allow POST forms from any external origin while still requiring the CSRF cookie/token pair
 - `DJANGO_CSRF_TRUSTED_ORIGINS`: comma-separated external origins allowed to POST forms, for example `https://*.hjbello.org,https://api-android18.hjbello.org`
+- `GUNICORN_TIMEOUT_SECONDS`: default `960`; keep this high enough for HTTP backup receiver requests over large folder trees
 - `SAMPLER_DEFAULT_INTERVAL`: default `60`
 - `MONITOR_ROOT_PATH`: default `/hostfs`
 - `MONITOR_PROCFS_PATH`: default `/hostfs/proc`
@@ -129,6 +130,8 @@ Authorization: Bearer <token>
 ```
 
 This token protects the HTTP backup endpoints that can list, read, write, and delete files under the configured backup paths.
+
+HTTP backups compare manifests using file size and modification time, matching rsync's normal quick-check behavior. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
 
 ## Alerts
 

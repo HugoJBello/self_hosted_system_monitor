@@ -16,6 +16,7 @@ services:
       SAMPLER_DEFAULT_INTERVAL: "60"
       MONITOR_ROOT_PATH: "/hostfs"
       MONITOR_PROCFS_PATH: "/hostfs/proc"
+      GUNICORN_TIMEOUT_SECONDS: "960"
     volumes:
       - ./data:/app/data
       - /:/hostfs

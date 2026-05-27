@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import _http_auth_headers, _http_request_timeout, sync_http_backup
+from .http_backups import _changed_files, _http_auth_headers, _http_request_timeout, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1141,6 +1141,19 @@ class BackupHelpersTests(TestCase):
         job = BackupJob(idle_timeout_seconds=900)
 
         self.assertEqual(_http_request_timeout(job), 900)
+
+    def test_http_changed_files_can_compare_size_and_mtime_without_hashes(self):
+        source_files = {
+            "same.jpg": {"size": 10, "mtime_ns": 100},
+            "new.jpg": {"size": 20, "mtime_ns": 200},
+            "changed.jpg": {"size": 30, "mtime_ns": 301},
+        }
+        dest_files = {
+            "same.jpg": {"size": 10, "mtime_ns": 100},
+            "changed.jpg": {"size": 30, "mtime_ns": 300},
+        }
+
+        self.assertEqual(_changed_files(source_files, dest_files), ["changed.jpg", "new.jpg"])
 
     @patch("monitor.backups.start_background_backup")
     @patch("monitor.backups._local_destination_is_available", return_value=False)
