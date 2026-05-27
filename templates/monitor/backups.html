@@ -18,104 +18,7 @@
   </div>
 </div>
 
-<div class="row g-4 mb-4">
-  <div class="col-12">
-    <section class="panel-card p-4 mb-4">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <p class="eyebrow mb-2">Running now</p>
-          <h2 class="h4 mb-0">Backups in progress</h2>
-        </div>
-        <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
-      </div>
-      <div class="alerts-feed">
-        {% for run in running_runs %}
-          <article class="alert-card report-card backup-run-card running-backup-card" data-backup-run-card data-run-id="{{ run.id }}" data-status-url="{% url 'monitor:backup-run-status' run.id %}" data-started-label="{{ run.started_at|date:'c' }}">
-            <div class="d-flex justify-content-between align-items-start gap-3">
-              <div class="flex-grow-1">
-                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                  <span class="live-pill" data-run-status-pill>RUNNING</span>
-                  <span class="chip compact-chip">{{ run.job.name }}</span>
-                </div>
-                <h3 class="h5 mb-2">{{ run.job.source_path }} → {{ run.job.destination_label }}</h3>
-                <div class="small text-secondary mb-3" data-run-meta>
-                  Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
-                  {% if run.heartbeat_at %} • heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="time-short">{{ run.heartbeat_at|date:"H:i:s" }}</span>{% endif %}
-                  {% if run.runner_label %} • runner {{ run.runner_label }}{% endif %}
-                </div>
-                <details class="backup-run-log-details" open>
-                  <summary>Live log</summary>
-                  <pre class="backup-run-log mb-0" data-run-log>{{ run.log_output|default:"Waiting for live output..." }}</pre>
-                </details>
-              </div>
-              <div class="text-end backup-run-side">
-                <div class="event-value" data-run-pid>{{ run.process_pid|default:"..." }}</div>
-                <div class="small text-secondary mb-2" data-run-launch>{{ run.get_launched_by_display }}</div>
-                <form method="post" class="mb-2">
-                  {% csrf_token %}
-                  <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm" data-run-stop>Stop run</button>
-                </form>
-                <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-outline-light btn-sm">Open run</a>
-              </div>
-            </div>
-          </article>
-        {% empty %}
-          <div class="text-secondary">No backups are running right now.</div>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="panel-card p-4">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <p class="eyebrow mb-2">Recent executions</p>
-          <h2 class="h4 mb-0">Latest finished runs</h2>
-        </div>
-        <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm">See all runs</a>
-      </div>
-      <div class="alerts-feed">
-        {% for run in recent_runs %}
-          <article class="alert-card report-card backup-run-card compact-history-card">
-            <div class="d-flex justify-content-between align-items-start gap-3">
-              <div class="flex-grow-1">
-                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                  {% if run.status == "success" %}
-                    <span class="live-pill">SUCCESS</span>
-                  {% elif run.status == "cancelled" %}
-                    <span class="resolved-pill">CANCELLED</span>
-                  {% elif run.status == "timed_out" %}
-                    <span class="severity-pill severity-warning">TIMED OUT</span>
-                  {% else %}
-                    <span class="severity-pill severity-critical">FAILED</span>
-                  {% endif %}
-                  <span class="chip compact-chip">{{ run.job.name }}</span>
-                </div>
-                <h3 class="h6 mb-1">{{ run.summary }}</h3>
-                <div class="small text-secondary">
-                  <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
-                  {% if run.finished_at %} • finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="time-short">{{ run.finished_at|date:"H:i:s" }}</span>{% endif %}
-                  {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
-                </div>
-              </div>
-              <div class="text-end backup-run-side">
-                <div class="event-value">{{ run.exit_code }}</div>
-                <form method="post" class="mt-2">
-                  {% csrf_token %}
-                  <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
-                </form>
-                <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-outline-light btn-sm mt-2">Detail</a>
-              </div>
-            </div>
-          </article>
-        {% empty %}
-          <div class="text-secondary">No finished backup runs yet.</div>
-        {% endfor %}
-      </div>
-    </section>
-  </div>
-</div>
-
-<section class="panel-card p-4">
+<section class="panel-card p-4 mb-4">
   <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
       <p class="eyebrow mb-2">Scheduler</p>
@@ -226,6 +129,103 @@
     {% endfor %}
   </div>
 </section>
+
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <section class="panel-card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Running now</p>
+          <h2 class="h4 mb-0">Backups in progress</h2>
+        </div>
+        <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
+      </div>
+      <div class="alerts-feed">
+        {% for run in running_runs %}
+          <article class="alert-card report-card backup-run-card running-backup-card" data-backup-run-card data-run-id="{{ run.id }}" data-status-url="{% url 'monitor:backup-run-status' run.id %}" data-started-label="{{ run.started_at|date:'c' }}">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  <span class="live-pill" data-run-status-pill>RUNNING</span>
+                  <span class="chip compact-chip">{{ run.job.name }}</span>
+                </div>
+                <h3 class="h5 mb-2">{{ run.job.source_path }} → {{ run.job.destination_label }}</h3>
+                <div class="small text-secondary mb-3" data-run-meta>
+                  Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
+                  {% if run.heartbeat_at %} • heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="time-short">{{ run.heartbeat_at|date:"H:i:s" }}</span>{% endif %}
+                  {% if run.runner_label %} • runner {{ run.runner_label }}{% endif %}
+                </div>
+                <details class="backup-run-log-details" open>
+                  <summary>Live log</summary>
+                  <pre class="backup-run-log mb-0" data-run-log>{{ run.log_output|default:"Waiting for live output..." }}</pre>
+                </details>
+              </div>
+              <div class="text-end backup-run-side">
+                <div class="event-value" data-run-pid>{{ run.process_pid|default:"..." }}</div>
+                <div class="small text-secondary mb-2" data-run-launch>{{ run.get_launched_by_display }}</div>
+                <form method="post" class="mb-2">
+                  {% csrf_token %}
+                  <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm" data-run-stop>Stop run</button>
+                </form>
+                <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-outline-light btn-sm">Open run</a>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No backups are running right now.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel-card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Recent executions</p>
+          <h2 class="h4 mb-0">Latest finished runs</h2>
+        </div>
+        <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm">See all runs</a>
+      </div>
+      <div class="alerts-feed">
+        {% for run in recent_runs %}
+          <article class="alert-card report-card backup-run-card compact-history-card">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  {% if run.status == "success" %}
+                    <span class="live-pill">SUCCESS</span>
+                  {% elif run.status == "cancelled" %}
+                    <span class="resolved-pill">CANCELLED</span>
+                  {% elif run.status == "timed_out" %}
+                    <span class="severity-pill severity-warning">TIMED OUT</span>
+                  {% else %}
+                    <span class="severity-pill severity-critical">FAILED</span>
+                  {% endif %}
+                  <span class="chip compact-chip">{{ run.job.name }}</span>
+                </div>
+                <h3 class="h6 mb-1">{{ run.summary }}</h3>
+                <div class="small text-secondary">
+                  <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
+                  {% if run.finished_at %} • finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="time-short">{{ run.finished_at|date:"H:i:s" }}</span>{% endif %}
+                  {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
+                </div>
+              </div>
+              <div class="text-end backup-run-side">
+                <div class="event-value">{{ run.exit_code }}</div>
+                <form method="post" class="mt-2">
+                  {% csrf_token %}
+                  <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
+                </form>
+                <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-outline-light btn-sm mt-2">Detail</a>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No finished backup runs yet.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
 
 {% for item in job_forms %}
   {% with form=item.form job=item.job %}
