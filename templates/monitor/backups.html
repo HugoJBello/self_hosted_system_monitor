@@ -121,6 +121,7 @@
       <p class="eyebrow mb-2">Scheduler</p>
       <h2 class="h4 mb-0">Configured backup jobs</h2>
     </div>
+    <span class="badge text-bg-light border">{{ jobs_count }} configured</span>
   </div>
 
   <datalist id="backup-schedule-presets">
@@ -131,115 +132,197 @@
     <option value="1440"></option>
   </datalist>
 
-  <div class="vstack gap-3">
+  <div class="backup-job-grid">
     {% for item in job_forms %}
       {% with form=item.form job=item.job %}
-      <section class="config-section alert-rule-card severity-info">
-        <form method="post" class="vstack gap-3">
-          {% csrf_token %}
-          {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
-          <div class="rule-editor-hero">
-            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
-              <div class="d-flex align-items-center gap-3">
-                <div class="rule-editor-icon-wrap"><i class="bi bi-hdd-network rule-editor-icon"></i></div>
-                <div>
-                  <div class="rule-editor-kicker">Backup job</div>
-                  <div class="rule-editor-title">{{ job.name }}</div>
-                </div>
-              </div>
-              <div class="rule-editor-badges">
+      <article class="backup-job-summary">
+        <div class="backup-job-summary-top">
+          <div class="d-flex align-items-center gap-3 min-w-0">
+            <div class="backup-job-icon">
+              {% if job.is_local %}
+                <i class="bi bi-hdd"></i>
+              {% elif job.is_http %}
+                <i class="bi bi-globe2"></i>
+              {% else %}
+                <i class="bi bi-hdd-network"></i>
+              {% endif %}
+            </div>
+            <div class="min-w-0">
+              <div class="d-flex gap-2 align-items-center flex-wrap mb-1">
                 {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
-                <span class="chip compact-chip">{% if job.is_local %}Local memory{% elif job.is_http %}HTTP {{ job.http_direction }}{% else %}{% if job.connection_mode == "cloudflare" %}Cloudflare SSH params{% else %}Standard SSH{% endif %}{% endif %}</span>
-                <span class="chip compact-chip">{{ job.schedule_minutes }}m cadence</span>
-                {% if job.is_local and job.trigger_on_mount %}<span class="chip compact-chip">Run on mount</span>{% endif %}
-                <span class="chip compact-chip">{{ job.run_timeout_seconds }}s timeout</span>
-                <span class="chip compact-chip">{{ job.idle_timeout_seconds }}s idle</span>
+                <span class="chip compact-chip">{% if job.is_local %}Local memory{% elif job.is_http %}HTTP {{ job.http_direction }}{% else %}{% if job.connection_mode == "cloudflare" %}Cloudflare SSH{% else %}SSH + rsync{% endif %}{% endif %}</span>
               </div>
+              <h3 class="backup-job-title mb-0">{{ job.name }}</h3>
             </div>
           </div>
-
-          <div class="row g-3" data-backup-editor>
-            <div class="col-md-4"><label class="form-label" for="{{ form.name.id_for_label }}">Job name</label>{{ form.name }}</div>
-            <div class="col-md-3"><label class="form-label" for="{{ form.backup_type.id_for_label }}">Backup type</label>{{ form.backup_type }}</div>
-            <div class="col-md-5">
-              <label class="form-label" for="{{ form.source_path.id_for_label }}">Source folder</label>
-              <div class="input-group flex-wrap backup-source-group">
-                {{ form.source_path }}
-                <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
-              </div>
-            </div>
-            <div class="col-md-3"><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
-            <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
-            <div class="col-md-6" data-local-fields><label class="form-label" for="{{ form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button></div></div>
-            <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.trigger_on_mount.id_for_label }}">Run when mount appears</label><div class="form-check form-switch mt-2">{{ form.trigger_on_mount }}</div></div>
-            <div class="col-md-3" data-local-fields><div class="form-text pt-4">If this destination is on a USB or removable mount, the scheduler runs it as soon as that mount appears, and then keeps the normal cadence while it stays mounted.</div></div>
-            <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ form.remote_host.id_for_label }}">Hostname or IP</label>{{ form.remote_host }}</div>
-            <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.remote_user.id_for_label }}">SSH user</label>{{ form.remote_user }}</div>
-            <div class="col-md-5" data-remote-fields><label class="form-label" for="{{ form.remote_dir.id_for_label }}">Remote directory</label>{{ form.remote_dir }}</div>
-            <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.connection_mode.id_for_label }}">Connection mode</label>{{ form.connection_mode }}</div>
-            <div class="col-md-2" data-remote-fields><label class="form-label" for="{{ form.ssh_port.id_for_label }}">SSH port</label>{{ form.ssh_port }}</div>
-            <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.auth_mode.id_for_label }}">Authentication</label>{{ form.auth_mode }}</div>
-            <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ form.ssh_password.id_for_label }}">SSH password</label>{{ form.ssh_password }}</div>
-            <div class="col-12 d-flex justify-content-end" data-remote-fields>
-              <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#cloudflareInfoModal">Cloudflare help</button>
-            </div>
-            <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ form.cloudflare_auth_home }}</div>
-            <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ form.cloudflare_service_token_id }}</div>
-            <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ form.cloudflare_service_token_secret }}</div>
-            <div class="col-12" data-remote-fields>
-              <div class="form-text">
-                Leave all Cloudflare fields empty if this job already works without them.
-                If you need them, open <strong>Cloudflare help</strong> for the exact meaning of each field and how to get it.
-              </div>
-            </div>
-            <div class="col-md-4" data-http-fields><label class="form-label" for="{{ form.http_remote_url.id_for_label }}">Remote server URL</label>{{ form.http_remote_url }}</div>
-            <div class="col-md-3" data-http-fields><label class="form-label" for="{{ form.http_direction.id_for_label }}">Direction</label>{{ form.http_direction }}</div>
-            <div class="col-md-5" data-http-fields><label class="form-label" for="{{ form.http_remote_path.id_for_label }}">Remote folder</label>{{ form.http_remote_path }}</div>
-            <div class="col-md-6" data-http-fields><label class="form-label" for="{{ form.http_remote_token.id_for_label }}">Remote Bearer token</label>{{ form.http_remote_token }}</div>
-            <div class="col-md-6" data-http-fields>
-              <div class="form-text pt-4">The remote server must run this same project and expose the HTTP backup endpoints with the token configured in Settings.</div>
-            </div>
-            <div class="col-md-3"><label class="form-label" for="{{ form.max_size.id_for_label }}">Max file size</label>{{ form.max_size }}</div>
-            <div class="col-md-3">
-              <label class="form-label" for="{{ form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
-              {{ form.run_timeout_seconds }}
-              <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.run_timeout_seconds.id_for_label }}">
-                <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
-                <select class="form-select" data-timeout-unit>
-                  <option value="minutes">minutes</option>
-                  <option value="hours">hours</option>
-                  <option value="seconds">seconds</option>
-                </select>
-              </div>
-              <div class="form-text">Maximum total runtime for one backup run.</div>
-            </div>
-            <div class="col-md-3"><label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ form.idle_timeout_seconds }}</div>
-            <div class="col-md-3"><label class="form-label" for="{{ form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ form.enabled }}</div></div>
-            <div class="col-md-3"><label class="form-label" for="{{ form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ form.delete_enabled }}</div></div>
-            <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ form.install_public_key }}</div></div>
-            <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.password_file_path.id_for_label }}">Password file on host</label>{{ form.password_file_path }}</div>
-            <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.public_key_path.id_for_label }}">Public key path on host</label>{{ form.public_key_path }}</div>
-            <div class="col-12"><label class="form-label" for="{{ form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ form.exclude_patterns }}</div>
-            <div class="col-12"><div class="form-text">This job will not launch a second overlapping run of itself. Different backup jobs can still run in parallel.</div></div>
+          <div class="backup-job-next text-lg-end">
+            <div class="small text-secondary">Every</div>
+            <strong>{{ job.schedule_minutes }}m</strong>
           </div>
+        </div>
 
-          {% if form.errors %}
-            <div class="alert alert-danger mb-0">{{ form.errors }}</div>
-          {% endif %}
-
-          <div class="d-flex gap-2 flex-wrap">
-            <button type="submit" name="save_job" value="{{ job.id }}" class="btn btn-accent">Save config</button>
-            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light">Run backup now</button>
-            <button type="submit" name="delete_job" value="{{ job.id }}" class="btn btn-outline-danger">Delete job</button>
+        <div class="backup-job-flow">
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Origin</span>
+            <strong>{{ item.source_label }}</strong>
           </div>
-        </form>
-      </section>
+          <div class="backup-job-arrow"><i class="bi bi-arrow-right"></i></div>
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Destination</span>
+            <strong>{{ item.destination_label }}</strong>
+          </div>
+        </div>
+
+        <div class="backup-job-metrics">
+          <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds }}s hard</span>
+          <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds }}s idle</span>
+          <span><i class="bi bi-file-earmark"></i> {{ job.max_size|default:"no max" }}</span>
+          <span><i class="bi bi-trash3"></i> {% if job.delete_enabled %}delete on{% else %}delete off{% endif %}</span>
+          {% if job.trigger_on_mount %}<span><i class="bi bi-usb-drive"></i> mount trigger</span>{% endif %}
+        </div>
+
+        <div class="backup-job-runs">
+          <div class="backup-job-runs-title">Recent runs</div>
+          <div class="backup-job-run-list">
+            {% for run in item.recent_runs %}
+              <a href="{% url 'monitor:backup-run-detail' run.id %}" class="backup-job-run-link">
+                {% if run.status == "success" %}
+                  <span class="run-dot success"></span>
+                {% elif run.status == "running" %}
+                  <span class="run-dot running"></span>
+                {% elif run.status == "cancelled" %}
+                  <span class="run-dot muted"></span>
+                {% else %}
+                  <span class="run-dot failed"></span>
+                {% endif %}
+                <span>{{ run.get_status_display }}</span>
+                <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i" }}</span>
+              </a>
+            {% empty %}
+              <span class="text-secondary small">No runs yet.</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if form.errors %}
+          <div class="alert alert-danger mb-0">{{ form.errors }}</div>
+        {% endif %}
+
+        <div class="backup-job-actions">
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light btn-sm"><i class="bi bi-play-fill"></i> Run now</button>
+          </form>
+          <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#editBackupJobModal{{ job.id }}"><i class="bi bi-pencil-square"></i> Edit</button>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="delete_job" value="{{ job.id }}" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3"></i> Delete</button>
+          </form>
+        </div>
+      </article>
       {% endwith %}
     {% empty %}
       <div class="text-secondary">No backup jobs configured yet.</div>
     {% endfor %}
   </div>
 </section>
+
+{% for item in job_forms %}
+  {% with form=item.form job=item.job %}
+  <div class="modal fade" id="editBackupJobModal{{ job.id }}" tabindex="-1" aria-labelledby="editBackupJobModal{{ job.id }}Label" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content backup-modal-shell">
+        <div class="modal-header border-secondary-subtle">
+          <div>
+            <p class="eyebrow mb-1">Edit job</p>
+            <h2 class="h4 mb-0" id="editBackupJobModal{{ job.id }}Label">{{ job.name }}</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <form method="post" class="vstack gap-3">
+            {% csrf_token %}
+            {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+            <div class="row g-3" data-backup-editor>
+              <div class="col-md-4"><label class="form-label" for="{{ form.name.id_for_label }}">Job name</label>{{ form.name }}</div>
+              <div class="col-md-3"><label class="form-label" for="{{ form.backup_type.id_for_label }}">Backup type</label>{{ form.backup_type }}</div>
+              <div class="col-md-5">
+                <label class="form-label" for="{{ form.source_path.id_for_label }}">Source folder</label>
+                <div class="input-group flex-wrap backup-source-group">
+                  {{ form.source_path }}
+                  <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
+                </div>
+              </div>
+              <div class="col-md-3"><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
+              <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
+              <div class="col-md-6" data-local-fields><label class="form-label" for="{{ form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button></div></div>
+              <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.trigger_on_mount.id_for_label }}">Run when mount appears</label><div class="form-check form-switch mt-2">{{ form.trigger_on_mount }}</div></div>
+              <div class="col-md-3" data-local-fields><div class="form-text pt-4">If this destination is on a USB or removable mount, the scheduler runs it as soon as that mount appears, and then keeps the normal cadence while it stays mounted.</div></div>
+              <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ form.remote_host.id_for_label }}">Hostname or IP</label>{{ form.remote_host }}</div>
+              <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.remote_user.id_for_label }}">SSH user</label>{{ form.remote_user }}</div>
+              <div class="col-md-5" data-remote-fields><label class="form-label" for="{{ form.remote_dir.id_for_label }}">Remote directory</label>{{ form.remote_dir }}</div>
+              <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.connection_mode.id_for_label }}">Connection mode</label>{{ form.connection_mode }}</div>
+              <div class="col-md-2" data-remote-fields><label class="form-label" for="{{ form.ssh_port.id_for_label }}">SSH port</label>{{ form.ssh_port }}</div>
+              <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.auth_mode.id_for_label }}">Authentication</label>{{ form.auth_mode }}</div>
+              <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ form.ssh_password.id_for_label }}">SSH password</label>{{ form.ssh_password }}</div>
+              <div class="col-12 d-flex justify-content-end" data-remote-fields>
+                <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#cloudflareInfoModal">Cloudflare help</button>
+              </div>
+              <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ form.cloudflare_auth_home }}</div>
+              <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ form.cloudflare_service_token_id }}</div>
+              <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ form.cloudflare_service_token_secret }}</div>
+              <div class="col-12" data-remote-fields>
+                <div class="form-text">
+                  Leave all Cloudflare fields empty if this job already works without them.
+                  If you need them, open <strong>Cloudflare help</strong> for the exact meaning of each field and how to get it.
+                </div>
+              </div>
+              <div class="col-md-4" data-http-fields><label class="form-label" for="{{ form.http_remote_url.id_for_label }}">Remote server URL</label>{{ form.http_remote_url }}</div>
+              <div class="col-md-3" data-http-fields><label class="form-label" for="{{ form.http_direction.id_for_label }}">Direction</label>{{ form.http_direction }}</div>
+              <div class="col-md-5" data-http-fields><label class="form-label" for="{{ form.http_remote_path.id_for_label }}">Remote folder</label>{{ form.http_remote_path }}</div>
+              <div class="col-md-6" data-http-fields><label class="form-label" for="{{ form.http_remote_token.id_for_label }}">Remote Bearer token</label>{{ form.http_remote_token }}</div>
+              <div class="col-md-6" data-http-fields>
+                <div class="form-text pt-4">The remote server must run this same project and expose the HTTP backup endpoints with the token configured in Settings.</div>
+              </div>
+              <div class="col-md-3"><label class="form-label" for="{{ form.max_size.id_for_label }}">Max file size</label>{{ form.max_size }}</div>
+              <div class="col-md-3">
+                <label class="form-label" for="{{ form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
+                {{ form.run_timeout_seconds }}
+                <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.run_timeout_seconds.id_for_label }}">
+                  <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+                  <select class="form-select" data-timeout-unit>
+                    <option value="minutes">minutes</option>
+                    <option value="hours">hours</option>
+                    <option value="seconds">seconds</option>
+                  </select>
+                </div>
+                <div class="form-text">Maximum total runtime for one backup run.</div>
+              </div>
+              <div class="col-md-3"><label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ form.idle_timeout_seconds }}</div>
+              <div class="col-md-3"><label class="form-label" for="{{ form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ form.enabled }}</div></div>
+              <div class="col-md-3"><label class="form-label" for="{{ form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ form.delete_enabled }}</div></div>
+              <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ form.install_public_key }}</div></div>
+              <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.password_file_path.id_for_label }}">Password file on host</label>{{ form.password_file_path }}</div>
+              <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.public_key_path.id_for_label }}">Public key path on host</label>{{ form.public_key_path }}</div>
+              <div class="col-12"><label class="form-label" for="{{ form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ form.exclude_patterns }}</div>
+              <div class="col-12"><div class="form-text">This job will not launch a second overlapping run of itself. Different backup jobs can still run in parallel.</div></div>
+            </div>
+
+            {% if form.errors %}
+              <div class="alert alert-danger mb-0">{{ form.errors }}</div>
+            {% endif %}
+
+            <div class="d-flex gap-2 flex-wrap justify-content-end">
+              <button type="submit" name="save_job" value="{{ job.id }}" class="btn btn-accent">Save config</button>
+              <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endwith %}
+{% endfor %}
 
 <div class="modal fade" id="newBackupJobModal" tabindex="-1" aria-labelledby="newBackupJobModalLabel" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable">
@@ -409,6 +492,14 @@
 
   if (createBackupModal && {{ show_create|yesno:"true,false" }}) {
     createBackupModal.show();
+  }
+
+  const editBackupJobId = "{{ edit_job_id|default:'' }}";
+  if (editBackupJobId) {
+    const editModalElement = document.getElementById(`editBackupJobModal${editBackupJobId}`);
+    if (editModalElement) {
+      bootstrap.Modal.getOrCreateInstance(editModalElement).show();
+    }
   }
 
   document.querySelectorAll(".backup-source-input").forEach((input) => {

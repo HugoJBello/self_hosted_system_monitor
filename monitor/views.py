@@ -503,7 +503,7 @@ class BackupsView(View):
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' updated.")
                 return redirect("monitor:backups")
-            return render(request, self.template_name, self._context(job_form_overrides={job.id: form}, show_create=False))
+            return render(request, self.template_name, self._context(job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
 
         if "delete_job" in request.POST:
             job = get_object_or_404(BackupJob, pk=request.POST.get("delete_job"))
@@ -525,16 +525,23 @@ class BackupsView(View):
 
         return render(request, self.template_name, self._context())
 
-    def _context(self, job_form_overrides=None, create_form=None, show_create=False):
+    def _context(self, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
         job_form_overrides = job_form_overrides or {}
         latest_snapshot = SystemSnapshot.objects.order_by("-captured_at").first()
         running_runs = list(BackupRun.objects.select_related("job").filter(status="running").order_by("-started_at")[:20])
         recent_runs = list(BackupRun.objects.select_related("job").exclude(status="running").order_by("-started_at")[:8])
         jobs = list(BackupJob.objects.all())
+        runs_by_job = {
+            job.id: list(BackupRun.objects.filter(job=job).order_by("-started_at")[:3])
+            for job in jobs
+        }
         job_forms = [
             {
                 "job": job,
                 "form": job_form_overrides.get(job.id) or BackupJobForm(instance=job, prefix=f"job-{job.id}"),
+                "recent_runs": runs_by_job.get(job.id, []),
+                "source_label": self._job_source_label(job),
+                "destination_label": job.destination_label,
             }
             for job in jobs
         ]
@@ -551,8 +558,14 @@ class BackupsView(View):
             "browser_roots": list_browser_roots(),
             "create_form": create_form,
             "show_create": show_create,
+            "edit_job_id": edit_job_id,
             "settings_obj": MonitoringSettings.load(),
         }
+
+    def _job_source_label(self, job):
+        if job.is_http and job.http_direction == "pull":
+            return job.http_remote_path or "(remote folder not set)"
+        return job.source_path or "(source not set)"
 
 
 class BackupRunsView(View):
