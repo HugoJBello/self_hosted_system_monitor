@@ -149,7 +149,7 @@
               </div>
               <div class="rule-editor-badges">
                 {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
-                <span class="chip compact-chip">{% if job.is_local %}Local clone{% else %}{% if job.connection_mode == "cloudflare" %}Cloudflare SSH params{% else %}Standard SSH{% endif %}{% endif %}</span>
+                <span class="chip compact-chip">{% if job.is_local %}Local memory{% elif job.is_http %}HTTP {{ job.http_direction }}{% else %}{% if job.connection_mode == "cloudflare" %}Cloudflare SSH params{% else %}Standard SSH{% endif %}{% endif %}</span>
                 <span class="chip compact-chip">{{ job.schedule_minutes }}m cadence</span>
                 {% if job.is_local and job.trigger_on_mount %}<span class="chip compact-chip">Run on mount</span>{% endif %}
                 <span class="chip compact-chip">{{ job.run_timeout_seconds }}s timeout</span>
@@ -191,6 +191,13 @@
                 Leave all Cloudflare fields empty if this job already works without them.
                 If you need them, open <strong>Cloudflare help</strong> for the exact meaning of each field and how to get it.
               </div>
+            </div>
+            <div class="col-md-4" data-http-fields><label class="form-label" for="{{ form.http_remote_url.id_for_label }}">Remote server URL</label>{{ form.http_remote_url }}</div>
+            <div class="col-md-3" data-http-fields><label class="form-label" for="{{ form.http_direction.id_for_label }}">Direction</label>{{ form.http_direction }}</div>
+            <div class="col-md-5" data-http-fields><label class="form-label" for="{{ form.http_remote_path.id_for_label }}">Remote folder</label>{{ form.http_remote_path }}</div>
+            <div class="col-md-6" data-http-fields><label class="form-label" for="{{ form.http_remote_token.id_for_label }}">Remote Bearer token</label>{{ form.http_remote_token }}</div>
+            <div class="col-md-6" data-http-fields>
+              <div class="form-text pt-4">The remote server must run this same project and expose the HTTP backup endpoints with the token configured in Settings.</div>
             </div>
             <div class="col-md-3"><label class="form-label" for="{{ form.max_size.id_for_label }}">Max file size</label>{{ form.max_size }}</div>
             <div class="col-md-3">
@@ -282,6 +289,13 @@
                 Leave all Cloudflare fields empty if this job already works without them.
                 If you need them, open <strong>Cloudflare help</strong> for the exact meaning of each field and how to get it.
               </div>
+            </div>
+            <div class="col-md-4" data-http-fields><label class="form-label" for="{{ create_form.http_remote_url.id_for_label }}">Remote server URL</label>{{ create_form.http_remote_url }}</div>
+            <div class="col-md-3" data-http-fields><label class="form-label" for="{{ create_form.http_direction.id_for_label }}">Direction</label>{{ create_form.http_direction }}</div>
+            <div class="col-md-5" data-http-fields><label class="form-label" for="{{ create_form.http_remote_path.id_for_label }}">Remote folder</label>{{ create_form.http_remote_path }}</div>
+            <div class="col-md-6" data-http-fields><label class="form-label" for="{{ create_form.http_remote_token.id_for_label }}">Remote Bearer token</label>{{ create_form.http_remote_token }}</div>
+            <div class="col-md-6" data-http-fields>
+              <div class="form-text pt-4">The remote server must run this same project and expose the HTTP backup endpoints with the token configured in Settings.</div>
             </div>
             <div class="col-md-3"><label class="form-label" for="{{ create_form.max_size.id_for_label }}">Max file size</label>{{ create_form.max_size }}</div>
             <div class="col-md-3">
@@ -479,11 +493,15 @@
     const typeSelect = editor.querySelector(".backup-type-select");
     if (!typeSelect) return;
     const isLocal = typeSelect.value === "local";
+    const isHttp = typeSelect.value === "http";
     editor.querySelectorAll("[data-local-fields]").forEach((node) => {
-      node.classList.toggle("d-none", !isLocal);
+      node.classList.toggle("d-none", !(isLocal || isHttp));
     });
     editor.querySelectorAll("[data-remote-fields]").forEach((node) => {
-      node.classList.toggle("d-none", isLocal);
+      node.classList.toggle("d-none", isLocal || isHttp);
+    });
+    editor.querySelectorAll("[data-http-fields]").forEach((node) => {
+      node.classList.toggle("d-none", !isHttp);
     });
   }
 

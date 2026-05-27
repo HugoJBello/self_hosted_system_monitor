@@ -52,6 +52,7 @@ class MonitoringSettings(models.Model):
         default="",
         max_length=500,
     )
+    http_backup_token = models.CharField(blank=True, default="change_this_token", max_length=255)
     display_time_mode = models.CharField(
         max_length=16,
         choices=DISPLAY_TIME_MODE_CHOICES,
@@ -87,6 +88,7 @@ class MonitoringSettings(models.Model):
                 "notifications_default_action": os.getenv("NOTIFICATIONS_DEFAULT_ACTION", "notify"),
                 "notifications_timeout_seconds": int(os.getenv("NOTIFICATIONS_TIMEOUT_SECONDS", "10")),
                 "app_public_base_url": os.getenv("SYSTEM_MONITOR_PUBLIC_BASE_URL", ""),
+                "http_backup_token": os.getenv("HTTP_BACKUP_TOKEN", "change_this_token"),
                 "display_time_mode": os.getenv("SYSTEM_MONITOR_DISPLAY_TIME_MODE", "browser"),
                 "display_timezone": os.getenv("SYSTEM_MONITOR_DISPLAY_TIMEZONE", "Europe/Madrid"),
             },
@@ -343,8 +345,13 @@ class ReportRun(models.Model):
 
 class BackupJob(models.Model):
     BACKUP_TYPE_CHOICES = [
-        ("remote", "Remote SSH/Cloudflare"),
-        ("local", "Local folder clone"),
+        ("local", "Local memory backup"),
+        ("remote", "SSH + rsync backup"),
+        ("http", "HTTP server to server backup"),
+    ]
+    HTTP_DIRECTION_CHOICES = [
+        ("push", "Copy from this server to remote server"),
+        ("pull", "Copy from remote server to this server"),
     ]
     CONNECTION_CHOICES = [
         ("direct", "Direct SSH"),
@@ -379,6 +386,10 @@ class BackupJob(models.Model):
     cloudflare_auth_home = models.CharField(max_length=500, blank=True, default="")
     cloudflare_service_token_id = models.CharField(max_length=255, blank=True, default="")
     cloudflare_service_token_secret = models.CharField(max_length=255, blank=True, default="")
+    http_remote_url = models.URLField(blank=True, default="", max_length=500)
+    http_remote_token = models.CharField(blank=True, default="", max_length=255)
+    http_remote_path = models.CharField(max_length=500, blank=True, default="")
+    http_direction = models.CharField(max_length=16, choices=HTTP_DIRECTION_CHOICES, default="push")
     auth_mode = models.CharField(max_length=32, choices=AUTH_CHOICES, default="key")
     password_file_path = models.CharField(max_length=500, blank=True, default="")
     ssh_password = models.CharField(max_length=255, blank=True, default="")
@@ -418,9 +429,19 @@ class BackupJob(models.Model):
         return self.backup_type == "local"
 
     @property
+    def is_http(self):
+        return self.backup_type == "http"
+
+    @property
     def destination_label(self):
         if self.is_local:
             return self.local_dest_path or "(local destination not set)"
+        if self.is_http:
+            base = (self.http_remote_url or "(HTTP server not set)").rstrip("/")
+            remote_path = self.http_remote_path or "/"
+            if self.http_direction == "pull":
+                return self.local_dest_path or "(local destination not set)"
+            return f"{base}:{remote_path}"
         host = self.remote_host or "(remote host not set)"
         remote_dir = self.remote_dir or "/"
         user = f"{self.remote_user}@" if self.remote_user else ""

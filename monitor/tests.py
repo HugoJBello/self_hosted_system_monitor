@@ -8,6 +8,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .http_backups import sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -120,6 +121,7 @@ class MonitorViewsTests(TestCase):
                 "notifications_default_priority": "high",
                 "notifications_default_action": "notify",
                 "notifications_timeout_seconds": 15,
+                "http_backup_token": "http-token",
             },
         )
         self.assertRedirects(response, reverse("monitor:settings"), fetch_redirect_response=False)
@@ -131,6 +133,7 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(settings_obj.display_timezone, "Europe/Madrid")
         self.assertTrue(settings_obj.notifications_enabled)
         self.assertEqual(settings_obj.notifications_default_channels, "email;telegram")
+        self.assertEqual(settings_obj.http_backup_token, "http-token")
 
     @patch("monitor.views.send_json_notification")
     def test_settings_can_send_test_notification(self, mock_send_json_notification):
@@ -154,6 +157,7 @@ class MonitorViewsTests(TestCase):
                 "notifications_default_priority": "high",
                 "notifications_default_action": "notify",
                 "notifications_timeout_seconds": 15,
+                "http_backup_token": "http-token",
                 "send_test_notification": "1",
             },
         )
@@ -942,6 +946,83 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "If you use Cloudflare service tokens, fill both the ID and the secret.")
 
+    def test_http_backup_job_requires_remote_token(self):
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "create_job": "1",
+                "new-name": "HTTP backup",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-backup_type": "http",
+                "new-source_path": "/home/test/Documents",
+                "new-local_dest_path": "",
+                "new-trigger_on_mount": "",
+                "new-schedule_minutes": "30",
+                "new-http_remote_url": "https://remote.example.com/system_monitor",
+                "new-http_remote_token": "",
+                "new-http_remote_path": "/srv/backups/test",
+                "new-http_direction": "push",
+                "new-remote_host": "",
+                "new-remote_user": "",
+                "new-remote_dir": "",
+                "new-ssh_port": "22",
+                "new-connection_mode": "direct",
+                "new-auth_mode": "key",
+                "new-cloudflare_auth_home": "",
+                "new-cloudflare_service_token_id": "",
+                "new-cloudflare_service_token_secret": "",
+                "new-password_file_path": "",
+                "new-public_key_path": "",
+                "new-max_size": "100m",
+                "new-run_timeout_seconds": "7200",
+                "new-idle_timeout_seconds": "900",
+                "new-exclude_patterns": "",
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "HTTP backups need the remote server Bearer token.")
+
+    def test_http_backup_job_accepts_push_fields(self):
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "create_job": "1",
+                "new-name": "HTTP backup",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-backup_type": "http",
+                "new-source_path": "/home/test/Documents",
+                "new-local_dest_path": "",
+                "new-trigger_on_mount": "",
+                "new-schedule_minutes": "30",
+                "new-http_remote_url": "https://remote.example.com/system_monitor",
+                "new-http_remote_token": "token-123",
+                "new-http_remote_path": "/srv/backups/test",
+                "new-http_direction": "push",
+                "new-remote_host": "",
+                "new-remote_user": "",
+                "new-remote_dir": "",
+                "new-ssh_port": "22",
+                "new-connection_mode": "direct",
+                "new-auth_mode": "key",
+                "new-cloudflare_auth_home": "",
+                "new-cloudflare_service_token_id": "",
+                "new-cloudflare_service_token_secret": "",
+                "new-password_file_path": "",
+                "new-public_key_path": "",
+                "new-max_size": "100m",
+                "new-run_timeout_seconds": "7200",
+                "new-idle_timeout_seconds": "900",
+                "new-exclude_patterns": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        job = BackupJob.objects.get(name="HTTP backup")
+        self.assertEqual(job.backup_type, "http")
+        self.assertEqual(job.http_direction, "push")
+        self.assertEqual(job.http_remote_token, "token-123")
+
     @patch("monitor.backups._run_streaming_command")
     @patch("monitor.backups._ensure_local_destination", return_value="/hostfs/media/usb/docs")
     @patch("monitor.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
@@ -966,6 +1047,56 @@ class BackupHelpersTests(TestCase):
         command = mock_run_streaming_command.call_args.args[0]
         self.assertIn("/hostfs/home/test/Documents/", command)
         self.assertIn("/hostfs/media/usb/docs/", command)
+
+    @patch("monitor.http_backups._upload_file")
+    @patch("monitor.http_backups._request_json")
+    @patch("monitor.http_backups._read_local_file", return_value=b"new")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
+                "keep.txt": {"size": 3, "mtime_ns": 1, "sha256": "same"},
+                "new.txt": {"size": 3, "mtime_ns": 2, "sha256": "new"},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_push_uploads_changed_files_and_deletes_extras(
+        self,
+        mock_build_manifest,
+        mock_read_local_file,
+        mock_request_json,
+        mock_upload_file,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP push",
+            backup_type="http",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="push",
+            delete_enabled=True,
+        )
+        mock_request_json.side_effect = [
+            {
+                "ok": True,
+                "files": {
+                    "keep.txt": {"size": 3, "mtime_ns": 1, "sha256": "same"},
+                    "old.txt": {"size": 3, "mtime_ns": 1, "sha256": "old"},
+                },
+                "skipped": [],
+            },
+            {"ok": True, "deleted": ["old.txt"]},
+        ]
+
+        stats = sync_http_backup(job)
+
+        self.assertEqual(stats["changed"], 1)
+        self.assertEqual(stats["deleted"], 1)
+        mock_upload_file.assert_called_once()
+        self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
 
     @patch("monitor.backups.start_background_backup")
     @patch("monitor.backups._local_destination_is_available", return_value=False)

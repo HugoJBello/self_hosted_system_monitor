@@ -1,5 +1,6 @@
 from django.urls import path
 
+from .http_backups import http_backup_delete_view, http_backup_file_view, http_backup_manifest_view
 from .views import AlertDetailView, AlertsView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, RedirectHomeView, ReportDetailView, ReportsView, SettingsView, SystemMonitorView
 
 app_name = "monitor"
@@ -16,6 +17,9 @@ urlpatterns = [
     path("backups/", BackupsView.as_view(), name="backups"),
     path("backups/runs/", BackupRunsView.as_view(), name="backup-runs"),
     path("backups/tree/", BackupTreeView.as_view(), name="backup-tree"),
+    path("backups/http/manifest/", http_backup_manifest_view, name="backup-http-manifest"),
+    path("backups/http/file/", http_backup_file_view, name="backup-http-file"),
+    path("backups/http/delete/", http_backup_delete_view, name="backup-http-delete"),
     path("backups/runs/<int:run_id>/status/", BackupRunStatusView.as_view(), name="backup-run-status"),
     path("backups/runs/<int:run_id>/", BackupRunDetailView.as_view(), name="backup-run-detail"),
 ]

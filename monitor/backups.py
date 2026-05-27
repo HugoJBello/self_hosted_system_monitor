@@ -19,6 +19,7 @@ from django.utils import timezone
 from django.db import OperationalError
 
 from .models import BackupJob, BackupRun
+from .http_backups import sync_http_backup
 
 
 logger = logging.getLogger(__name__)
@@ -675,6 +676,39 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
             heartbeat_callback(force=False)
 
     _lower_current_process_priority()
+    if job.is_http:
+        command_line = f"http-sync {job.http_direction} {job.source_path if job.http_direction == 'push' else job.http_remote_path} -> {job.destination_label}"
+        log_lines = [
+            f"Starting backup job {job.name}",
+            f"Type: HTTP server to server backup",
+            f"Direction: {job.http_direction}",
+            f"Source: {job.source_path if job.http_direction == 'push' else job.http_remote_path}",
+            f"Target: {job.destination_label}",
+            f"Runner: {_runner_label()}",
+            f"Configured timeout: {job.run_timeout_seconds}s",
+            f"Configured idle timeout: {job.idle_timeout_seconds}s",
+            f"Planned command: {command_line}",
+        ]
+        for line in log_lines:
+            push_log(line)
+        started = time.monotonic()
+        try:
+            stats = sync_http_backup(
+                job,
+                log_callback=lambda message: log_lines.append(message) or push_log(message),
+                heartbeat_callback=heartbeat_callback,
+                should_stop=should_stop,
+            )
+        except InterruptedError:
+            summary = "Backup cancelled by operator."
+            return BackupExecutionResult(False, DEFAULT_STOP_EXIT_CODE, "cancelled", summary, "\n".join(log_lines), command_line=command_line)
+        elapsed = time.monotonic() - started
+        if elapsed > _job_timeout_seconds(job):
+            summary = f"Backup timed out after {job.run_timeout_seconds}s."
+            return BackupExecutionResult(False, DEFAULT_TIMEOUT_EXIT_CODE, "timed_out", summary, "\n".join(log_lines), command_line=command_line)
+        summary = f"HTTP backup finished: {stats['changed']} changed, {stats['deleted']} deleted, {stats['skipped']} skipped."
+        return BackupExecutionResult(True, 0, "success", summary, "\n".join(log_lines), command_line=command_line)
+
     source_path = _ensure_local_source(job)
     if job.is_local:
         normalized_target = job.local_dest_path

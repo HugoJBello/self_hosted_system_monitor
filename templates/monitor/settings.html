@@ -9,8 +9,8 @@
       <div class="d-flex justify-content-between align-items-start mb-4">
         <div>
           <p class="eyebrow mb-2">Configuration</p>
-          <h1 class="h3 mb-1">Sampling, time display and notifications</h1>
-          <p class="text-secondary mb-0">Control collection frequency, the global date/time presentation, and the external notifications service integration.</p>
+          <h1 class="h3 mb-1">Sampling, time display, notifications and HTTP backups</h1>
+          <p class="text-secondary mb-0">Control collection frequency, the global date/time presentation, external notifications, and the HTTP backup receiver token.</p>
         </div>
         <span class="badge text-bg-light border">SQLite persisted</span>
       </div>
@@ -33,6 +33,17 @@
               <label class="form-label" for="{{ form.history_retention_days.id_for_label }}">History retention (days)</label>
               {{ form.history_retention_days }}
               <div class="form-text">Older snapshots are removed after new collections.</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="config-section">
+          <h2 class="h5 mb-3">HTTP backup receiver</h2>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label" for="{{ form.http_backup_token.id_for_label }}">Bearer token accepted by this server</label>
+              {{ form.http_backup_token }}
+              <div class="form-text">Remote system-monitor servers must send this token when they read, write, or delete files through the HTTP backup endpoints.</div>
             </div>
           </div>
         </section>
@@ -154,6 +165,10 @@
         <div class="mini-stat">
           <span class="label">Public report links</span>
           <strong>{% if settings_obj.app_public_base_url %}Enabled{% else %}Disabled{% endif %}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">HTTP backup receiver</span>
+          <strong>{% if settings_obj.http_backup_token %}Token configured{% else %}Disabled{% endif %}</strong>
         </div>
       </div>
       <hr class="border-secondary-subtle my-4">
