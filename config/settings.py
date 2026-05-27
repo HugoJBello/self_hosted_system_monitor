@@ -10,6 +10,7 @@ ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "*")
 CSRF_TRUSTED_ORIGINS = [
     origin.strip() for origin in os.getenv("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()
 ]
+CSRF_TRUST_ANY_ORIGIN = os.getenv("DJANGO_CSRF_TRUST_ANY_ORIGIN", "False").lower() == "true"
 
 APP_SUBPATH = os.getenv("APP_SUBPATH", "/system_monitor").rstrip("/")
 if APP_SUBPATH and not APP_SUBPATH.startswith("/"):
@@ -31,7 +32,7 @@ MIDDLEWARE = [
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
-    "django.middleware.csrf.CsrfViewMiddleware",
+    "monitor.middleware.RelaxedCsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",

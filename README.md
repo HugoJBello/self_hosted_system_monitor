@@ -54,7 +54,8 @@ Change this password immediately from the account password page. The default adm
 - `APP_SUBPATH`: default `/system_monitor`
 - `DJANGO_DB_PATH`: default `/app/data/db.sqlite3`
 - `DJANGO_ALLOWED_HOSTS`: default `*`
-- `DJANGO_CSRF_TRUSTED_ORIGINS`: comma-separated external origins allowed to POST forms, for example `https://api-android18.hjbello.org`
+- `DJANGO_CSRF_TRUST_ANY_ORIGIN`: default `False`; set `True` to allow POST forms from any external origin while still requiring the CSRF cookie/token pair
+- `DJANGO_CSRF_TRUSTED_ORIGINS`: comma-separated external origins allowed to POST forms, for example `https://*.hjbello.org,https://api-android18.hjbello.org`
 - `SAMPLER_DEFAULT_INTERVAL`: default `60`
 - `MONITOR_ROOT_PATH`: default `/hostfs`
 - `MONITOR_PROCFS_PATH`: default `/hostfs/proc`
@@ -218,6 +219,7 @@ The Django settings already account for:
 - prefixed `STATIC_URL`
 - `X-Forwarded-Proto`
 - `DJANGO_CSRF_TRUSTED_ORIGINS` for external HTTPS form posts
+- `DJANGO_CSRF_TRUST_ANY_ORIGIN=True` when this deployment must accept form posts from arbitrary public origins
 
 If your external Nginx proxies `/system_monitor/` to this container, keep forwarding the prefix unchanged.
 
@@ -254,4 +256,5 @@ Important notes:
 - Keep the trailing slash in `proxy_pass`.
 - Nginx should strip `/system_monitor/` before forwarding to Django. `FORCE_SCRIPT_NAME` handles URL generation with the external prefix.
 - Keep `X-Forwarded-Prefix /system_monitor` so the upstream knows the public mount point.
-- Add the public origin to `DJANGO_CSRF_TRUSTED_ORIGINS`, for example `https://api-android18.hjbello.org`, otherwise login and other POST forms will be rejected by Django CSRF origin checks.
+- Add the public origin to `DJANGO_CSRF_TRUSTED_ORIGINS`, for example `https://*.hjbello.org` or explicit hosts such as `https://api-android18.hjbello.org`, otherwise login and other POST forms will be rejected by Django CSRF origin checks.
+- If the app is intentionally reached through many changing domains, set `DJANGO_CSRF_TRUST_ANY_ORIGIN=True`. This skips Django's Origin allowlist check, but forms still require a valid CSRF cookie and token.
