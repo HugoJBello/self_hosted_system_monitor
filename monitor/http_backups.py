@@ -250,13 +250,23 @@ def _api_url(base_url, endpoint):
     return f"{base_url.rstrip('/')}/backups/http/{endpoint}/"
 
 
-def _request_json(base_url, endpoint, token, payload, timeout):
+def _http_auth_headers(token, job=None, content_type=None):
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "User-Agent": "system-monitor-http-backup/1.0",
+    }
+    if content_type:
+        headers["Content-Type"] = content_type
+    return headers
+
+
+def _request_json(base_url, endpoint, token, payload, timeout, job=None):
     data = json.dumps(payload).encode("utf-8")
     request = Request(
         _api_url(base_url, endpoint),
         data=data,
         method="POST",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers=_http_auth_headers(token, job, "application/json"),
     )
     try:
         with urlopen(request, timeout=timeout) as response:
@@ -271,12 +281,12 @@ def _request_json(base_url, endpoint, token, payload, timeout):
     return result
 
 
-def _download_file(base_url, token, root_path, relative_path, timeout):
+def _download_file(base_url, token, root_path, relative_path, timeout, job=None):
     query = urlencode({"root_path": root_path, "relative_path": relative_path})
     request = Request(
         f"{_api_url(base_url, 'file')}?{query}",
         method="GET",
-        headers={"Authorization": f"Bearer {token}"},
+        headers=_http_auth_headers(token, job),
     )
     try:
         with urlopen(request, timeout=timeout) as response:
@@ -288,7 +298,7 @@ def _download_file(base_url, token, root_path, relative_path, timeout):
         raise HttpBackupError(f"Download failed for {relative_path}: {exc}") from exc
 
 
-def _upload_file(base_url, token, root_path, relative_path, metadata, content, timeout):
+def _upload_file(base_url, token, root_path, relative_path, metadata, content, timeout, job=None):
     query = urlencode(
         {
             "root_path": root_path,
@@ -300,7 +310,7 @@ def _upload_file(base_url, token, root_path, relative_path, metadata, content, t
         f"{_api_url(base_url, 'file')}?{query}",
         data=content,
         method="POST",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"},
+        headers=_http_auth_headers(token, job, "application/octet-stream"),
     )
     try:
         with urlopen(request, timeout=timeout) as response:
@@ -385,13 +395,12 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     log(f"Remote server: {base_url}")
     log(f"Remote path: {job.http_remote_path}")
     log(f"Max file size: {max_size_bytes} bytes")
-
     if job.http_direction == "pull":
         local_root = job.local_dest_path
         remote_root = job.http_remote_path
         if not local_root:
             raise ValueError("Pull backups need a local destination folder.")
-        remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, **common_payload}, timeout)
+        remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, **common_payload}, timeout, job)
         local_manifest = build_manifest(local_root, create_root=True, **common_payload)
         source_files = remote_manifest["files"]
         dest_files = local_manifest["files"]
@@ -401,7 +410,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         log(f"Local manifest: {len(dest_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
         for index, relative_path in enumerate(changed, start=1):
             ensure_not_stopped()
-            content = _download_file(base_url, token, remote_root, relative_path, timeout)
+            content = _download_file(base_url, token, remote_root, relative_path, timeout, job)
             _write_local_file(local_root, relative_path, source_files[relative_path], content)
             log(f"Pulled {index}/{len(changed)} {relative_path}")
         deleted = _delete_local_files(local_root, extra) if job.delete_enabled else []
@@ -412,7 +421,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     local_root = job.source_path
     remote_root = job.http_remote_path
     local_manifest = build_manifest(local_root, **common_payload)
-    remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, "create_root": True, **common_payload}, timeout)
+    remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, "create_root": True, **common_payload}, timeout, job)
     source_files = local_manifest["files"]
     dest_files = remote_manifest["files"]
     changed = _changed_files(source_files, dest_files)
@@ -422,14 +431,14 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     for index, relative_path in enumerate(changed, start=1):
         ensure_not_stopped()
         content = _read_local_file(local_root, relative_path)
-        _upload_file(base_url, token, remote_root, relative_path, source_files[relative_path], content, timeout)
+        _upload_file(base_url, token, remote_root, relative_path, source_files[relative_path], content, timeout, job)
         log(f"Pushed {index}/{len(changed)} {relative_path}")
     deleted_count = 0
     if job.delete_enabled and extra:
         for start in range(0, len(extra), MAX_DELETE_BATCH):
             ensure_not_stopped()
             batch = extra[start : start + MAX_DELETE_BATCH]
-            result = _request_json(base_url, "delete", token, {"root_path": remote_root, "relative_paths": batch}, timeout)
+            result = _request_json(base_url, "delete", token, {"root_path": remote_root, "relative_paths": batch}, timeout, job)
             deleted_count += len(result.get("deleted", []))
         log(f"Deleted {deleted_count} remote files missing locally.")
     return {"changed": len(changed), "deleted": deleted_count, "skipped": len(local_manifest.get("skipped", []))}

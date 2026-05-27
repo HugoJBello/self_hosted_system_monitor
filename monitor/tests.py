@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import sync_http_backup
+from .http_backups import _http_auth_headers, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1127,6 +1127,15 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(stats["deleted"], 1)
         mock_upload_file.assert_called_once()
         self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
+
+    def test_http_auth_headers_include_stable_user_agent(self):
+        job = BackupJob()
+
+        headers = _http_auth_headers("receiver-token", job, "application/json")
+
+        self.assertEqual(headers["Authorization"], "Bearer receiver-token")
+        self.assertEqual(headers["Content-Type"], "application/json")
+        self.assertEqual(headers["User-Agent"], "system-monitor-http-backup/1.0")
 
     @patch("monitor.backups.start_background_backup")
     @patch("monitor.backups._local_destination_is_available", return_value=False)
