@@ -1,7 +1,67 @@
 from django import forms
+from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm, UserCreationForm
 from zoneinfo import available_timezones
 
 from .models import AlertRule, BackupJob, MonitoringSettings, ReportRule
+
+
+User = get_user_model()
+
+
+class UserAdminCreateForm(UserCreationForm):
+    class Meta:
+        model = User
+        fields = ("username", "email", "first_name", "last_name", "is_staff", "is_active")
+        widgets = {
+            "username": forms.TextInput(attrs={"class": "form-control"}),
+            "email": forms.EmailInput(attrs={"class": "form-control"}),
+            "first_name": forms.TextInput(attrs={"class": "form-control"}),
+            "last_name": forms.TextInput(attrs={"class": "form-control"}),
+            "is_staff": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["password1"].widget.attrs.update({"class": "form-control"})
+        self.fields["password2"].widget.attrs.update({"class": "form-control"})
+        self.fields["is_staff"].label = "Admin user"
+        self.fields["is_active"].initial = True
+
+
+class UserAdminUpdateForm(forms.ModelForm):
+    class Meta:
+        model = User
+        fields = ("username", "email", "first_name", "last_name", "is_staff", "is_active")
+        widgets = {
+            "username": forms.TextInput(attrs={"class": "form-control"}),
+            "email": forms.EmailInput(attrs={"class": "form-control"}),
+            "first_name": forms.TextInput(attrs={"class": "form-control"}),
+            "last_name": forms.TextInput(attrs={"class": "form-control"}),
+            "is_staff": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "is_active": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+        }
+
+    def clean_is_staff(self):
+        value = self.cleaned_data.get("is_staff")
+        if self.instance.pk and self.instance.is_superuser and not value:
+            raise forms.ValidationError("The bootstrap superuser must stay admin.")
+        return value
+
+
+class StyledPasswordChangeForm(PasswordChangeForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.update({"class": "form-control"})
+
+
+class StyledSetPasswordForm(SetPasswordForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.update({"class": "form-control"})
 
 
 class MonitoringSettingsForm(forms.ModelForm):

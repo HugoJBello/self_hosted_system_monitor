@@ -42,9 +42,29 @@
           <div class="row g-3">
             <div class="col-md-8">
               <label class="form-label" for="{{ form.http_backup_token.id_for_label }}">Bearer token accepted by this server</label>
-              {{ form.http_backup_token }}
+              <div class="input-group">
+                {{ form.http_backup_token }}
+                <button type="button" class="btn btn-outline-light" data-password-toggle data-target-id="{{ form.http_backup_token.id_for_label }}" aria-label="Show HTTP backup token"><i class="bi bi-eye"></i></button>
+              </div>
               <div class="form-text">Remote system-monitor servers must send this token when they read, write, or delete files through the HTTP backup endpoints.</div>
             </div>
+          </div>
+        </section>
+
+        <section class="config-section">
+          <div class="d-flex justify-content-between align-items-center gap-3 flex-wrap">
+            <div>
+              <h2 class="h5 mb-1">Users</h2>
+              <p class="text-secondary mb-0">Admin users can create normal users, promote admins, and reset passwords.</p>
+            </div>
+            <a href="{% url 'monitor:users' %}" class="btn btn-outline-light">Manage users</a>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            {% for user in settings_users %}
+              <span class="chip compact-chip">{{ user.username }} · {% if user.is_staff %}admin{% else %}user{% endif %}</span>
+            {% empty %}
+              <span class="text-secondary small">No users yet.</span>
+            {% endfor %}
           </div>
         </section>
 
@@ -196,6 +216,20 @@
     };
     modeField.addEventListener("change", syncTimezoneVisibility);
     syncTimezoneVisibility();
+
+    document.querySelectorAll("[data-password-toggle]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const input = document.getElementById(button.dataset.targetId);
+        const icon = button.querySelector("i");
+        if (!input) return;
+        const showing = input.type === "text";
+        input.type = showing ? "password" : "text";
+        if (icon) {
+          icon.className = showing ? "bi bi-eye" : "bi bi-eye-slash";
+        }
+        button.setAttribute("aria-label", showing ? "Show HTTP backup token" : "Hide HTTP backup token");
+      });
+    });
   });
 </script>
 {% endblock %}

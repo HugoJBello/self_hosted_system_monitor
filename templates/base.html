@@ -26,12 +26,24 @@
         </button>
         <div class="collapse navbar-collapse" id="mainNav">
           <ul class="navbar-nav ms-auto gap-lg-2">
-            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:system-monitor' %}"><i class="bi bi-speedometer2"></i><span>Monitor</span></a></li>
-            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:history' %}"><i class="bi bi-clock-history"></i><span>History</span></a></li>
-            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:alerts' %}"><i class="bi bi-bell"></i><span>Alerts</span></a></li>
-            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:reports' %}"><i class="bi bi-graph-up-arrow"></i><span>Reports</span></a></li>
-            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:backups' %}"><i class="bi bi-hdd-network"></i><span>Backups</span></a></li>
-            <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:settings' %}"><i class="bi bi-sliders"></i><span>Settings</span></a></li>
+            {% if request.user.is_authenticated %}
+              <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:system-monitor' %}"><i class="bi bi-speedometer2"></i><span>Monitor</span></a></li>
+              <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:history' %}"><i class="bi bi-clock-history"></i><span>History</span></a></li>
+              <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:alerts' %}"><i class="bi bi-bell"></i><span>Alerts</span></a></li>
+              <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:reports' %}"><i class="bi bi-graph-up-arrow"></i><span>Reports</span></a></li>
+              <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:backups' %}"><i class="bi bi-hdd-network"></i><span>Backups</span></a></li>
+              {% if request.user.is_staff %}
+                <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:settings' %}"><i class="bi bi-sliders"></i><span>Settings</span></a></li>
+                <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:users' %}"><i class="bi bi-people"></i><span>Users</span></a></li>
+              {% endif %}
+              <li class="nav-item"><a class="nav-link d-inline-flex align-items-center gap-2" href="{% url 'monitor:password' %}"><i class="bi bi-key"></i><span>{{ request.user.username }}</span></a></li>
+              <li class="nav-item">
+                <form method="post" action="{% url 'monitor:logout' %}" class="d-inline">
+                  {% csrf_token %}
+                  <button type="submit" class="nav-link d-inline-flex align-items-center gap-2 border-0 bg-transparent"><i class="bi bi-box-arrow-right"></i><span>Logout</span></button>
+                </form>
+              </li>
+            {% endif %}
           </ul>
         </div>
       </div>

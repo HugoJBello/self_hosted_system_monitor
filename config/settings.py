@@ -86,5 +86,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
+LOGIN_URL = "monitor:login"
+LOGIN_REDIRECT_URL = "monitor:system-monitor"
+LOGOUT_REDIRECT_URL = "monitor:login"
+
 SAMPLER_DEFAULT_INTERVAL = int(os.getenv("SAMPLER_DEFAULT_INTERVAL", "60"))
 BACKUP_SCHEDULER_POLL_SECONDS = int(os.getenv("BACKUP_SCHEDULER_POLL_SECONDS", "15"))

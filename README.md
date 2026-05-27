@@ -9,6 +9,8 @@
 - Live monitor page inspired by `htop`/`glances`, adapted for the web.
 - Configuration page to control the sampling interval and retention.
 - Configuration page for an external notifications service API.
+- Django username/password authentication for all web views.
+- Admin-only settings and user management.
 - Alerts page with configurable stress-detection rules and a recent alert feed.
 - History page with Chart.js charts for CPU, memory, load, disk, network, and process counts.
 - Persistent SQLite data exposed through a bind mount in `./data`.
@@ -32,6 +34,13 @@ docker compose up --build
 The web UI will be available at:
 
 - `http://localhost:8012/system_monitor/`
+
+Default login after first start:
+
+- username: `admin`
+- password: `change_me`
+
+Change this password immediately from the account password page. The default admin is created automatically during container startup if it does not already exist.
 
 ## Runtime Notes
 
@@ -59,16 +68,65 @@ The web UI will be available at:
 - `NOTIFICATIONS_DEFAULT_PRIORITY`: default `high`
 - `NOTIFICATIONS_DEFAULT_ACTION`: default `notify`
 - `NOTIFICATIONS_TIMEOUT_SECONDS`: default `10`
+- `SYSTEM_MONITOR_DEFAULT_ADMIN_USER`: default `admin`
+- `SYSTEM_MONITOR_DEFAULT_ADMIN_PASSWORD`: default `change_me`
+- `SYSTEM_MONITOR_DEFAULT_ADMIN_EMAIL`: default empty
+- `HTTP_BACKUP_TOKEN`: default `change_this_token`
 
 ## First Start
 
 On startup the entrypoint:
 
 1. applies migrations
-2. collects static files
-3. starts Gunicorn
+2. ensures the default admin user exists
+3. collects static files
+4. starts Gunicorn
 
 The sampler service waits for the database and then begins saving snapshots.
+
+## Authentication and Users
+
+All web pages require a Django username/password login. The HTTP backup synchronization API is the exception: `/backups/http/manifest/`, `/backups/http/file/`, and `/backups/http/delete/` do not use the web login because they authenticate with their own Bearer token.
+
+Roles:
+
+- Normal users can use the monitor, history, alerts, reports, backups, and change their own password.
+- Admin users can also open Settings and Users.
+- The Users page lets admins create normal/admin users and reset any user password.
+- The Django admin console is still available for direct database administration.
+
+The bootstrap admin user is:
+
+```text
+username: admin
+password: change_me
+```
+
+Override it with `SYSTEM_MONITOR_DEFAULT_ADMIN_USER`, `SYSTEM_MONITOR_DEFAULT_ADMIN_PASSWORD`, and `SYSTEM_MONITOR_DEFAULT_ADMIN_EMAIL`.
+
+## HTTP Backup Receiver Token
+
+HTTP server-to-server backup jobs use a dedicated Bearer token and do not depend on the web login session.
+
+The receiving server stores its accepted token in Settings under `HTTP backup receiver`. The default is:
+
+```text
+change_this_token
+```
+
+Change it before using HTTP backups between servers. The value is also initializable with:
+
+```env
+HTTP_BACKUP_TOKEN=change_this_token
+```
+
+When configuring an HTTP backup job on the sending server, set `Remote Bearer token` to the token saved on the receiving server. The token is sent as:
+
+```http
+Authorization: Bearer <token>
+```
+
+This token protects the HTTP backup endpoints that can list, read, write, and delete files under the configured backup paths.
 
 ## Alerts
 

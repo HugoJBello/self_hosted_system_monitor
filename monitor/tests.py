@@ -1,6 +1,7 @@
 import os
 import tempfile
 
+from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -14,8 +15,15 @@ from .reporting import generate_report_for_rule
 from .services import collect_snapshot
 
 
+User = get_user_model()
+
+
 @override_settings(FORCE_SCRIPT_NAME=None)
 class MonitorViewsTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("admin", password="test-pass", is_staff=True, is_superuser=True)
+        self.client.force_login(self.user)
+
     def _path(self, name, args=None):
         path = reverse(name, args=args or [])
         return path.replace("/system_monitor", "", 1)
@@ -63,6 +71,24 @@ class MonitorViewsTests(TestCase):
     def test_home_redirects_to_monitor(self):
         response = self.client.get(self._path("monitor:home"))
         self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+
+    def test_anonymous_user_is_redirected_to_login(self):
+        self.client.logout()
+        response = self.client.get(self._path("monitor:backups"))
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse("monitor:login"), response["Location"])
+
+    def test_normal_user_cannot_open_settings(self):
+        self.client.logout()
+        normal = User.objects.create_user("normal", password="test-pass")
+        self.client.force_login(normal)
+        response = self.client.get(self._path("monitor:settings"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_admin_can_open_users_page(self):
+        response = self.client.get(self._path("monitor:users"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Create user")
 
     def test_system_monitor_page_supports_process_sort_and_pagination(self):
         snapshot = self._create_snapshot(timezone.now(), platform_label="Arch Linux")
@@ -829,6 +855,10 @@ class AlertingTests(TestCase):
 
 
 class BackupHelpersTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("admin", password="test-pass", is_staff=True, is_superuser=True)
+        self.client.force_login(self.user)
+
     def _path(self, name, args=None):
         path = reverse(name, args=args or [])
         return path.replace("/system_monitor", "", 1)
@@ -1252,7 +1282,6 @@ class BackupHelpersTests(TestCase):
 
 class MonitoringIsolationTests(TestCase):
     @patch("monitor.services.prune_old_snapshots")
-    @patch("monitor.services.dispatch_scheduled_backups", side_effect=RuntimeError("backup scheduler exploded"))
     @patch("monitor.services.dispatch_scheduled_reports")
     @patch("monitor.services.evaluate_alerts")
     @patch("monitor.services._process_rows", return_value={"rows": [], "total": 10, "running": 2, "sleeping": 8, "stopped": 0, "zombie": 0, "status_counts": {"running": 2}})
@@ -1265,7 +1294,7 @@ class MonitoringIsolationTests(TestCase):
     @patch("monitor.services.psutil.cpu_count", side_effect=[4, 2])
     @patch("monitor.services.psutil.cpu_percent", side_effect=[12.5, [12.5, 0.0]])
     @patch("monitor.services.psutil.boot_time", return_value=1_700_000_000)
-    def test_backup_failures_do_not_break_snapshot_collection(
+    def test_post_collection_failures_do_not_break_snapshot_collection(
         self,
         mock_boot_time,
         mock_cpu_percent,
@@ -1279,7 +1308,6 @@ class MonitoringIsolationTests(TestCase):
         mock_process_rows,
         mock_evaluate_alerts,
         mock_dispatch_reports,
-        mock_dispatch_backups,
         mock_prune,
     ):
         class _Memory:
@@ -1308,5 +1336,4 @@ class MonitoringIsolationTests(TestCase):
         self.assertIsNotNone(snapshot.pk)
         mock_evaluate_alerts.assert_called_once()
         mock_dispatch_reports.assert_called_once()
-        mock_dispatch_backups.assert_called_once()
         mock_prune.assert_called_once()

@@ -993,6 +993,16 @@ body.app-shell {
   max-width: 32rem;
 }
 
+.auth-shell {
+  min-height: calc(100vh - 8rem);
+  display: grid;
+  place-items: center;
+}
+
+.auth-card {
+  width: min(100%, 28rem);
+}
+
 .form-control,
 .form-select {
   background-color: rgba(255, 255, 255, 0.05);

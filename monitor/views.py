@@ -2,6 +2,9 @@ from datetime import timedelta
 from collections import defaultdict
 
 from django.contrib import messages
+from django.contrib.auth import views as auth_views
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.contrib.auth import get_user_model
 from django.db import OperationalError
 from django.http import JsonResponse
 from django.forms import modelformset_factory
@@ -15,11 +18,100 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .alerting import ensure_default_alert_rules, top_processes_for_alert_window
 from .backups import get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
-from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm
+from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
 from .reporting import build_time_series_chart_data
 from .services import _process_rows
+
+
+User = get_user_model()
+
+
+class AdminRequiredMixin(UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_authenticated and self.request.user.is_staff
+
+
+class LoginView(auth_views.LoginView):
+    template_name = "monitor/login.html"
+    redirect_authenticated_user = True
+
+
+class LogoutView(auth_views.LogoutView):
+    pass
+
+
+class PasswordView(LoginRequiredMixin, View):
+    template_name = "monitor/password.html"
+
+    def get(self, request):
+        return render(request, self.template_name, {"form": StyledPasswordChangeForm(request.user), "settings_obj": MonitoringSettings.load()})
+
+    def post(self, request):
+        form = StyledPasswordChangeForm(request.user, request.POST)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "Password updated. Sign in again with the new password.")
+            return redirect("monitor:login")
+        return render(request, self.template_name, {"form": form, "settings_obj": MonitoringSettings.load()})
+
+
+class UsersView(AdminRequiredMixin, View):
+    template_name = "monitor/users.html"
+
+    def get(self, request):
+        return render(request, self.template_name, self._context())
+
+    def post(self, request):
+        if "create_user" in request.POST:
+            form = UserAdminCreateForm(request.POST, prefix="new")
+            if form.is_valid():
+                user = form.save(commit=False)
+                if user.is_staff:
+                    user.is_superuser = True
+                user.save()
+                messages.success(request, f"User '{user.username}' created.")
+                return redirect("monitor:users")
+            return render(request, self.template_name, self._context(create_form=form))
+
+        user = get_object_or_404(User, pk=request.POST.get("user_id"))
+        if "save_user" in request.POST:
+            form = UserAdminUpdateForm(request.POST, instance=user, prefix=f"user-{user.id}")
+            if form.is_valid():
+                updated = form.save(commit=False)
+                updated.is_superuser = bool(updated.is_staff)
+                updated.save()
+                messages.success(request, f"User '{updated.username}' updated.")
+                return redirect("monitor:users")
+            return render(request, self.template_name, self._context(form_overrides={user.id: form}))
+        if "set_password" in request.POST:
+            form = StyledSetPasswordForm(user, request.POST, prefix=f"pass-{user.id}")
+            if form.is_valid():
+                form.save()
+                messages.success(request, f"Password updated for '{user.username}'.")
+                return redirect("monitor:users")
+            return render(request, self.template_name, self._context(password_form_overrides={user.id: form}))
+        return redirect("monitor:users")
+
+    def _context(self, create_form=None, form_overrides=None, password_form_overrides=None):
+        form_overrides = form_overrides or {}
+        password_form_overrides = password_form_overrides or {}
+        users = list(User.objects.order_by("username"))
+        user_rows = [
+            {
+                "user": user,
+                "form": form_overrides.get(user.id) or UserAdminUpdateForm(instance=user, prefix=f"user-{user.id}"),
+                "password_form": password_form_overrides.get(user.id) or StyledSetPasswordForm(user, prefix=f"pass-{user.id}"),
+            }
+            for user in users
+        ]
+        return {
+            "users": users,
+            "user_rows": user_rows,
+            "create_form": create_form or UserAdminCreateForm(prefix="new"),
+            "settings_obj": MonitoringSettings.load(),
+        }
 
 
 def _best_effort_reconcile_backups():
@@ -29,19 +121,19 @@ def _best_effort_reconcile_backups():
         pass
 
 
-class RedirectHomeView(View):
+class RedirectHomeView(LoginRequiredMixin, View):
     def get(self, request):
         return redirect("monitor:system-monitor")
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class SettingsView(View):
+class SettingsView(AdminRequiredMixin, View):
     template_name = "monitor/settings.html"
 
     def get(self, request):
         settings_obj = MonitoringSettings.load()
         form = MonitoringSettingsForm(instance=settings_obj)
-        return render(request, self.template_name, {"form": form, "settings_obj": settings_obj})
+        return render(request, self.template_name, self._context(form, settings_obj))
 
     def post(self, request):
         settings_obj = MonitoringSettings.load()
@@ -70,7 +162,14 @@ class SettingsView(View):
             else:
                 messages.success(request, "Monitoring settings updated.")
             return redirect("monitor:settings")
-        return render(request, self.template_name, {"form": form, "settings_obj": settings_obj})
+        return render(request, self.template_name, self._context(form, settings_obj))
+
+    def _context(self, form, settings_obj):
+        return {
+            "form": form,
+            "settings_obj": settings_obj,
+            "settings_users": list(User.objects.order_by("username")),
+        }
 
 
 AlertRuleFormSet = modelformset_factory(
@@ -87,7 +186,7 @@ ReportRuleFormSet = modelformset_factory(
     can_delete=True,
 )
 
-class SystemMonitorView(View):
+class SystemMonitorView(LoginRequiredMixin, View):
     template_name = "monitor/system_monitor.html"
 
     def get(self, request):
@@ -148,7 +247,7 @@ class SystemMonitorView(View):
         return render(request, self.template_name, context)
 
 
-class HistoryView(View):
+class HistoryView(LoginRequiredMixin, View):
     template_name = "monitor/history.html"
 
     def get(self, request):
@@ -283,7 +382,7 @@ class HistoryView(View):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class AlertsView(View):
+class AlertsView(LoginRequiredMixin, View):
     template_name = "monitor/alerts.html"
 
     def get(self, request):
@@ -343,7 +442,7 @@ class AlertsView(View):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class ReportsView(View):
+class ReportsView(LoginRequiredMixin, View):
     template_name = "monitor/reports.html"
 
     def get(self, request):
@@ -380,7 +479,7 @@ class ReportsView(View):
         }
 
 
-class AlertDetailView(View):
+class AlertDetailView(LoginRequiredMixin, View):
     template_name = "monitor/alert_detail.html"
 
     def get(self, request, event_id):
@@ -428,7 +527,7 @@ class AlertDetailView(View):
         )
 
 
-class ReportDetailView(View):
+class ReportDetailView(LoginRequiredMixin, View):
     template_name = "monitor/report_detail.html"
 
     def get(self, request, report_id):
@@ -447,7 +546,7 @@ class ReportDetailView(View):
 
 
 @method_decorator(csrf_exempt, name="dispatch")
-class BackupsView(View):
+class BackupsView(LoginRequiredMixin, View):
     template_name = "monitor/backups.html"
 
     def get(self, request):
@@ -568,7 +667,7 @@ class BackupsView(View):
         return job.source_path or "(source not set)"
 
 
-class BackupRunsView(View):
+class BackupRunsView(LoginRequiredMixin, View):
     template_name = "monitor/backup_runs.html"
 
     def get(self, request):
@@ -590,13 +689,13 @@ class BackupRunsView(View):
         )
 
 
-class BackupTreeView(View):
+class BackupTreeView(LoginRequiredMixin, View):
     def get(self, request):
         host_path = request.GET.get("path", "/")
         return JsonResponse({"items": list_directory_children(host_path)})
 
 
-class BackupRunStatusView(View):
+class BackupRunStatusView(LoginRequiredMixin, View):
     def get(self, request, run_id):
         backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=run_id)
         runtime_state = get_runtime_state(run_id) if backup_run.status == "running" else None
@@ -620,7 +719,7 @@ class BackupRunStatusView(View):
         )
 
 
-class BackupRunDetailView(View):
+class BackupRunDetailView(LoginRequiredMixin, View):
     template_name = "monitor/backup_run_detail.html"
 
     def get(self, request, run_id):
