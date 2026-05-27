@@ -159,6 +159,27 @@ def _json_error(message, status=400):
     return JsonResponse({"ok": False, "error": str(message)}, status=status)
 
 
+def _write_request_stream_to_file(request, destination_path):
+    stream = request.META.get("wsgi.input")
+    if stream is None:
+        raise ValueError("Request input stream is not available.")
+    remaining = int(request.META.get("CONTENT_LENGTH") or 0)
+    with open(destination_path, "wb") as handle:
+        if remaining:
+            while remaining > 0:
+                chunk = stream.read(min(CHUNK_SIZE, remaining))
+                if not chunk:
+                    raise ValueError("Upload ended before the declared content length.")
+                handle.write(chunk)
+                remaining -= len(chunk)
+        else:
+            while True:
+                chunk = stream.read(CHUNK_SIZE)
+                if not chunk:
+                    break
+                handle.write(chunk)
+
+
 @csrf_exempt
 def http_backup_manifest_view(request):
     if not _auth_ok(request):
@@ -197,17 +218,22 @@ def http_backup_file_view(request):
         return FileResponse(open(file_path, "rb"), as_attachment=False)
 
     if request.method == "POST":
+        tmp_path = None
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = file_path.with_name(f".{file_path.name}.http-sync.tmp")
-            with open(tmp_path, "wb") as handle:
-                handle.write(request.body)
+            _write_request_stream_to_file(request, tmp_path)
             os.replace(tmp_path, file_path)
-            mtime_ns = request.GET.get("mtime_ns") or request.POST.get("mtime_ns")
+            mtime_ns = request.GET.get("mtime_ns")
             if mtime_ns:
                 ns = int(mtime_ns)
                 os.utime(file_path, ns=(ns, ns))
         except Exception as exc:
+            if tmp_path:
+                try:
+                    tmp_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
             return _json_error(exc)
         return JsonResponse({"ok": True})
 

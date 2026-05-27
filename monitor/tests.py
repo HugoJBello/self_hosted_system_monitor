@@ -1155,6 +1155,27 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(_changed_files(source_files, dest_files), ["changed.jpg", "new.jpg"])
 
+    @override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=16)
+    def test_http_file_upload_streams_past_django_memory_limit(self):
+        settings_obj = MonitoringSettings.load()
+        settings_obj.http_backup_token = "receiver-token"
+        settings_obj.save()
+        payload = b"x" * 1024
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            response = self.client.post(
+                self._path("monitor:backup-http-file"),
+                data=payload,
+                content_type="application/octet-stream",
+                HTTP_AUTHORIZATION="Bearer receiver-token",
+                QUERY_STRING=f"root_path={host_root}&relative_path=large.bin&mtime_ns=123456789",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            written_path = os.path.join(hostfs_root, "large.bin")
+            with open(written_path, "rb") as handle:
+                self.assertEqual(handle.read(), payload)
+
     @patch("monitor.backups.start_background_backup")
     @patch("monitor.backups._local_destination_is_available", return_value=False)
     @patch("monitor.backups.mark_stale_running_backups", return_value=[])
