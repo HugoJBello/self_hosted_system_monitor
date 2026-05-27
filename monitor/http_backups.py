@@ -250,6 +250,10 @@ def _api_url(base_url, endpoint):
     return f"{base_url.rstrip('/')}/backups/http/{endpoint}/"
 
 
+def _http_request_timeout(job):
+    return max(DEFAULT_HTTP_TIMEOUT_SECONDS, int(job.idle_timeout_seconds or 0))
+
+
 def _http_auth_headers(token, job=None, content_type=None):
     headers = {
         "Authorization": f"Bearer {token}",
@@ -376,7 +380,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         if should_stop and should_stop():
             raise InterruptedError("Stop requested.")
 
-    timeout = DEFAULT_HTTP_TIMEOUT_SECONDS
+    timeout = _http_request_timeout(job)
     base_url = job.http_remote_url.rstrip("/")
     token = (job.http_remote_token or "").strip()
     if not base_url:
@@ -395,6 +399,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     log(f"Remote server: {base_url}")
     log(f"Remote path: {job.http_remote_path}")
     log(f"Max file size: {max_size_bytes} bytes")
+    log(f"HTTP request timeout: {timeout}s")
     if job.http_direction == "pull":
         local_root = job.local_dest_path
         remote_root = job.http_remote_path
