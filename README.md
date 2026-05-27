@@ -54,6 +54,7 @@ Change this password immediately from the account password page. The default adm
 - `APP_SUBPATH`: default `/system_monitor`
 - `DJANGO_DB_PATH`: default `/app/data/db.sqlite3`
 - `DJANGO_ALLOWED_HOSTS`: default `*`
+- `DJANGO_CSRF_TRUSTED_ORIGINS`: comma-separated external origins allowed to POST forms, for example `https://api-android18.hjbello.org`
 - `SAMPLER_DEFAULT_INTERVAL`: default `60`
 - `MONITOR_ROOT_PATH`: default `/hostfs`
 - `MONITOR_PROCFS_PATH`: default `/hostfs/proc`
@@ -216,6 +217,7 @@ The Django settings already account for:
 - `FORCE_SCRIPT_NAME`
 - prefixed `STATIC_URL`
 - `X-Forwarded-Proto`
+- `DJANGO_CSRF_TRUSTED_ORIGINS` for external HTTPS form posts
 
 If your external Nginx proxies `/system_monitor/` to this container, keep forwarding the prefix unchanged.
 
@@ -252,3 +254,4 @@ Important notes:
 - Keep the trailing slash in `proxy_pass`.
 - Nginx should strip `/system_monitor/` before forwarding to Django. `FORCE_SCRIPT_NAME` handles URL generation with the external prefix.
 - Keep `X-Forwarded-Prefix /system_monitor` so the upstream knows the public mount point.
+- Add the public origin to `DJANGO_CSRF_TRUSTED_ORIGINS`, for example `https://api-android18.hjbello.org`, otherwise login and other POST forms will be rejected by Django CSRF origin checks.
