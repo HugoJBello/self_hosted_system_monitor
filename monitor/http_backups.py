@@ -18,6 +18,7 @@ from .models import MonitoringSettings
 DEFAULT_HTTP_TIMEOUT_SECONDS = 60
 CHUNK_SIZE = 1024 * 1024
 MAX_DELETE_BATCH = 1000
+MAX_STAT_BATCH = 1000
 HTTP_RETRY_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 HTTP_RETRY_ATTEMPTS = 3
 HTTP_RETRY_BACKOFF_SECONDS = 1
@@ -68,6 +69,13 @@ def _safe_relative_path(value):
     if normalized in {"", "."} or normalized.startswith("../") or normalized == ".." or os.path.isabs(normalized):
         raise ValueError("Invalid relative path.")
     return normalized
+
+
+def _safe_optional_relative_dir(value):
+    rel_path = (value or "").replace("\\", "/").strip("/")
+    if not rel_path:
+        return ""
+    return _safe_relative_path(rel_path)
 
 
 def _safe_child_path(root_path, relative_path):
@@ -144,15 +152,19 @@ def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None
             if max_size and stat.st_size > max_size:
                 skipped.append({"path": relative_path, "reason": "too_large", "size": stat.st_size})
                 continue
-            metadata = {
-                "size": stat.st_size,
-                "mtime": stat.st_mtime_ns // 1_000_000_000,
-                "mtime_ns": stat.st_mtime_ns,
-            }
+            metadata = _stat_metadata(stat)
             if include_hashes:
                 metadata["sha256"] = _sha256_file(absolute_path)
             files[relative_path] = metadata
     return {"root_path": host_root_path, "files": files, "skipped": skipped}
+
+
+def _stat_metadata(stat):
+    return {
+        "size": stat.st_size,
+        "mtime": stat.st_mtime_ns // 1_000_000_000,
+        "mtime_ns": stat.st_mtime_ns,
+    }
 
 
 def _auth_ok(request):
@@ -224,6 +236,94 @@ def http_backup_manifest_view(request):
     except Exception as exc:
         return _json_error(exc)
     return JsonResponse({"ok": True, **manifest})
+
+
+@csrf_exempt
+def http_backup_stat_view(request):
+    if not _auth_ok(request):
+        return _json_error("Unauthorized.", status=401)
+    if request.method != "POST":
+        return _json_error("Method not allowed.", status=405)
+    try:
+        payload = _json_request(request)
+        absolute_root = _hostfs_path(payload.get("root_path", ""))
+        if payload.get("create_root"):
+            os.makedirs(absolute_root, exist_ok=True)
+        if not os.path.isdir(absolute_root):
+            raise FileNotFoundError(f"Root folder not found: {payload.get('root_path', '')}")
+        relative_paths = payload.get("relative_paths") or []
+        if len(relative_paths) > MAX_STAT_BATCH:
+            raise ValueError(f"Stat batch too large. Maximum is {MAX_STAT_BATCH}.")
+        files = {}
+        missing = []
+        skipped = []
+        for relative_path in relative_paths:
+            safe_relative_path = _safe_relative_path(relative_path)
+            file_path = _safe_child_path(absolute_root, safe_relative_path)
+            try:
+                stat = os.stat(file_path, follow_symlinks=False)
+            except FileNotFoundError:
+                missing.append(safe_relative_path)
+                continue
+            except OSError:
+                skipped.append({"path": safe_relative_path, "reason": "stat_failed"})
+                continue
+            if not os.path.isfile(file_path):
+                skipped.append({"path": safe_relative_path, "reason": "not_regular_file"})
+                continue
+            files[safe_relative_path] = _stat_metadata(stat)
+    except Exception as exc:
+        return _json_error(exc)
+    return JsonResponse({"ok": True, "files": files, "missing": missing, "skipped": skipped})
+
+
+@csrf_exempt
+def http_backup_list_view(request):
+    if not _auth_ok(request):
+        return _json_error("Unauthorized.", status=401)
+    if request.method != "POST":
+        return _json_error("Method not allowed.", status=405)
+    try:
+        payload = _json_request(request)
+        absolute_root = _hostfs_path(payload.get("root_path", ""))
+        relative_dir = _safe_optional_relative_dir(payload.get("relative_dir", ""))
+        if payload.get("create_root"):
+            os.makedirs(absolute_root, exist_ok=True)
+        root = Path(absolute_root).resolve()
+        directory = root if not relative_dir else _safe_child_path(root, relative_dir)
+        if not directory.is_dir():
+            raise FileNotFoundError(f"Folder not found: {payload.get('root_path', '')}/{relative_dir}".rstrip("/"))
+        excludes = _patterns(payload.get("exclude_patterns") or [])
+        max_size = payload.get("max_size_bytes")
+        files = {}
+        dirs = []
+        skipped = []
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                relative_path = f"{relative_dir}/{entry.name}".strip("/")
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        if _is_excluded(f"{relative_path}/", excludes):
+                            skipped.append({"path": relative_path, "reason": "excluded"})
+                        else:
+                            dirs.append(relative_path)
+                        continue
+                    if _is_excluded(relative_path, excludes):
+                        skipped.append({"path": relative_path, "reason": "excluded"})
+                        continue
+                    stat = entry.stat(follow_symlinks=False)
+                    if not entry.is_file(follow_symlinks=False):
+                        skipped.append({"path": relative_path, "reason": "not_regular_file"})
+                        continue
+                    if max_size and stat.st_size > max_size:
+                        skipped.append({"path": relative_path, "reason": "too_large", "size": stat.st_size})
+                        continue
+                    files[relative_path] = _stat_metadata(stat)
+                except OSError:
+                    skipped.append({"path": relative_path, "reason": "stat_failed"})
+    except Exception as exc:
+        return _json_error(exc)
+    return JsonResponse({"ok": True, "relative_dir": relative_dir, "dirs": sorted(dirs), "files": files, "skipped": skipped})
 
 
 @csrf_exempt
@@ -362,6 +462,44 @@ def _request_json(base_url, endpoint, token, payload, timeout, job=None):
     if not result.get("ok"):
         raise HttpBackupError(result.get("error") or f"{endpoint} returned ok=false")
     return result
+
+
+def _request_remote_stats(base_url, token, root_path, relative_paths, timeout, job=None):
+    files = {}
+    skipped = []
+    for start in range(0, len(relative_paths), MAX_STAT_BATCH):
+        batch = relative_paths[start : start + MAX_STAT_BATCH]
+        result = _request_json(
+            base_url,
+            "stat",
+            token,
+            {"root_path": root_path, "create_root": start == 0, "relative_paths": batch},
+            timeout,
+            job,
+        )
+        files.update(result.get("files", {}))
+        skipped.extend(result.get("skipped", []))
+    return {"files": files, "skipped": skipped}
+
+
+def _request_remote_tree(base_url, token, root_path, common_payload, timeout, job=None):
+    files = {}
+    skipped = []
+    pending_dirs = [""]
+    while pending_dirs:
+        relative_dir = pending_dirs.pop(0)
+        result = _request_json(
+            base_url,
+            "list",
+            token,
+            {"root_path": root_path, "relative_dir": relative_dir, "create_root": relative_dir == "", **common_payload},
+            timeout,
+            job,
+        )
+        files.update(result.get("files", {}))
+        skipped.extend(result.get("skipped", []))
+        pending_dirs.extend(result.get("dirs", []))
+    return {"files": files, "skipped": skipped}
 
 
 def _download_file(base_url, token, root_path, relative_path, timeout, job=None):
@@ -525,13 +663,31 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     local_root = job.source_path
     remote_root = job.http_remote_path
     local_manifest = build_manifest(local_root, **common_payload)
-    remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, "create_root": True, **common_payload}, timeout, job)
     source_files = local_manifest["files"]
+    log(f"Local manifest: {len(source_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
+    if job.delete_enabled:
+        try:
+            remote_manifest = _request_remote_tree(base_url, token, remote_root, common_payload, timeout, job)
+            log(f"Remote directory listing: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
+        except HttpBackupError as exc:
+            if "HTTP 404 from list" not in str(exc):
+                raise
+            log("Remote list endpoint is unavailable; falling back to full remote manifest.")
+            remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, "create_root": True, **common_payload}, timeout, job)
+            log(f"Remote manifest: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
+    else:
+        try:
+            remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job)
+            log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
+        except HttpBackupError as exc:
+            if "HTTP 404 from stat" not in str(exc):
+                raise
+            log("Remote stat endpoint is unavailable; falling back to full remote manifest.")
+            remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, "create_root": True, **common_payload}, timeout, job)
+            log(f"Remote manifest: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
     dest_files = remote_manifest["files"]
     changed = _changed_files(source_files, dest_files)
     extra = sorted(set(dest_files) - set(source_files))
-    log(f"Local manifest: {len(source_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
-    log(f"Remote manifest: {len(dest_files)} files, {len(remote_manifest.get('skipped', []))} skipped.")
     for index, relative_path in enumerate(changed, start=1):
         ensure_not_stopped()
         content = _read_local_file(local_root, relative_path)

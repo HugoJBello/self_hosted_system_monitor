@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 from io import BytesIO
@@ -1171,7 +1172,7 @@ class BackupHelpersTests(TestCase):
             "skipped": [],
         },
     )
-    def test_http_push_uploads_changed_files_and_deletes_extras(
+    def test_http_push_uploads_changed_files_from_remote_stat(
         self,
         mock_build_manifest,
         mock_read_local_file,
@@ -1187,14 +1188,64 @@ class BackupHelpersTests(TestCase):
             http_remote_token="token-123",
             http_remote_path="/srv/backups/test",
             http_direction="push",
-            delete_enabled=True,
+            delete_enabled=False,
         )
         mock_request_json.side_effect = [
             {
                 "ok": True,
                 "files": {
                     "keep.txt": {"size": 3, "mtime_ns": 1, "sha256": "same"},
-                    "old.txt": {"size": 3, "mtime_ns": 1, "sha256": "old"},
+                },
+                "skipped": [],
+            },
+        ]
+
+        stats = sync_http_backup(job)
+
+        self.assertEqual(stats["changed"], 1)
+        self.assertEqual(stats["deleted"], 0)
+        mock_upload_file.assert_called_once()
+        self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
+        self.assertEqual(mock_request_json.call_args.args[1], "stat")
+
+    @patch("monitor.http_backups._upload_file")
+    @patch("monitor.http_backups._request_json")
+    @patch("monitor.http_backups._read_local_file", return_value=b"new")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
+                "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+                "new.txt": {"size": 3, "mtime": 2, "mtime_ns": 2_000_000_000},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_push_with_delete_uses_remote_directory_listing(
+        self,
+        mock_build_manifest,
+        mock_read_local_file,
+        mock_request_json,
+        mock_upload_file,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP push delete",
+            backup_type="http",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="push",
+            delete_enabled=True,
+        )
+        mock_request_json.side_effect = [
+            {
+                "ok": True,
+                "dirs": [],
+                "files": {
+                    "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+                    "old.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
                 },
                 "skipped": [],
             },
@@ -1206,7 +1257,65 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(stats["changed"], 1)
         self.assertEqual(stats["deleted"], 1)
         mock_upload_file.assert_called_once()
-        self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
+        self.assertEqual(mock_request_json.call_args_list[0].args[1], "list")
+        self.assertEqual(mock_request_json.call_args_list[1].args[1], "delete")
+
+    def test_http_stat_endpoint_returns_file_metadata_for_requested_paths(self):
+        settings_obj = MonitoringSettings.load()
+        settings_obj.http_backup_token = "receiver-token"
+        settings_obj.save()
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            file_path = os.path.join(hostfs_root, "folder", "camera.jpg")
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, "wb") as handle:
+                handle.write(b"image-data")
+            os.utime(file_path, ns=(1_765_000_000_123_456_789, 1_765_000_000_123_456_789))
+
+            response = self.client.post(
+                self._path("monitor:backup-http-stat"),
+                data=json.dumps({
+                    "root_path": host_root,
+                    "relative_paths": ["folder/camera.jpg", "missing.jpg"],
+                }),
+                content_type="application/json",
+                HTTP_AUTHORIZATION="Bearer receiver-token",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["files"]["folder/camera.jpg"]["size"], 10)
+            self.assertEqual(payload["files"]["folder/camera.jpg"]["mtime"], 1_765_000_000)
+            self.assertEqual(payload["missing"], ["missing.jpg"])
+
+    def test_http_list_endpoint_returns_one_directory_metadata(self):
+        settings_obj = MonitoringSettings.load()
+        settings_obj.http_backup_token = "receiver-token"
+        settings_obj.save()
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            os.makedirs(os.path.join(hostfs_root, "folder", "nested"), exist_ok=True)
+            file_path = os.path.join(hostfs_root, "folder", "camera.jpg")
+            with open(file_path, "wb") as handle:
+                handle.write(b"image-data")
+
+            response = self.client.post(
+                self._path("monitor:backup-http-list"),
+                data=json.dumps({
+                    "root_path": host_root,
+                    "relative_dir": "folder",
+                    "exclude_patterns": [],
+                    "max_size_bytes": 100,
+                }),
+                content_type="application/json",
+                HTTP_AUTHORIZATION="Bearer receiver-token",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["dirs"], ["folder/nested"])
+            self.assertEqual(payload["files"]["folder/camera.jpg"]["size"], 10)
 
     def test_http_auth_headers_include_stable_user_agent(self):
         job = BackupJob()

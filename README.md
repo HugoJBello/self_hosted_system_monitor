@@ -89,7 +89,7 @@ The sampler service waits for the database and then begins saving snapshots.
 
 ## Authentication and Users
 
-All web pages require a Django username/password login. The HTTP backup synchronization API is the exception: `/backups/http/manifest/`, `/backups/http/file/`, and `/backups/http/delete/` do not use the web login because they authenticate with their own Bearer token.
+All web pages require a Django username/password login. The HTTP backup synchronization API is the exception: `/backups/http/manifest/`, `/backups/http/list/`, `/backups/http/stat/`, `/backups/http/file/`, and `/backups/http/delete/` do not use the web login because they authenticate with their own Bearer token.
 
 Roles:
 
@@ -129,9 +129,9 @@ When configuring an HTTP backup job on the sending server, set `Remote Bearer to
 Authorization: Bearer <token>
 ```
 
-This token protects the HTTP backup endpoints that can list, read, write, and delete files under the configured backup paths.
+This token protects the HTTP backup endpoints that can list, inspect, read, write, and delete files under the configured backup paths.
 
-HTTP backups compare manifests using file size and modification time in seconds, matching rsync's normal quick-check behavior. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
+HTTP backups compare file size and modification time in seconds, matching rsync's normal quick-check behavior. Push jobs inspect destination metadata through bounded stat batches, or small per-directory listings when remote deletion is enabled, instead of requesting a full destination manifest. This avoids long Cloudflare requests on large backup trees. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
 
 ## Alerts
 
