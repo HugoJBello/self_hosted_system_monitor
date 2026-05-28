@@ -388,6 +388,17 @@ body.app-shell {
   min-width: 0;
 }
 
+.backup-job-summary-disabled {
+  opacity: 0.72;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.backup-job-summary-disabled .backup-job-icon {
+  color: #cfd8e3;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
 .backup-job-summary-top {
   display: flex;
   align-items: flex-start;

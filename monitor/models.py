@@ -416,6 +416,8 @@ class BackupJob(models.Model):
         ordering = ("position", "id")
 
     def save(self, *args, **kwargs):
+        if not self.enabled:
+            self.next_run_at = None
         if self.enabled and self.next_run_at is None:
             self.next_run_at = timezone.now() + timezone.timedelta(minutes=max(self.schedule_minutes, 5))
         super().save(*args, **kwargs)

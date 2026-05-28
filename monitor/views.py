@@ -565,6 +565,9 @@ class BackupsView(LoginRequiredMixin, View):
 
         if "rerun_run" in request.POST:
             backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=request.POST.get("rerun_run"))
+            if not backup_run.job.enabled:
+                messages.warning(request, f"Backup job '{backup_run.job.name}' is disabled. Activate it before running it again.")
+                return redirect("monitor:backups")
             running_run = BackupRun.objects.filter(job=backup_run.job, status="running").order_by("-started_at").first()
             if running_run:
                 messages.warning(request, f"Backup '{backup_run.job.name}' is already running.")
@@ -579,6 +582,9 @@ class BackupsView(LoginRequiredMixin, View):
 
         if "run_now" in request.POST:
             job = get_object_or_404(BackupJob, pk=request.POST.get("run_now"))
+            if not job.enabled:
+                messages.warning(request, f"Backup job '{job.name}' is disabled. Activate it before running it.")
+                return redirect("monitor:backups")
             running_run = BackupRun.objects.filter(job=job, status="running").order_by("-started_at").first()
             if running_run:
                 messages.warning(request, f"Backup '{job.name}' is already running.")
@@ -592,13 +598,19 @@ class BackupsView(LoginRequiredMixin, View):
             messages.success(request, f"Backup '{job.name}' started in background.")
             return redirect("monitor:backups")
 
+        if "toggle_job" in request.POST:
+            job = get_object_or_404(BackupJob, pk=request.POST.get("toggle_job"))
+            job.enabled = not job.enabled
+            job.save()
+            state = "activated" if job.enabled else "disabled"
+            messages.success(request, f"Backup job '{job.name}' {state}.")
+            return redirect("monitor:backups")
+
         if "save_job" in request.POST:
             job = get_object_or_404(BackupJob, pk=request.POST.get("save_job"))
             form = BackupJobForm(request.POST, instance=job, prefix=f"job-{job.id}")
             if form.is_valid():
                 instance = form.save(commit=False)
-                if instance.enabled and instance.next_run_at is None:
-                    instance.next_run_at = timezone.now() + timedelta(minutes=max(instance.schedule_minutes, 5))
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' updated.")
                 return redirect("monitor:backups")
@@ -615,8 +627,6 @@ class BackupsView(LoginRequiredMixin, View):
             create_form = BackupJobForm(request.POST, prefix="new")
             if create_form.is_valid():
                 instance = create_form.save(commit=False)
-                if instance.enabled and instance.next_run_at is None:
-                    instance.next_run_at = timezone.now() + timedelta(minutes=max(instance.schedule_minutes, 5))
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' created.")
                 return redirect("monitor:backups")

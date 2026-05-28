@@ -356,6 +356,47 @@ class MonitorViewsTests(TestCase):
         mock_start_background.assert_not_called()
 
     @patch("monitor.views.start_background_backup")
+    def test_backup_run_now_does_not_start_disabled_job(self, mock_start_background):
+        job = BackupJob.objects.create(
+            name="Disabled backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            enabled=False,
+        )
+
+        response = self.client.post(self._path("monitor:backups"), {"run_now": str(job.id)})
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        mock_start_background.assert_not_called()
+
+    def test_backup_toggle_disables_and_reactivates_job(self):
+        job = BackupJob.objects.create(
+            name="Toggle backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        self.assertTrue(job.enabled)
+        self.assertIsNotNone(job.next_run_at)
+
+        response = self.client.post(self._path("monitor:backups"), {"toggle_job": str(job.id)})
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertFalse(job.enabled)
+        self.assertIsNone(job.next_run_at)
+
+        response = self.client.post(self._path("monitor:backups"), {"toggle_job": str(job.id)})
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertTrue(job.enabled)
+        self.assertIsNotNone(job.next_run_at)
+
+    @patch("monitor.views.start_background_backup")
     def test_backup_rerun_starts_background_process(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Documents backup",
@@ -375,6 +416,28 @@ class MonitorViewsTests(TestCase):
         response = self.client.post(self._path("monitor:backups"), {"rerun_run": str(backup_run.id)})
         self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
         mock_start_background.assert_called_once_with(job, launched_by="manual")
+
+    @patch("monitor.views.start_background_backup")
+    def test_backup_rerun_does_not_start_disabled_job(self, mock_start_background):
+        job = BackupJob.objects.create(
+            name="Disabled backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            enabled=False,
+        )
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="failed",
+            summary="Backup failed",
+        )
+
+        response = self.client.post(self._path("monitor:backups"), {"rerun_run": str(backup_run.id)})
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        mock_start_background.assert_not_called()
 
     def test_backup_stop_requests_graceful_shutdown(self):
         job = BackupJob.objects.create(

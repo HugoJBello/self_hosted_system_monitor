@@ -38,7 +38,7 @@
   <div class="backup-job-grid">
     {% for item in job_forms %}
       {% with form=item.form job=item.job %}
-      <article class="backup-job-summary">
+      <article class="backup-job-summary{% if not job.enabled %} backup-job-summary-disabled{% endif %}">
         <div class="backup-job-summary-top">
           <div class="d-flex align-items-center gap-3 min-w-0">
             <div class="backup-job-icon">
@@ -114,7 +114,17 @@
         <div class="backup-job-actions">
           <form method="post">
             {% csrf_token %}
-            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light btn-sm"><i class="bi bi-play-fill"></i> Run now</button>
+            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light btn-sm" {% if not job.enabled %}disabled aria-disabled="true" title="Activate this job before running it"{% endif %}><i class="bi bi-play-fill"></i> Run now</button>
+          </form>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="toggle_job" value="{{ job.id }}" class="btn {% if job.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-sm">
+              {% if job.enabled %}
+                <i class="bi bi-pause-circle"></i> Disable
+              {% else %}
+                <i class="bi bi-check-circle"></i> Activate
+              {% endif %}
+            </button>
           </form>
           <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#editBackupJobModal{{ job.id }}"><i class="bi bi-pencil-square"></i> Edit</button>
           <form method="post">
