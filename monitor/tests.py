@@ -1312,6 +1312,7 @@ class BackupHelpersTests(TestCase):
         mock_upload_file.assert_called_once()
         self.assertTrue(any("Remote deletion skipped" in line for line in logs))
 
+    @patch("monitor.http_backups._head_remote_file")
     @patch("monitor.http_backups._request_json")
     @patch(
         "monitor.http_backups.build_manifest",
@@ -1322,10 +1323,11 @@ class BackupHelpersTests(TestCase):
             "skipped": [],
         },
     )
-    def test_http_push_with_old_receiver_fails_without_full_manifest_fallback(
+    def test_http_push_with_old_receiver_uses_file_head_fallback(
         self,
         mock_build_manifest,
         mock_request_json,
+        mock_head_remote_file,
     ):
         job = BackupJob.objects.create(
             name="HTTP push old receiver",
@@ -1342,11 +1344,65 @@ class BackupHelpersTests(TestCase):
             HttpBackupError("HTTP 404 from list: Page not found"),
             HttpBackupError("HTTP 404 from stat: Page not found"),
         ]
+        mock_head_remote_file.return_value = {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000}
+        logs = []
 
-        with self.assertRaisesRegex(HttpBackupError, "does not expose the list or stat endpoints"):
-            sync_http_backup(job)
+        stats = sync_http_backup(job, log_callback=logs.append)
 
+        self.assertEqual(stats["changed"], 0)
+        self.assertEqual(stats["deleted"], 0)
         self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["list", "stat"])
+        mock_head_remote_file.assert_called_once()
+        self.assertTrue(any("Remote HEAD checks" in line for line in logs))
+
+    @patch("monitor.http_backups._upload_file")
+    @patch("monitor.http_backups._head_remote_file")
+    @patch("monitor.http_backups._request_json")
+    @patch("monitor.http_backups._read_local_file", return_value=b"new")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
+                "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+                "new.txt": {"size": 3, "mtime": 2, "mtime_ns": 2_000_000_000},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_push_without_delete_uses_file_head_when_stat_is_missing(
+        self,
+        mock_build_manifest,
+        mock_read_local_file,
+        mock_request_json,
+        mock_head_remote_file,
+        mock_upload_file,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP push head fallback",
+            backup_type="http",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="push",
+            delete_enabled=False,
+        )
+        mock_request_json.side_effect = [
+            HttpBackupError("HTTP 404 from stat: Page not found"),
+        ]
+        mock_head_remote_file.side_effect = [
+            {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+            None,
+        ]
+
+        stats = sync_http_backup(job)
+
+        self.assertEqual(stats["changed"], 1)
+        self.assertEqual(stats["deleted"], 0)
+        self.assertEqual(mock_head_remote_file.call_count, 2)
+        mock_upload_file.assert_called_once()
+        self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
 
     def test_http_stat_endpoint_returns_file_metadata_for_requested_paths(self):
         settings_obj = MonitoringSettings.load()
@@ -1376,6 +1432,28 @@ class BackupHelpersTests(TestCase):
             self.assertEqual(payload["files"]["folder/camera.jpg"]["size"], 10)
             self.assertEqual(payload["files"]["folder/camera.jpg"]["mtime"], 1_765_000_000)
             self.assertEqual(payload["missing"], ["missing.jpg"])
+
+    def test_http_file_head_returns_metadata_headers(self):
+        settings_obj = MonitoringSettings.load()
+        settings_obj.http_backup_token = "receiver-token"
+        settings_obj.save()
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            file_path = os.path.join(hostfs_root, "camera.jpg")
+            with open(file_path, "wb") as handle:
+                handle.write(b"image-data")
+            os.utime(file_path, ns=(1_765_000_000_123_456_789, 1_765_000_000_123_456_789))
+
+            response = self.client.head(
+                self._path("monitor:backup-http-file"),
+                HTTP_AUTHORIZATION="Bearer receiver-token",
+                QUERY_STRING=f"root_path={host_root}&relative_path=camera.jpg",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.headers["X-Backup-Size"], "10")
+            self.assertEqual(response.headers["X-Backup-Mtime"], "1765000000")
+            self.assertEqual(response.headers["X-Backup-Mtime-Ns"], "1765000000123456789")
 
     def test_http_list_endpoint_returns_one_directory_metadata(self):
         settings_obj = MonitoringSettings.load()

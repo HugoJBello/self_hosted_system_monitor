@@ -9,7 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-from django.http import FileResponse, JsonResponse
+from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
 from .models import MonitoringSettings
@@ -343,6 +343,20 @@ def http_backup_file_view(request):
             return _json_error("File not found.", status=404)
         return FileResponse(open(file_path, "rb"), as_attachment=False)
 
+    if request.method == "HEAD":
+        if not file_path.is_file():
+            return HttpResponse(status=404)
+        try:
+            stat = os.stat(file_path, follow_symlinks=False)
+        except OSError:
+            return HttpResponse(status=404)
+        response = HttpResponse()
+        metadata = _stat_metadata(stat)
+        response.headers["X-Backup-Size"] = str(metadata["size"])
+        response.headers["X-Backup-Mtime"] = str(metadata["mtime"])
+        response.headers["X-Backup-Mtime-Ns"] = str(metadata["mtime_ns"])
+        return response
+
     if request.method == "POST":
         tmp_path = None
         try:
@@ -500,6 +514,58 @@ def _request_remote_tree(base_url, token, root_path, common_payload, timeout, jo
         skipped.extend(result.get("skipped", []))
         pending_dirs.extend(result.get("dirs", []))
     return {"files": files, "skipped": skipped}
+
+
+def _head_remote_file(base_url, token, root_path, relative_path, timeout, job=None):
+    query = urlencode({"root_path": root_path, "relative_path": relative_path})
+
+    def make_request():
+        return Request(
+            f"{_api_url(base_url, 'file')}?{query}",
+            method="HEAD",
+            headers=_http_auth_headers(token, job),
+        )
+
+    for attempt in range(HTTP_RETRY_ATTEMPTS + 1):
+        try:
+            with urlopen(make_request(), timeout=timeout) as response:
+                size = response.headers.get("X-Backup-Size")
+                mtime = response.headers.get("X-Backup-Mtime")
+                mtime_ns = response.headers.get("X-Backup-Mtime-Ns")
+                if size is None or mtime is None:
+                    raise HttpBackupError("Remote file endpoint did not return backup metadata headers.")
+                metadata = {"size": int(size), "mtime": int(mtime)}
+                if mtime_ns is not None:
+                    metadata["mtime_ns"] = int(mtime_ns)
+                return metadata
+        except HTTPError as exc:
+            if exc.code == 404:
+                return None
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code in HTTP_RETRY_STATUS_CODES and attempt < HTTP_RETRY_ATTEMPTS:
+                time.sleep(_retry_delay(attempt))
+                continue
+            raise HttpBackupResponseError(exc.code, body) from exc
+        except (URLError, TimeoutError):
+            if attempt < HTTP_RETRY_ATTEMPTS:
+                time.sleep(_retry_delay(attempt))
+                continue
+            raise
+    raise HttpBackupError("HTTP HEAD request failed after retries.")
+
+
+def _request_remote_file_heads(base_url, token, root_path, relative_paths, timeout, job=None):
+    files = {}
+    for relative_path in relative_paths:
+        try:
+            metadata = _head_remote_file(base_url, token, root_path, relative_path, timeout, job)
+        except HttpBackupResponseError as exc:
+            raise HttpBackupError(f"HTTP {exc.code} while checking {relative_path}: {exc.body}") from exc
+        except (URLError, TimeoutError) as exc:
+            raise HttpBackupError(f"HEAD check failed for {relative_path}: {exc}") from exc
+        if metadata is not None:
+            files[relative_path] = metadata
+    return {"files": files, "skipped": []}
 
 
 def _endpoint_missing_error(exc, endpoint):
@@ -683,11 +749,11 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
             except HttpBackupError as stat_exc:
                 if not _endpoint_missing_error(stat_exc, "stat"):
                     raise
-                raise HttpBackupError(
-                    "Remote HTTP backup receiver does not expose the list or stat endpoints. "
-                    "Deploy the latest system monitor version on the destination server before running HTTP push backups."
-                ) from stat_exc
-            log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
+                log("Remote stat endpoint is unavailable; using file HEAD checks and skipping remote deletion for this run.")
+                remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job)
+                log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
+            else:
+                log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
             job_delete_enabled = False
     else:
         try:
@@ -696,10 +762,9 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         except HttpBackupError as exc:
             if not _endpoint_missing_error(exc, "stat"):
                 raise
-            raise HttpBackupError(
-                "Remote HTTP backup receiver does not expose the stat endpoint. "
-                "Deploy the latest system monitor version on the destination server before running HTTP push backups."
-            ) from exc
+            log("Remote stat endpoint is unavailable; using file HEAD checks.")
+            remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job)
+            log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
     dest_files = remote_manifest["files"]
     changed = _changed_files(source_files, dest_files)
     extra = sorted(set(dest_files) - set(source_files))
