@@ -2,6 +2,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import tempfile
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -180,6 +181,19 @@ def _write_request_stream_to_file(request, destination_path):
                 handle.write(chunk)
 
 
+def _temporary_upload_path(file_path):
+    prefix = f".{file_path.name}.http-sync."
+    handle = tempfile.NamedTemporaryFile(
+        mode="wb",
+        dir=file_path.parent,
+        prefix=prefix,
+        suffix=".tmp",
+        delete=False,
+    )
+    handle.close()
+    return Path(handle.name)
+
+
 @csrf_exempt
 def http_backup_manifest_view(request):
     if not _auth_ok(request):
@@ -221,7 +235,7 @@ def http_backup_file_view(request):
         tmp_path = None
         try:
             file_path.parent.mkdir(parents=True, exist_ok=True)
-            tmp_path = file_path.with_name(f".{file_path.name}.http-sync.tmp")
+            tmp_path = _temporary_upload_path(file_path)
             _write_request_stream_to_file(request, tmp_path)
             os.replace(tmp_path, file_path)
             mtime_ns = request.GET.get("mtime_ns")

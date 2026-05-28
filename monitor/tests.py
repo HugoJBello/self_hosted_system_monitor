@@ -1,5 +1,6 @@
 import os
 import tempfile
+from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
@@ -9,7 +10,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import _changed_files, _http_auth_headers, _http_request_timeout, sync_http_backup
+from .http_backups import _changed_files, _http_auth_headers, _http_request_timeout, _temporary_upload_path, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1175,6 +1176,21 @@ class BackupHelpersTests(TestCase):
             written_path = os.path.join(hostfs_root, "large.bin")
             with open(written_path, "rb") as handle:
                 self.assertEqual(handle.read(), payload)
+
+    def test_http_upload_temp_paths_are_unique(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            target = os.path.join(tmpdir, "camera.jpg")
+            first = _temporary_upload_path(Path(target))
+            second = _temporary_upload_path(Path(target))
+            try:
+                self.assertNotEqual(first, second)
+                self.assertEqual(first.parent, Path(tmpdir))
+                self.assertEqual(second.parent, Path(tmpdir))
+                self.assertTrue(first.name.startswith(".camera.jpg.http-sync."))
+                self.assertTrue(second.name.startswith(".camera.jpg.http-sync."))
+            finally:
+                first.unlink(missing_ok=True)
+                second.unlink(missing_ok=True)
 
     @patch("monitor.backups.start_background_backup")
     @patch("monitor.backups._local_destination_is_available", return_value=False)
