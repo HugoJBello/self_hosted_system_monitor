@@ -22,6 +22,8 @@ MAX_STAT_BATCH = 1000
 HTTP_RETRY_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 HTTP_RETRY_ATTEMPTS = 3
 HTTP_RETRY_BACKOFF_SECONDS = 1
+MANIFEST_PROGRESS_EVERY = 1000
+HTTP_BATCH_PROGRESS_EVERY = 100
 
 
 class HttpBackupError(RuntimeError):
@@ -114,7 +116,22 @@ def _sha256_file(path):
     return digest.hexdigest()
 
 
-def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None, create_root=False, include_hashes=True):
+def build_manifest(
+    host_root_path,
+    *,
+    exclude_patterns=None,
+    max_size_bytes=None,
+    create_root=False,
+    include_hashes=True,
+    progress_callback=None,
+    should_stop=None,
+):
+    def report_progress(force=False):
+        if should_stop and should_stop():
+            raise InterruptedError("Stop requested.")
+        if progress_callback:
+            progress_callback(force=force)
+
     absolute_root = _hostfs_path(host_root_path)
     if create_root:
         os.makedirs(absolute_root, exist_ok=True)
@@ -124,7 +141,9 @@ def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None
     max_size = max_size_bytes if max_size_bytes is not None else 100 * 1024 * 1024
     files = {}
     skipped = []
+    scanned = 0
     for current_root, dirnames, filenames in os.walk(absolute_root):
+        report_progress()
         relative_dir = os.path.relpath(current_root, absolute_root)
         relative_dir = "" if relative_dir == "." else relative_dir.replace("\\", "/")
         kept_dirs = []
@@ -136,6 +155,9 @@ def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None
                 kept_dirs.append(dirname)
         dirnames[:] = kept_dirs
         for filename in filenames:
+            scanned += 1
+            if scanned % MANIFEST_PROGRESS_EVERY == 0:
+                report_progress()
             relative_path = f"{relative_dir}/{filename}".strip("/")
             if _is_excluded(relative_path, excludes):
                 skipped.append({"path": relative_path, "reason": "excluded"})
@@ -155,7 +177,9 @@ def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None
             metadata = _stat_metadata(stat)
             if include_hashes:
                 metadata["sha256"] = _sha256_file(absolute_path)
+                report_progress()
             files[relative_path] = metadata
+    report_progress(force=True)
     return {"root_path": host_root_path, "files": files, "skipped": skipped}
 
 
@@ -478,9 +502,10 @@ def _request_json(base_url, endpoint, token, payload, timeout, job=None):
     return result
 
 
-def _request_remote_stats(base_url, token, root_path, relative_paths, timeout, job=None):
+def _request_remote_stats(base_url, token, root_path, relative_paths, timeout, job=None, progress_callback=None):
     files = {}
     skipped = []
+    total_batches = max(1, (len(relative_paths) + MAX_STAT_BATCH - 1) // MAX_STAT_BATCH)
     for start in range(0, len(relative_paths), MAX_STAT_BATCH):
         batch = relative_paths[start : start + MAX_STAT_BATCH]
         result = _request_json(
@@ -493,13 +518,21 @@ def _request_remote_stats(base_url, token, root_path, relative_paths, timeout, j
         )
         files.update(result.get("files", {}))
         skipped.extend(result.get("skipped", []))
+        if progress_callback:
+            batch_number = start // MAX_STAT_BATCH + 1
+            progress_callback(
+                f"Remote stat progress: {min(start + len(batch), len(relative_paths))}/{len(relative_paths)} paths checked."
+                if batch_number == total_batches or batch_number % HTTP_BATCH_PROGRESS_EVERY == 0
+                else None
+            )
     return {"files": files, "skipped": skipped}
 
 
-def _request_remote_tree(base_url, token, root_path, common_payload, timeout, job=None):
+def _request_remote_tree(base_url, token, root_path, common_payload, timeout, job=None, progress_callback=None):
     files = {}
     skipped = []
     pending_dirs = [""]
+    checked_dirs = 0
     while pending_dirs:
         relative_dir = pending_dirs.pop(0)
         result = _request_json(
@@ -513,6 +546,13 @@ def _request_remote_tree(base_url, token, root_path, common_payload, timeout, jo
         files.update(result.get("files", {}))
         skipped.extend(result.get("skipped", []))
         pending_dirs.extend(result.get("dirs", []))
+        checked_dirs += 1
+        if progress_callback:
+            progress_callback(
+                f"Remote listing progress: {checked_dirs} folders scanned, {len(files)} files found."
+                if checked_dirs % HTTP_BATCH_PROGRESS_EVERY == 0 or not pending_dirs
+                else None
+            )
     return {"files": files, "skipped": skipped}
 
 
@@ -554,9 +594,9 @@ def _head_remote_file(base_url, token, root_path, relative_path, timeout, job=No
     raise HttpBackupError("HTTP HEAD request failed after retries.")
 
 
-def _request_remote_file_heads(base_url, token, root_path, relative_paths, timeout, job=None):
+def _request_remote_file_heads(base_url, token, root_path, relative_paths, timeout, job=None, progress_callback=None):
     files = {}
-    for relative_path in relative_paths:
+    for index, relative_path in enumerate(relative_paths, start=1):
         try:
             metadata = _head_remote_file(base_url, token, root_path, relative_path, timeout, job)
         except HttpBackupResponseError as exc:
@@ -565,6 +605,12 @@ def _request_remote_file_heads(base_url, token, root_path, relative_paths, timeo
             raise HttpBackupError(f"HEAD check failed for {relative_path}: {exc}") from exc
         if metadata is not None:
             files[relative_path] = metadata
+        if progress_callback:
+            progress_callback(
+                f"Remote HEAD progress: {index}/{len(relative_paths)} paths checked."
+                if index == len(relative_paths) or index % HTTP_BATCH_PROGRESS_EVERY == 0
+                else None
+            )
     return {"files": files, "skipped": []}
 
 
@@ -685,6 +731,13 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         if should_stop and should_stop():
             raise InterruptedError("Stop requested.")
 
+    def progress(message=None):
+        if message:
+            log(message)
+        elif heartbeat_callback:
+            heartbeat_callback(force=False)
+        ensure_not_stopped()
+
     timeout = _http_request_timeout(job)
     base_url = job.http_remote_url.rstrip("/")
     token = (job.http_remote_token or "").strip()
@@ -713,7 +766,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         if not local_root:
             raise ValueError("Pull backups need a local destination folder.")
         remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, **common_payload}, timeout, job)
-        local_manifest = build_manifest(local_root, create_root=True, **common_payload)
+        local_manifest = build_manifest(local_root, create_root=True, progress_callback=heartbeat_callback, should_stop=should_stop, **common_payload)
         source_files = remote_manifest["files"]
         dest_files = local_manifest["files"]
         changed = _changed_files(source_files, dest_files)
@@ -732,38 +785,38 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
 
     local_root = job.source_path
     remote_root = job.http_remote_path
-    local_manifest = build_manifest(local_root, **common_payload)
+    local_manifest = build_manifest(local_root, progress_callback=heartbeat_callback, should_stop=should_stop, **common_payload)
     source_files = local_manifest["files"]
     log(f"Local manifest: {len(source_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
     job_delete_enabled = job.delete_enabled
     if job.delete_enabled:
         try:
-            remote_manifest = _request_remote_tree(base_url, token, remote_root, common_payload, timeout, job)
+            remote_manifest = _request_remote_tree(base_url, token, remote_root, common_payload, timeout, job, progress_callback=progress)
             log(f"Remote directory listing: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
         except HttpBackupError as exc:
             if not _endpoint_missing_error(exc, "list"):
                 raise
             log("Remote list endpoint is unavailable; using stat batches and skipping remote deletion for this run.")
             try:
-                remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job)
+                remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
             except HttpBackupError as stat_exc:
                 if not _endpoint_missing_error(stat_exc, "stat"):
                     raise
                 log("Remote stat endpoint is unavailable; using file HEAD checks and skipping remote deletion for this run.")
-                remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job)
+                remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
                 log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
             else:
                 log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
             job_delete_enabled = False
     else:
         try:
-            remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job)
+            remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
             log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
         except HttpBackupError as exc:
             if not _endpoint_missing_error(exc, "stat"):
                 raise
             log("Remote stat endpoint is unavailable; using file HEAD checks.")
-            remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job)
+            remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
             log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
     dest_files = remote_manifest["files"]
     changed = _changed_files(source_files, dest_files)

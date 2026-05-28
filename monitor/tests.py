@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _temporary_upload_path, _upload_file, sync_http_backup
+from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_remote_file_heads, _request_remote_stats, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1403,6 +1403,43 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(mock_head_remote_file.call_count, 2)
         mock_upload_file.assert_called_once()
         self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
+
+    @patch("monitor.http_backups._request_json")
+    def test_http_stat_batches_report_progress_for_heartbeat(self, mock_request_json):
+        mock_request_json.return_value = {"ok": True, "files": {}, "skipped": []}
+        progress_calls = []
+
+        _request_remote_stats(
+            "https://remote.example.com/system_monitor",
+            "token-123",
+            "/srv/backups/test",
+            [f"file-{index}.txt" for index in range(1001)],
+            60,
+            progress_callback=progress_calls.append,
+        )
+
+        self.assertEqual(mock_request_json.call_count, 2)
+        self.assertEqual(len(progress_calls), 2)
+        self.assertIsNone(progress_calls[0])
+        self.assertIn("1001/1001", progress_calls[1])
+
+    @patch("monitor.http_backups._head_remote_file", return_value=None)
+    def test_http_head_fallback_reports_progress_for_heartbeat(self, mock_head_remote_file):
+        progress_calls = []
+
+        _request_remote_file_heads(
+            "https://remote.example.com/system_monitor",
+            "token-123",
+            "/srv/backups/test",
+            [f"file-{index}.txt" for index in range(101)],
+            60,
+            progress_callback=progress_calls.append,
+        )
+
+        self.assertEqual(mock_head_remote_file.call_count, 101)
+        self.assertEqual(len(progress_calls), 101)
+        self.assertIn("100/101", progress_calls[99])
+        self.assertIn("101/101", progress_calls[100])
 
     def test_http_stat_endpoint_returns_file_metadata_for_requested_paths(self):
         settings_obj = MonitoringSettings.load()
