@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -17,10 +18,20 @@ from .models import MonitoringSettings
 DEFAULT_HTTP_TIMEOUT_SECONDS = 60
 CHUNK_SIZE = 1024 * 1024
 MAX_DELETE_BATCH = 1000
+HTTP_RETRY_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+HTTP_RETRY_ATTEMPTS = 3
+HTTP_RETRY_BACKOFF_SECONDS = 1
 
 
 class HttpBackupError(RuntimeError):
     pass
+
+
+class HttpBackupResponseError(HttpBackupError):
+    def __init__(self, code, body):
+        super().__init__(body)
+        self.code = code
+        self.body = body
 
 
 def parse_size_limit(value, default=100 * 1024 * 1024):
@@ -307,20 +318,44 @@ def _http_auth_headers(token, job=None, content_type=None):
     return headers
 
 
+def _retry_delay(attempt):
+    return min(HTTP_RETRY_BACKOFF_SECONDS * (2 ** attempt), 10)
+
+
+def _read_http_response(make_request, timeout):
+    for attempt in range(HTTP_RETRY_ATTEMPTS + 1):
+        try:
+            with urlopen(make_request(), timeout=timeout) as response:
+                return response.read()
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            if exc.code in HTTP_RETRY_STATUS_CODES and attempt < HTTP_RETRY_ATTEMPTS:
+                time.sleep(_retry_delay(attempt))
+                continue
+            raise HttpBackupResponseError(exc.code, body) from exc
+        except (URLError, TimeoutError):
+            if attempt < HTTP_RETRY_ATTEMPTS:
+                time.sleep(_retry_delay(attempt))
+                continue
+            raise
+    raise HttpBackupError("HTTP request failed after retries.")
+
+
 def _request_json(base_url, endpoint, token, payload, timeout, job=None):
     data = json.dumps(payload).encode("utf-8")
-    request = Request(
-        _api_url(base_url, endpoint),
-        data=data,
-        method="POST",
-        headers=_http_auth_headers(token, job, "application/json"),
-    )
+
+    def make_request():
+        return Request(
+            _api_url(base_url, endpoint),
+            data=data,
+            method="POST",
+            headers=_http_auth_headers(token, job, "application/json"),
+        )
+
     try:
-        with urlopen(request, timeout=timeout) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise HttpBackupError(f"HTTP {exc.code} from {endpoint}: {body}") from exc
+        result = json.loads(_read_http_response(make_request, timeout).decode("utf-8"))
+    except HttpBackupResponseError as exc:
+        raise HttpBackupError(f"HTTP {exc.code} from {endpoint}: {exc.body}") from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise HttpBackupError(f"HTTP request to {endpoint} failed: {exc}") from exc
     if not result.get("ok"):
@@ -330,17 +365,18 @@ def _request_json(base_url, endpoint, token, payload, timeout, job=None):
 
 def _download_file(base_url, token, root_path, relative_path, timeout, job=None):
     query = urlencode({"root_path": root_path, "relative_path": relative_path})
-    request = Request(
-        f"{_api_url(base_url, 'file')}?{query}",
-        method="GET",
-        headers=_http_auth_headers(token, job),
-    )
+
+    def make_request():
+        return Request(
+            f"{_api_url(base_url, 'file')}?{query}",
+            method="GET",
+            headers=_http_auth_headers(token, job),
+        )
+
     try:
-        with urlopen(request, timeout=timeout) as response:
-            return response.read()
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise HttpBackupError(f"HTTP {exc.code} while downloading {relative_path}: {body}") from exc
+        return _read_http_response(make_request, timeout)
+    except HttpBackupResponseError as exc:
+        raise HttpBackupError(f"HTTP {exc.code} while downloading {relative_path}: {exc.body}") from exc
     except (URLError, TimeoutError) as exc:
         raise HttpBackupError(f"Download failed for {relative_path}: {exc}") from exc
 
@@ -353,18 +389,18 @@ def _upload_file(base_url, token, root_path, relative_path, metadata, content, t
             "mtime_ns": metadata.get("mtime_ns") or "",
         }
     )
-    request = Request(
-        f"{_api_url(base_url, 'file')}?{query}",
-        data=content,
-        method="POST",
-        headers=_http_auth_headers(token, job, "application/octet-stream"),
-    )
+    def make_request():
+        return Request(
+            f"{_api_url(base_url, 'file')}?{query}",
+            data=content,
+            method="POST",
+            headers=_http_auth_headers(token, job, "application/octet-stream"),
+        )
+
     try:
-        with urlopen(request, timeout=timeout) as response:
-            result = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        body = exc.read().decode("utf-8", errors="replace")
-        raise HttpBackupError(f"HTTP {exc.code} while uploading {relative_path}: {body}") from exc
+        result = json.loads(_read_http_response(make_request, timeout).decode("utf-8"))
+    except HttpBackupResponseError as exc:
+        raise HttpBackupError(f"HTTP {exc.code} while uploading {relative_path}: {exc.body}") from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise HttpBackupError(f"Upload failed for {relative_path}: {exc}") from exc
     if not result.get("ok"):

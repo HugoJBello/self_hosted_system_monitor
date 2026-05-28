@@ -1,22 +1,38 @@
 import os
 import tempfile
+from io import BytesIO
 from pathlib import Path
 
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from urllib.error import HTTPError
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import _changed_files, _http_auth_headers, _http_request_timeout, _temporary_upload_path, sync_http_backup
+from .http_backups import _changed_files, _http_auth_headers, _http_request_timeout, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
 
 
 User = get_user_model()
+
+
+class FakeHttpResponse:
+    def __init__(self, body):
+        self.body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return self.body
 
 
 @override_settings(FORCE_SCRIPT_NAME=None)
@@ -1254,6 +1270,58 @@ class BackupHelpersTests(TestCase):
             finally:
                 first.unlink(missing_ok=True)
                 second.unlink(missing_ok=True)
+
+    @patch("monitor.http_backups.time.sleep", return_value=None)
+    @patch("monitor.http_backups.urlopen")
+    def test_http_upload_retries_transient_server_errors(self, mock_urlopen, mock_sleep):
+        server_error = HTTPError(
+            "https://remote.example.com/system_monitor/backups/http/file/",
+            500,
+            "Internal Server Error",
+            hdrs=None,
+            fp=BytesIO(b"<html>nginx 500</html>"),
+        )
+        mock_urlopen.side_effect = [server_error, FakeHttpResponse(b'{"ok": true}')]
+
+        _upload_file(
+            "https://remote.example.com/system_monitor",
+            "token-123",
+            "/srv/backups/test",
+            "file.txt",
+            {"mtime_ns": 123},
+            b"content",
+            60,
+            BackupJob(),
+        )
+
+        self.assertEqual(mock_urlopen.call_count, 2)
+        mock_sleep.assert_called_once()
+
+    @patch("monitor.http_backups.time.sleep", return_value=None)
+    @patch("monitor.http_backups.urlopen")
+    def test_http_upload_does_not_retry_bad_request(self, mock_urlopen, mock_sleep):
+        mock_urlopen.side_effect = HTTPError(
+            "https://remote.example.com/system_monitor/backups/http/file/",
+            400,
+            "Bad Request",
+            hdrs=None,
+            fp=BytesIO(b'{"ok": false, "error": "bad path"}'),
+        )
+
+        with self.assertRaisesRegex(Exception, "HTTP 400 while uploading"):
+            _upload_file(
+                "https://remote.example.com/system_monitor",
+                "token-123",
+                "/srv/backups/test",
+                "file.txt",
+                {"mtime_ns": 123},
+                b"content",
+                60,
+                BackupJob(),
+            )
+
+        self.assertEqual(mock_urlopen.call_count, 1)
+        mock_sleep.assert_not_called()
 
     @patch("monitor.backups.start_background_backup")
     @patch("monitor.backups._local_destination_is_available", return_value=False)
