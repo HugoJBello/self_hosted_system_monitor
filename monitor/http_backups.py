@@ -502,6 +502,10 @@ def _request_remote_tree(base_url, token, root_path, common_payload, timeout, jo
     return {"files": files, "skipped": skipped}
 
 
+def _endpoint_missing_error(exc, endpoint):
+    return f"HTTP 404 from {endpoint}" in str(exc)
+
+
 def _download_file(base_url, token, root_path, relative_path, timeout, job=None):
     query = urlencode({"root_path": root_path, "relative_path": relative_path})
 
@@ -665,26 +669,37 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     local_manifest = build_manifest(local_root, **common_payload)
     source_files = local_manifest["files"]
     log(f"Local manifest: {len(source_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
+    job_delete_enabled = job.delete_enabled
     if job.delete_enabled:
         try:
             remote_manifest = _request_remote_tree(base_url, token, remote_root, common_payload, timeout, job)
             log(f"Remote directory listing: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
         except HttpBackupError as exc:
-            if "HTTP 404 from list" not in str(exc):
+            if not _endpoint_missing_error(exc, "list"):
                 raise
-            log("Remote list endpoint is unavailable; falling back to full remote manifest.")
-            remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, "create_root": True, **common_payload}, timeout, job)
-            log(f"Remote manifest: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
+            log("Remote list endpoint is unavailable; using stat batches and skipping remote deletion for this run.")
+            try:
+                remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job)
+            except HttpBackupError as stat_exc:
+                if not _endpoint_missing_error(stat_exc, "stat"):
+                    raise
+                raise HttpBackupError(
+                    "Remote HTTP backup receiver does not expose the list or stat endpoints. "
+                    "Deploy the latest system monitor version on the destination server before running HTTP push backups."
+                ) from stat_exc
+            log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
+            job_delete_enabled = False
     else:
         try:
             remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job)
             log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
         except HttpBackupError as exc:
-            if "HTTP 404 from stat" not in str(exc):
+            if not _endpoint_missing_error(exc, "stat"):
                 raise
-            log("Remote stat endpoint is unavailable; falling back to full remote manifest.")
-            remote_manifest = _request_json(base_url, "manifest", token, {"root_path": remote_root, "create_root": True, **common_payload}, timeout, job)
-            log(f"Remote manifest: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
+            raise HttpBackupError(
+                "Remote HTTP backup receiver does not expose the stat endpoint. "
+                "Deploy the latest system monitor version on the destination server before running HTTP push backups."
+            ) from exc
     dest_files = remote_manifest["files"]
     changed = _changed_files(source_files, dest_files)
     extra = sorted(set(dest_files) - set(source_files))
@@ -694,7 +709,9 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         _upload_file(base_url, token, remote_root, relative_path, source_files[relative_path], content, timeout, job)
         log(f"Pushed {index}/{len(changed)} {relative_path}")
     deleted_count = 0
-    if job.delete_enabled and extra:
+    if job.delete_enabled and not job_delete_enabled:
+        log("Remote deletion skipped because the destination does not expose the list endpoint.")
+    if job_delete_enabled and extra:
         for start in range(0, len(extra), MAX_DELETE_BATCH):
             ensure_not_stopped()
             batch = extra[start : start + MAX_DELETE_BATCH]

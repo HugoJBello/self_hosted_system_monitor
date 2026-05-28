@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import _changed_files, _http_auth_headers, _http_request_timeout, _temporary_upload_path, _upload_file, sync_http_backup
+from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1259,6 +1259,94 @@ class BackupHelpersTests(TestCase):
         mock_upload_file.assert_called_once()
         self.assertEqual(mock_request_json.call_args_list[0].args[1], "list")
         self.assertEqual(mock_request_json.call_args_list[1].args[1], "delete")
+
+    @patch("monitor.http_backups._upload_file")
+    @patch("monitor.http_backups._request_json")
+    @patch("monitor.http_backups._read_local_file", return_value=b"new")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
+                "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+                "new.txt": {"size": 3, "mtime": 2, "mtime_ns": 2_000_000_000},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_push_with_delete_falls_back_to_stat_without_manifest(
+        self,
+        mock_build_manifest,
+        mock_read_local_file,
+        mock_request_json,
+        mock_upload_file,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP push delete stat fallback",
+            backup_type="http",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="push",
+            delete_enabled=True,
+        )
+        mock_request_json.side_effect = [
+            HttpBackupError("HTTP 404 from list: Page not found"),
+            {
+                "ok": True,
+                "files": {
+                    "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+                },
+                "skipped": [],
+            },
+        ]
+        logs = []
+
+        stats = sync_http_backup(job, log_callback=logs.append)
+
+        self.assertEqual(stats["changed"], 1)
+        self.assertEqual(stats["deleted"], 0)
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["list", "stat"])
+        self.assertNotIn("manifest", [call.args[1] for call in mock_request_json.call_args_list])
+        mock_upload_file.assert_called_once()
+        self.assertTrue(any("Remote deletion skipped" in line for line in logs))
+
+    @patch("monitor.http_backups._request_json")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
+                "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_push_with_old_receiver_fails_without_full_manifest_fallback(
+        self,
+        mock_build_manifest,
+        mock_request_json,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP push old receiver",
+            backup_type="http",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="push",
+            delete_enabled=True,
+        )
+        mock_request_json.side_effect = [
+            HttpBackupError("HTTP 404 from list: Page not found"),
+            HttpBackupError("HTTP 404 from stat: Page not found"),
+        ]
+
+        with self.assertRaisesRegex(HttpBackupError, "does not expose the list or stat endpoints"):
+            sync_http_backup(job)
+
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["list", "stat"])
 
     def test_http_stat_endpoint_returns_file_metadata_for_requested_paths(self):
         settings_obj = MonitoringSettings.load()
