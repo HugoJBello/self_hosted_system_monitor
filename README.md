@@ -131,7 +131,7 @@ Authorization: Bearer <token>
 
 This token protects the HTTP backup endpoints that can list, read, write, and delete files under the configured backup paths.
 
-HTTP backups compare manifests using file size and modification time, matching rsync's normal quick-check behavior. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
+HTTP backups compare manifests using file size and modification time in seconds, matching rsync's normal quick-check behavior. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
 
 ## Alerts
 

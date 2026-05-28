@@ -146,6 +146,7 @@ def build_manifest(host_root_path, *, exclude_patterns=None, max_size_bytes=None
                 continue
             metadata = {
                 "size": stat.st_size,
+                "mtime": stat.st_mtime_ns // 1_000_000_000,
                 "mtime_ns": stat.st_mtime_ns,
             }
             if include_hashes:
@@ -451,10 +452,18 @@ def _changed_files(source_files, dest_files):
         if source_hash and dest_hash:
             differs = other.get("size") != metadata.get("size") or dest_hash != source_hash
         else:
-            differs = other.get("size") != metadata.get("size") or other.get("mtime_ns") != metadata.get("mtime_ns")
+            differs = other.get("size") != metadata.get("size") or _mtime_seconds(other) != _mtime_seconds(metadata)
         if differs:
             changed.append(relative_path)
     return changed
+
+
+def _mtime_seconds(metadata):
+    if metadata.get("mtime") is not None:
+        return int(metadata.get("mtime"))
+    if metadata.get("mtime_ns") is not None:
+        return int(metadata.get("mtime_ns")) // 1_000_000_000
+    return None
 
 
 def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_stop=None):
@@ -489,7 +498,7 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     log(f"Remote path: {job.http_remote_path}")
     log(f"Max file size: {max_size_bytes} bytes")
     log(f"HTTP request timeout: {timeout}s")
-    log("HTTP manifest comparison: size and mtime.")
+    log("HTTP manifest comparison: size and mtime seconds.")
     if job.http_direction == "pull":
         local_root = job.local_dest_path
         remote_root = job.http_remote_path

@@ -1224,16 +1224,26 @@ class BackupHelpersTests(TestCase):
 
     def test_http_changed_files_can_compare_size_and_mtime_without_hashes(self):
         source_files = {
-            "same.jpg": {"size": 10, "mtime_ns": 100},
-            "new.jpg": {"size": 20, "mtime_ns": 200},
-            "changed.jpg": {"size": 30, "mtime_ns": 301},
+            "same.jpg": {"size": 10, "mtime": 1, "mtime_ns": 1_100_000_000},
+            "new.jpg": {"size": 20, "mtime": 2, "mtime_ns": 2_000_000_000},
+            "changed.jpg": {"size": 30, "mtime": 3, "mtime_ns": 3_100_000_000},
         }
         dest_files = {
-            "same.jpg": {"size": 10, "mtime_ns": 100},
-            "changed.jpg": {"size": 30, "mtime_ns": 300},
+            "same.jpg": {"size": 10, "mtime": 1, "mtime_ns": 1_900_000_000},
+            "changed.jpg": {"size": 30, "mtime": 4, "mtime_ns": 4_000_000_000},
         }
 
         self.assertEqual(_changed_files(source_files, dest_files), ["changed.jpg", "new.jpg"])
+
+    def test_http_changed_files_tolerates_destination_mtime_nanosecond_rounding(self):
+        source_files = {
+            "camera.jpg": {"size": 10, "mtime_ns": 1_765_000_000_123_456_789},
+        }
+        dest_files = {
+            "camera.jpg": {"size": 10, "mtime_ns": 1_765_000_000_000_000_000},
+        }
+
+        self.assertEqual(_changed_files(source_files, dest_files), [])
 
     @override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=16)
     def test_http_file_upload_streams_past_django_memory_limit(self):
