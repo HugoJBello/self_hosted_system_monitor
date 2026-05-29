@@ -1,4 +1,5 @@
 import fnmatch
+import gzip
 import hashlib
 import json
 import os
@@ -25,6 +26,7 @@ MAX_PRUNE_DIR_BATCH = 500
 HTTP_RETRY_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 HTTP_RETRY_ATTEMPTS = 3
 HTTP_RETRY_BACKOFF_SECONDS = 1
+HTTP_GZIP_MIN_BYTES = 64 * 1024
 MANIFEST_PROGRESS_EVERY = 1000
 HTTP_BATCH_PROGRESS_EVERY = 100
 
@@ -202,8 +204,11 @@ def _auth_ok(request):
 
 def _json_request(request):
     try:
-        return json.loads(request.body.decode("utf-8") or "{}")
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        body = request.body
+        if request.headers.get("Content-Encoding", "").lower() == "gzip":
+            body = gzip.decompress(body)
+        return json.loads(body.decode("utf-8") or "{}")
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("Invalid JSON body.") from exc
 
 
@@ -582,13 +587,20 @@ def _read_http_response(make_request, timeout):
 
 def _request_json(base_url, endpoint, token, payload, timeout, job=None):
     data = json.dumps(payload).encode("utf-8")
+    content_encoding = None
+    if len(data) >= HTTP_GZIP_MIN_BYTES:
+        data = gzip.compress(data)
+        content_encoding = "gzip"
 
     def make_request():
+        headers = _http_auth_headers(token, job, "application/json")
+        if content_encoding:
+            headers["Content-Encoding"] = content_encoding
         return Request(
             _api_url(base_url, endpoint),
             data=data,
             method="POST",
-            headers=_http_auth_headers(token, job, "application/json"),
+            headers=headers,
         )
 
     try:

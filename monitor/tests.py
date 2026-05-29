@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import time
+import gzip
 from io import BytesIO
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
+from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1669,6 +1670,18 @@ class BackupHelpersTests(TestCase):
         job = BackupJob(idle_timeout_seconds=900)
 
         self.assertEqual(_http_request_timeout(job), 900)
+
+    @patch("monitor.http_backups.urlopen")
+    def test_http_json_requests_gzip_large_payloads(self, mock_urlopen):
+        mock_urlopen.return_value = FakeHttpResponse(b'{"ok": true}')
+        payload = {"files": {"large.txt": {"name": "x" * HTTP_GZIP_MIN_BYTES}}}
+
+        _request_json("https://remote.example.com/system_monitor", "prune", "token-123", payload, 60, BackupJob())
+
+        request = mock_urlopen.call_args.args[0]
+        self.assertEqual(request.headers["Content-encoding"], "gzip")
+        self.assertLess(len(request.data), len(json.dumps(payload).encode("utf-8")))
+        self.assertEqual(json.loads(gzip.decompress(request.data).decode("utf-8")), payload)
 
     def test_http_changed_files_can_compare_size_and_mtime_without_hashes(self):
         source_files = {
