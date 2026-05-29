@@ -56,6 +56,7 @@ Change this password immediately from the account password page. The default adm
 - `DJANGO_ALLOWED_HOSTS`: default `*`
 - `DJANGO_CSRF_TRUST_ANY_ORIGIN`: default `False`; set `True` to allow POST forms from any external origin while still requiring the CSRF cookie/token pair
 - `DJANGO_CSRF_TRUSTED_ORIGINS`: comma-separated external origins allowed to POST forms, for example `https://*.hjbello.org,https://api-android18.hjbello.org`
+- `DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE`: default `20971520`; global Django in-memory request body limit. HTTP backup JSON endpoints stream their bodies directly, but this remains a moderate safety margin for other Django requests.
 - `GUNICORN_TIMEOUT_SECONDS`: default `960`; keep this high enough for HTTP backup receiver requests over large folder trees
 - `SAMPLER_DEFAULT_INTERVAL`: default `60`
 - `MONITOR_ROOT_PATH`: default `/hostfs`

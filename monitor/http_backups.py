@@ -204,11 +204,15 @@ def _auth_ok(request):
 
 def _json_request(request):
     try:
-        body = request.body
+        stream = request.META.get("wsgi.input")
+        if stream is None:
+            raise ValueError("Request input stream is not available.")
+        remaining = int(request.META.get("CONTENT_LENGTH") or 0)
+        body = stream.read(remaining) if remaining else stream.read()
         if request.headers.get("Content-Encoding", "").lower() == "gzip":
             body = gzip.decompress(body)
         return json.loads(body.decode("utf-8") or "{}")
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("Invalid JSON body.") from exc
 
 

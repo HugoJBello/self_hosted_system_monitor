@@ -1567,6 +1567,36 @@ class BackupHelpersTests(TestCase):
             self.assertEqual(payload["changed"], ["changed.txt", "missing.txt"])
             self.assertEqual(payload["missing"], ["missing.txt"])
 
+    @override_settings(DATA_UPLOAD_MAX_MEMORY_SIZE=16)
+    def test_http_json_endpoint_reads_gzip_body_past_django_memory_limit(self):
+        settings_obj = MonitoringSettings.load()
+        settings_obj.http_backup_token = "receiver-token"
+        settings_obj.save()
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            payload = {
+                "root_path": host_root,
+                "files": {
+                    f"missing-{index}.txt": {"size": index, "mtime": 1_765_000_000 + index}
+                    for index in range(100)
+                },
+            }
+            body = gzip.compress(json.dumps(payload).encode("utf-8"))
+            self.assertGreater(len(body), 16)
+
+            response = self.client.post(
+                self._path("monitor:backup-http-compare"),
+                data=body,
+                content_type="application/json",
+                HTTP_AUTHORIZATION="Bearer receiver-token",
+                HTTP_CONTENT_ENCODING="gzip",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            result = response.json()
+            self.assertTrue(result["ok"])
+            self.assertEqual(len(result["changed"]), 100)
+
     def test_http_prune_endpoint_deletes_entries_missing_locally(self):
         settings_obj = MonitoringSettings.load()
         settings_obj.http_backup_token = "receiver-token"
