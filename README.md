@@ -131,7 +131,7 @@ Authorization: Bearer <token>
 
 This token protects the HTTP backup endpoints that can list, inspect, read, write, and delete files under the configured backup paths.
 
-HTTP backups compare file size and modification time in seconds, matching rsync's normal quick-check behavior. Push jobs inspect destination metadata through bounded stat batches, or small per-directory listings when remote deletion is enabled, instead of requesting a full destination manifest. If a receiver is still missing those newer endpoints, push jobs can fall back to `HEAD` checks on the existing file endpoint and skip remote deletion for that run. This avoids long Cloudflare requests on large backup trees. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
+HTTP backups compare file size and modification time in seconds, matching rsync's normal quick-check behavior. Push jobs inspect only the matching destination paths through bounded stat batches instead of walking the full destination tree. If a receiver is still missing the stat endpoint, push jobs can fall back to `HEAD` checks on the existing file endpoint. HTTP push jobs skip remote deletion even when the job's delete toggle is enabled, because deleting safely requires an exhaustive destination listing that is too expensive for large HTTP/Cloudflare backup trees. Use SSH or local rsync jobs when strict mirror deletion is required. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
 
 ## Alerts
 

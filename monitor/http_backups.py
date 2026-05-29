@@ -788,52 +788,23 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     local_manifest = build_manifest(local_root, progress_callback=heartbeat_callback, should_stop=should_stop, **common_payload)
     source_files = local_manifest["files"]
     log(f"Local manifest: {len(source_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
-    job_delete_enabled = job.delete_enabled
-    if job.delete_enabled:
-        try:
-            remote_manifest = _request_remote_tree(base_url, token, remote_root, common_payload, timeout, job, progress_callback=progress)
-            log(f"Remote directory listing: {len(remote_manifest['files'])} files, {len(remote_manifest.get('skipped', []))} skipped.")
-        except HttpBackupError as exc:
-            if not _endpoint_missing_error(exc, "list"):
-                raise
-            log("Remote list endpoint is unavailable; using stat batches and skipping remote deletion for this run.")
-            try:
-                remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
-            except HttpBackupError as stat_exc:
-                if not _endpoint_missing_error(stat_exc, "stat"):
-                    raise
-                log("Remote stat endpoint is unavailable; using file HEAD checks and skipping remote deletion for this run.")
-                remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
-                log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
-            else:
-                log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
-            job_delete_enabled = False
-    else:
-        try:
-            remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
-            log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
-        except HttpBackupError as exc:
-            if not _endpoint_missing_error(exc, "stat"):
-                raise
-            log("Remote stat endpoint is unavailable; using file HEAD checks.")
-            remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
-            log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
+    try:
+        remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
+        log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
+    except HttpBackupError as exc:
+        if not _endpoint_missing_error(exc, "stat"):
+            raise
+        log("Remote stat endpoint is unavailable; using file HEAD checks.")
+        remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
+        log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
     dest_files = remote_manifest["files"]
     changed = _changed_files(source_files, dest_files)
-    extra = sorted(set(dest_files) - set(source_files))
     for index, relative_path in enumerate(changed, start=1):
         ensure_not_stopped()
         content = _read_local_file(local_root, relative_path)
         _upload_file(base_url, token, remote_root, relative_path, source_files[relative_path], content, timeout, job)
         log(f"Pushed {index}/{len(changed)} {relative_path}")
     deleted_count = 0
-    if job.delete_enabled and not job_delete_enabled:
-        log("Remote deletion skipped because the destination does not expose the list endpoint.")
-    if job_delete_enabled and extra:
-        for start in range(0, len(extra), MAX_DELETE_BATCH):
-            ensure_not_stopped()
-            batch = extra[start : start + MAX_DELETE_BATCH]
-            result = _request_json(base_url, "delete", token, {"root_path": remote_root, "relative_paths": batch}, timeout, job)
-            deleted_count += len(result.get("deleted", []))
-        log(f"Deleted {deleted_count} remote files missing locally.")
+    if job.delete_enabled:
+        log("Remote deletion skipped for HTTP push to avoid exhaustive destination listing. Use SSH/local rsync for strict mirror deletion.")
     return {"changed": len(changed), "deleted": deleted_count, "skipped": len(local_manifest.get("skipped", []))}

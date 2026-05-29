@@ -1221,7 +1221,7 @@ class BackupHelpersTests(TestCase):
             "skipped": [],
         },
     )
-    def test_http_push_with_delete_uses_remote_directory_listing(
+    def test_http_push_with_delete_uses_remote_stat_and_skips_deletion(
         self,
         mock_build_manifest,
         mock_read_local_file,
@@ -1242,23 +1242,21 @@ class BackupHelpersTests(TestCase):
         mock_request_json.side_effect = [
             {
                 "ok": True,
-                "dirs": [],
                 "files": {
                     "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
-                    "old.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
                 },
                 "skipped": [],
             },
-            {"ok": True, "deleted": ["old.txt"]},
         ]
+        logs = []
 
-        stats = sync_http_backup(job)
+        stats = sync_http_backup(job, log_callback=logs.append)
 
         self.assertEqual(stats["changed"], 1)
-        self.assertEqual(stats["deleted"], 1)
+        self.assertEqual(stats["deleted"], 0)
         mock_upload_file.assert_called_once()
-        self.assertEqual(mock_request_json.call_args_list[0].args[1], "list")
-        self.assertEqual(mock_request_json.call_args_list[1].args[1], "delete")
+        self.assertEqual(mock_request_json.call_args.args[1], "stat")
+        self.assertTrue(any("Remote deletion skipped" in line for line in logs))
 
     @patch("monitor.http_backups._upload_file")
     @patch("monitor.http_backups._request_json")
@@ -1273,7 +1271,7 @@ class BackupHelpersTests(TestCase):
             "skipped": [],
         },
     )
-    def test_http_push_with_delete_falls_back_to_stat_without_manifest(
+    def test_http_push_with_delete_does_not_list_destination_tree(
         self,
         mock_build_manifest,
         mock_read_local_file,
@@ -1292,7 +1290,6 @@ class BackupHelpersTests(TestCase):
             delete_enabled=True,
         )
         mock_request_json.side_effect = [
-            HttpBackupError("HTTP 404 from list: Page not found"),
             {
                 "ok": True,
                 "files": {
@@ -1307,8 +1304,8 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(stats["changed"], 1)
         self.assertEqual(stats["deleted"], 0)
-        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["list", "stat"])
-        self.assertNotIn("manifest", [call.args[1] for call in mock_request_json.call_args_list])
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["stat"])
+        self.assertNotIn("list", [call.args[1] for call in mock_request_json.call_args_list])
         mock_upload_file.assert_called_once()
         self.assertTrue(any("Remote deletion skipped" in line for line in logs))
 
@@ -1341,7 +1338,6 @@ class BackupHelpersTests(TestCase):
             delete_enabled=True,
         )
         mock_request_json.side_effect = [
-            HttpBackupError("HTTP 404 from list: Page not found"),
             HttpBackupError("HTTP 404 from stat: Page not found"),
         ]
         mock_head_remote_file.return_value = {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000}
@@ -1351,7 +1347,7 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(stats["changed"], 0)
         self.assertEqual(stats["deleted"], 0)
-        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["list", "stat"])
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["stat"])
         mock_head_remote_file.assert_called_once()
         self.assertTrue(any("Remote HEAD checks" in line for line in logs))
 
@@ -1751,6 +1747,36 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(len(updated), 1)
         self.assertEqual(backup_run.status, "failed")
         self.assertIn("heartbeat became stale", backup_run.log_output)
+
+    @patch("monitor.backups._pid_is_alive", return_value=True)
+    def test_mark_stale_running_backups_keeps_live_worker_running(self, mock_pid_is_alive):
+        job = BackupJob.objects.create(
+            name="Docs",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        stale_time = timezone.now() - timezone.timedelta(minutes=10)
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="running",
+            summary="Running",
+            started_at=stale_time,
+            heartbeat_at=stale_time,
+            last_output_at=stale_time,
+            process_pid=12345,
+            log_output="still running",
+        )
+
+        updated = mark_stale_running_backups(stale_time + timezone.timedelta(minutes=20))
+
+        backup_run.refresh_from_db()
+        self.assertEqual(updated, [])
+        self.assertEqual(backup_run.status, "running")
+        self.assertNotIn("heartbeat became stale", backup_run.log_output)
+        mock_pid_is_alive.assert_called_with(12345)
 
     def test_rsync_partial_transfer_exit_codes_are_treated_as_non_fatal(self):
         self.assertTrue(_rsync_exit_is_partial_success(23))

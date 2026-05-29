@@ -1156,6 +1156,8 @@ def mark_stale_running_backups(snapshot_time=None):
             finalize_backup_run(backup_run, result, finished_at=snapshot_time)
             updated.append(backup_run)
             continue
+        if reference_time is not None and reference_time < stale_before and _pid_is_alive(backup_run.process_pid):
+            continue
         if reference_time is None or reference_time >= stale_before:
             continue
         summary = f"Backup worker stopped reporting after {reference_time:%Y-%m-%d %H:%M:%S}."
