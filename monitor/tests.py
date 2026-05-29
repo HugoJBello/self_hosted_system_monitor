@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_remote_file_heads, _request_remote_stats, _temporary_upload_path, _upload_file, sync_http_backup
+from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_remote_compare, _request_remote_file_heads, _request_remote_stats, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1172,7 +1172,7 @@ class BackupHelpersTests(TestCase):
             "skipped": [],
         },
     )
-    def test_http_push_uploads_changed_files_from_remote_stat(
+    def test_http_push_uploads_changed_files_from_remote_compare(
         self,
         mock_build_manifest,
         mock_read_local_file,
@@ -1193,9 +1193,8 @@ class BackupHelpersTests(TestCase):
         mock_request_json.side_effect = [
             {
                 "ok": True,
-                "files": {
-                    "keep.txt": {"size": 3, "mtime_ns": 1, "sha256": "same"},
-                },
+                "changed": ["new.txt"],
+                "missing": ["new.txt"],
                 "skipped": [],
             },
         ]
@@ -1206,7 +1205,7 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(stats["deleted"], 0)
         mock_upload_file.assert_called_once()
         self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
-        self.assertEqual(mock_request_json.call_args.args[1], "stat")
+        self.assertEqual(mock_request_json.call_args.args[1], "compare")
 
     @patch("monitor.http_backups._upload_file")
     @patch("monitor.http_backups._request_json")
@@ -1221,7 +1220,7 @@ class BackupHelpersTests(TestCase):
             "skipped": [],
         },
     )
-    def test_http_push_with_delete_uses_remote_stat_and_skips_deletion(
+    def test_http_push_with_delete_uses_remote_compare_and_skips_deletion(
         self,
         mock_build_manifest,
         mock_read_local_file,
@@ -1242,9 +1241,8 @@ class BackupHelpersTests(TestCase):
         mock_request_json.side_effect = [
             {
                 "ok": True,
-                "files": {
-                    "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
-                },
+                "changed": ["new.txt"],
+                "missing": ["new.txt"],
                 "skipped": [],
             },
         ]
@@ -1255,7 +1253,7 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(stats["changed"], 1)
         self.assertEqual(stats["deleted"], 0)
         mock_upload_file.assert_called_once()
-        self.assertEqual(mock_request_json.call_args.args[1], "stat")
+        self.assertEqual(mock_request_json.call_args.args[1], "compare")
         self.assertTrue(any("Remote deletion skipped" in line for line in logs))
 
     @patch("monitor.http_backups._upload_file")
@@ -1290,6 +1288,7 @@ class BackupHelpersTests(TestCase):
             delete_enabled=True,
         )
         mock_request_json.side_effect = [
+            HttpBackupError("HTTP 404 from compare: Page not found"),
             {
                 "ok": True,
                 "files": {
@@ -1304,7 +1303,7 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(stats["changed"], 1)
         self.assertEqual(stats["deleted"], 0)
-        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["stat"])
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "stat"])
         self.assertNotIn("list", [call.args[1] for call in mock_request_json.call_args_list])
         mock_upload_file.assert_called_once()
         self.assertTrue(any("Remote deletion skipped" in line for line in logs))
@@ -1338,6 +1337,7 @@ class BackupHelpersTests(TestCase):
             delete_enabled=True,
         )
         mock_request_json.side_effect = [
+            HttpBackupError("HTTP 404 from compare: Page not found"),
             HttpBackupError("HTTP 404 from stat: Page not found"),
         ]
         mock_head_remote_file.return_value = {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000}
@@ -1347,7 +1347,7 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(stats["changed"], 0)
         self.assertEqual(stats["deleted"], 0)
-        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["stat"])
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "stat"])
         mock_head_remote_file.assert_called_once()
         self.assertTrue(any("Remote HEAD checks" in line for line in logs))
 
@@ -1385,6 +1385,7 @@ class BackupHelpersTests(TestCase):
             delete_enabled=False,
         )
         mock_request_json.side_effect = [
+            HttpBackupError("HTTP 404 from compare: Page not found"),
             HttpBackupError("HTTP 404 from stat: Page not found"),
         ]
         mock_head_remote_file.side_effect = [
@@ -1418,6 +1419,30 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(len(progress_calls), 2)
         self.assertIsNone(progress_calls[0])
         self.assertIn("1001/1001", progress_calls[1])
+
+    @patch("monitor.http_backups._request_json")
+    def test_http_compare_batches_report_progress_for_heartbeat(self, mock_request_json):
+        mock_request_json.return_value = {"ok": True, "changed": [], "missing": [], "skipped": []}
+        progress_calls = []
+        source_files = {
+            f"file-{index}.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000}
+            for index in range(5001)
+        }
+
+        result = _request_remote_compare(
+            "https://remote.example.com/system_monitor",
+            "token-123",
+            "/srv/backups/test",
+            source_files,
+            60,
+            progress_callback=progress_calls.append,
+        )
+
+        self.assertEqual(result["changed"], [])
+        self.assertEqual(mock_request_json.call_count, 2)
+        self.assertEqual(len(progress_calls), 2)
+        self.assertIsNone(progress_calls[0])
+        self.assertIn("5001/5001", progress_calls[1])
 
     @patch("monitor.http_backups._head_remote_file", return_value=None)
     def test_http_head_fallback_reports_progress_for_heartbeat(self, mock_head_remote_file):
@@ -1465,6 +1490,41 @@ class BackupHelpersTests(TestCase):
             self.assertEqual(payload["files"]["folder/camera.jpg"]["size"], 10)
             self.assertEqual(payload["files"]["folder/camera.jpg"]["mtime"], 1_765_000_000)
             self.assertEqual(payload["missing"], ["missing.jpg"])
+
+    def test_http_compare_endpoint_returns_changed_paths(self):
+        settings_obj = MonitoringSettings.load()
+        settings_obj.http_backup_token = "receiver-token"
+        settings_obj.save()
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            same_path = os.path.join(hostfs_root, "same.txt")
+            changed_path = os.path.join(hostfs_root, "changed.txt")
+            with open(same_path, "wb") as handle:
+                handle.write(b"same")
+            with open(changed_path, "wb") as handle:
+                handle.write(b"old")
+            os.utime(same_path, ns=(1_765_000_000_000_000_000, 1_765_000_000_000_000_000))
+            os.utime(changed_path, ns=(1_765_000_000_000_000_000, 1_765_000_000_000_000_000))
+
+            response = self.client.post(
+                self._path("monitor:backup-http-compare"),
+                data=json.dumps({
+                    "root_path": host_root,
+                    "files": {
+                        "same.txt": {"size": 4, "mtime": 1_765_000_000, "mtime_ns": 1_765_000_000_000_000_000},
+                        "changed.txt": {"size": 3, "mtime": 1_765_000_001, "mtime_ns": 1_765_000_001_000_000_000},
+                        "missing.txt": {"size": 7, "mtime": 1_765_000_000, "mtime_ns": 1_765_000_000_000_000_000},
+                    },
+                }),
+                content_type="application/json",
+                HTTP_AUTHORIZATION="Bearer receiver-token",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["ok"])
+            self.assertEqual(payload["changed"], ["changed.txt", "missing.txt"])
+            self.assertEqual(payload["missing"], ["missing.txt"])
 
     def test_http_file_head_returns_metadata_headers(self):
         settings_obj = MonitoringSettings.load()

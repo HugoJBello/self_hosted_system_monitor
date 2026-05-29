@@ -19,6 +19,7 @@ DEFAULT_HTTP_TIMEOUT_SECONDS = 60
 CHUNK_SIZE = 1024 * 1024
 MAX_DELETE_BATCH = 1000
 MAX_STAT_BATCH = 1000
+MAX_COMPARE_BATCH = 5000
 HTTP_RETRY_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 HTTP_RETRY_ATTEMPTS = 3
 HTTP_RETRY_BACKOFF_SECONDS = 1
@@ -302,6 +303,49 @@ def http_backup_stat_view(request):
 
 
 @csrf_exempt
+def http_backup_compare_view(request):
+    if not _auth_ok(request):
+        return _json_error("Unauthorized.", status=401)
+    if request.method != "POST":
+        return _json_error("Method not allowed.", status=405)
+    try:
+        payload = _json_request(request)
+        absolute_root = _hostfs_path(payload.get("root_path", ""))
+        if payload.get("create_root"):
+            os.makedirs(absolute_root, exist_ok=True)
+        if not os.path.isdir(absolute_root):
+            raise FileNotFoundError(f"Root folder not found: {payload.get('root_path', '')}")
+        source_files = payload.get("files") or {}
+        if len(source_files) > MAX_COMPARE_BATCH:
+            raise ValueError(f"Compare batch too large. Maximum is {MAX_COMPARE_BATCH}.")
+        changed = []
+        missing = []
+        skipped = []
+        for relative_path, source_metadata in source_files.items():
+            safe_relative_path = _safe_relative_path(relative_path)
+            file_path = _safe_child_path(absolute_root, safe_relative_path)
+            try:
+                stat = os.stat(file_path, follow_symlinks=False)
+            except FileNotFoundError:
+                missing.append(safe_relative_path)
+                changed.append(safe_relative_path)
+                continue
+            except OSError:
+                skipped.append({"path": safe_relative_path, "reason": "stat_failed"})
+                changed.append(safe_relative_path)
+                continue
+            if not os.path.isfile(file_path):
+                skipped.append({"path": safe_relative_path, "reason": "not_regular_file"})
+                changed.append(safe_relative_path)
+                continue
+            if _metadata_differs(source_metadata, _stat_metadata(stat)):
+                changed.append(safe_relative_path)
+    except Exception as exc:
+        return _json_error(exc)
+    return JsonResponse({"ok": True, "changed": changed, "missing": missing, "skipped": skipped})
+
+
+@csrf_exempt
 def http_backup_list_view(request):
     if not _auth_ok(request):
         return _json_error("Unauthorized.", status=401)
@@ -528,6 +572,34 @@ def _request_remote_stats(base_url, token, root_path, relative_paths, timeout, j
     return {"files": files, "skipped": skipped}
 
 
+def _request_remote_compare(base_url, token, root_path, source_files, timeout, job=None, progress_callback=None):
+    changed = []
+    skipped = []
+    paths = sorted(source_files)
+    total_batches = max(1, (len(paths) + MAX_COMPARE_BATCH - 1) // MAX_COMPARE_BATCH)
+    for start in range(0, len(paths), MAX_COMPARE_BATCH):
+        batch_paths = paths[start : start + MAX_COMPARE_BATCH]
+        batch_files = {relative_path: source_files[relative_path] for relative_path in batch_paths}
+        result = _request_json(
+            base_url,
+            "compare",
+            token,
+            {"root_path": root_path, "create_root": start == 0, "files": batch_files},
+            timeout,
+            job,
+        )
+        changed.extend(result.get("changed", []))
+        skipped.extend(result.get("skipped", []))
+        if progress_callback:
+            batch_number = start // MAX_COMPARE_BATCH + 1
+            progress_callback(
+                f"Remote compare progress: {min(start + len(batch_paths), len(paths))}/{len(paths)} paths compared."
+                if batch_number == total_batches or batch_number % HTTP_BATCH_PROGRESS_EVERY == 0
+                else None
+            )
+    return {"changed": changed, "skipped": skipped}
+
+
 def _request_remote_tree(base_url, token, root_path, common_payload, timeout, job=None, progress_callback=None):
     files = {}
     skipped = []
@@ -701,15 +773,17 @@ def _changed_files(source_files, dest_files):
         if not other:
             changed.append(relative_path)
             continue
-        source_hash = metadata.get("sha256")
-        dest_hash = other.get("sha256")
-        if source_hash and dest_hash:
-            differs = other.get("size") != metadata.get("size") or dest_hash != source_hash
-        else:
-            differs = other.get("size") != metadata.get("size") or _mtime_seconds(other) != _mtime_seconds(metadata)
-        if differs:
+        if _metadata_differs(metadata, other):
             changed.append(relative_path)
     return changed
+
+
+def _metadata_differs(source_metadata, dest_metadata):
+    source_hash = source_metadata.get("sha256")
+    dest_hash = dest_metadata.get("sha256")
+    if source_hash and dest_hash:
+        return dest_metadata.get("size") != source_metadata.get("size") or dest_hash != source_hash
+    return dest_metadata.get("size") != source_metadata.get("size") or _mtime_seconds(dest_metadata) != _mtime_seconds(source_metadata)
 
 
 def _mtime_seconds(metadata):
@@ -789,16 +863,24 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
     source_files = local_manifest["files"]
     log(f"Local manifest: {len(source_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
     try:
-        remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
-        log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
+        compare_result = _request_remote_compare(base_url, token, remote_root, source_files, timeout, job, progress_callback=progress)
+        changed = sorted(compare_result["changed"])
+        log(f"Remote compare: {len(source_files) - len(changed)} unchanged, {len(changed)} changed, {len(compare_result.get('skipped', []))} skipped.")
     except HttpBackupError as exc:
-        if not _endpoint_missing_error(exc, "stat"):
+        if not _endpoint_missing_error(exc, "compare"):
             raise
-        log("Remote stat endpoint is unavailable; using file HEAD checks.")
-        remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
-        log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
-    dest_files = remote_manifest["files"]
-    changed = _changed_files(source_files, dest_files)
+        log("Remote compare endpoint is unavailable; using stat batches.")
+        try:
+            remote_manifest = _request_remote_stats(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
+            log(f"Remote stat: {len(remote_manifest['files'])} matching-path files, {len(remote_manifest.get('skipped', []))} skipped.")
+        except HttpBackupError as stat_exc:
+            if not _endpoint_missing_error(stat_exc, "stat"):
+                raise
+            log("Remote stat endpoint is unavailable; using file HEAD checks.")
+            remote_manifest = _request_remote_file_heads(base_url, token, remote_root, sorted(source_files), timeout, job, progress_callback=progress)
+            log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
+        dest_files = remote_manifest["files"]
+        changed = _changed_files(source_files, dest_files)
     for index, relative_path in enumerate(changed, start=1):
         ensure_not_stopped()
         content = _read_local_file(local_root, relative_path)
