@@ -1,6 +1,7 @@
 import json
 import os
 import tempfile
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_remote_compare, _request_remote_file_heads, _request_remote_stats, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
@@ -1837,6 +1838,18 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(backup_run.status, "running")
         self.assertNotIn("heartbeat became stale", backup_run.log_output)
         mock_pid_is_alive.assert_called_with(12345)
+
+    def test_periodic_heartbeat_runs_until_stopped(self):
+        calls = []
+        with patch("monitor.backups.BACKUP_HEARTBEAT_INTERVAL_SECONDS", 0.01):
+            stop_event, thread = _start_periodic_heartbeat(lambda force=False: calls.append(force))
+            deadline = time.monotonic() + 0.5
+            while not calls and time.monotonic() < deadline:
+                time.sleep(0.01)
+            _stop_periodic_heartbeat(stop_event, thread)
+
+        self.assertIn(True, calls)
+        self.assertFalse(thread.is_alive())
 
     def test_rsync_partial_transfer_exit_codes_are_treated_as_non_fatal(self):
         self.assertTrue(_rsync_exit_is_partial_success(23))

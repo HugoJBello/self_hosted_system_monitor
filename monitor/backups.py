@@ -6,6 +6,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 import traceback
 import logging
@@ -954,6 +955,30 @@ def request_backup_run_stop(backup_run):
     return True
 
 
+def _start_periodic_heartbeat(heartbeat_callback):
+    if heartbeat_callback is None:
+        return None, None
+    stop_event = threading.Event()
+
+    def heartbeat_loop():
+        while not stop_event.wait(BACKUP_HEARTBEAT_INTERVAL_SECONDS):
+            try:
+                heartbeat_callback(force=True)
+            except Exception:
+                logger.exception("Failed to write periodic backup heartbeat.")
+
+    thread = threading.Thread(target=heartbeat_loop, name="backup-heartbeat", daemon=True)
+    thread.start()
+    return stop_event, thread
+
+
+def _stop_periodic_heartbeat(stop_event, thread):
+    if stop_event is None or thread is None:
+        return
+    stop_event.set()
+    thread.join(timeout=2)
+
+
 def finalize_backup_run(backup_run, result, *, finished_at=None):
     backup_run.status = result.status
     backup_run.exit_code = result.exit_code
@@ -1009,39 +1034,44 @@ def execute_backup_job(job, *, backup_run=None):
     last_log_flush = time.monotonic()
     stop_poll_checked_at = 0.0
     runtime_log_output = (backup_run.log_output if backup_run is not None else "") or ""
+    state_lock = threading.RLock()
 
     def flush_pending_logs(*, force=False):
         nonlocal pending_log_lines, last_log_flush, runtime_log_output
-        if backup_run is None or not pending_log_lines:
-            return
-        now_monotonic = time.monotonic()
-        if (
-            not force
-            and len(pending_log_lines) < BACKUP_LOG_FLUSH_MAX_BUFFERED_LINES
-            and now_monotonic - last_log_flush < BACKUP_LOG_FLUSH_INTERVAL_SECONDS
-        ):
-            return
-        new_log = "\n".join(part for part in [runtime_log_output.strip(), "\n".join(pending_log_lines).strip()] if part)
-        runtime_log_output = new_log[-BACKUP_LOG_LIMIT:]
-        now = timezone.now()
-        backup_run.heartbeat_at = now
-        backup_run.last_output_at = now
-        _write_runtime_state(
-            backup_run.id,
-            _runtime_state_from_backup_run(
-                backup_run,
-                log_output=runtime_log_output,
-                heartbeat_at=backup_run.heartbeat_at,
-                last_output_at=backup_run.last_output_at,
-            ),
-        )
-        pending_log_lines = []
-        last_log_flush = now_monotonic
+        with state_lock:
+            if backup_run is None or not pending_log_lines:
+                return
+            now_monotonic = time.monotonic()
+            if (
+                not force
+                and len(pending_log_lines) < BACKUP_LOG_FLUSH_MAX_BUFFERED_LINES
+                and now_monotonic - last_log_flush < BACKUP_LOG_FLUSH_INTERVAL_SECONDS
+            ):
+                return
+            new_log = "\n".join(part for part in [runtime_log_output.strip(), "\n".join(pending_log_lines).strip()] if part)
+            runtime_log_output = new_log[-BACKUP_LOG_LIMIT:]
+            now = timezone.now()
+            backup_run.heartbeat_at = now
+            backup_run.last_output_at = now
+            _write_runtime_state(
+                backup_run.id,
+                _runtime_state_from_backup_run(
+                    backup_run,
+                    log_output=runtime_log_output,
+                    heartbeat_at=backup_run.heartbeat_at,
+                    last_output_at=backup_run.last_output_at,
+                ),
+            )
+            pending_log_lines = []
+            last_log_flush = now_monotonic
 
     def buffered_log_callback(message):
-        pending_log_lines.append(message)
+        with state_lock:
+            pending_log_lines.append(message)
         flush_pending_logs()
 
+    heartbeat_stop_event = None
+    heartbeat_thread = None
     try:
         log_callback = None
         if backup_run is not None:
@@ -1049,24 +1079,26 @@ def execute_backup_job(job, *, backup_run=None):
             mark_backup_run_worker_started(backup_run)
             def heartbeat(force=False):
                 nonlocal runtime_log_output
-                flush_pending_logs(force=force)
-                now = timezone.now()
-                if not force and backup_run.heartbeat_at and (now - backup_run.heartbeat_at).total_seconds() < BACKUP_HEARTBEAT_INTERVAL_SECONDS:
-                    return
-                backup_run.heartbeat_at = now
-                _write_runtime_state(
-                    backup_run.id,
-                    _runtime_state_from_backup_run(
-                        backup_run,
-                        log_output=runtime_log_output,
-                        heartbeat_at=backup_run.heartbeat_at,
-                        last_output_at=backup_run.last_output_at,
-                    ),
-                )
+                with state_lock:
+                    flush_pending_logs(force=force)
+                    now = timezone.now()
+                    if not force and backup_run.heartbeat_at and (now - backup_run.heartbeat_at).total_seconds() < BACKUP_HEARTBEAT_INTERVAL_SECONDS:
+                        return
+                    backup_run.heartbeat_at = now
+                    _write_runtime_state(
+                        backup_run.id,
+                        _runtime_state_from_backup_run(
+                            backup_run,
+                            log_output=runtime_log_output,
+                            heartbeat_at=backup_run.heartbeat_at,
+                            last_output_at=backup_run.last_output_at,
+                        ),
+                    )
             def should_stop():
                 nonlocal stop_poll_checked_at
                 stop_now, stop_poll_checked_at = stop_requested(backup_run.id, last_checked_at=stop_poll_checked_at)
                 return stop_now
+            heartbeat_stop_event, heartbeat_thread = _start_periodic_heartbeat(heartbeat)
         else:
             heartbeat = None
             should_stop = None
@@ -1075,6 +1107,8 @@ def execute_backup_job(job, *, backup_run=None):
         flush_pending_logs(force=True)
         error_log = "".join(traceback.format_exception(exc)).strip()
         result = BackupExecutionResult(False, 1, "failed", f"Backup failed: {exc}", error_log)
+    finally:
+        _stop_periodic_heartbeat(heartbeat_stop_event, heartbeat_thread)
     finished_at = timezone.now()
     if backup_run is None:
         backup_run = record_backup_run(job, result, started_at=started_at, finished_at=finished_at)
