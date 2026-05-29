@@ -2,6 +2,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -20,6 +21,7 @@ CHUNK_SIZE = 1024 * 1024
 MAX_DELETE_BATCH = 1000
 MAX_STAT_BATCH = 1000
 MAX_COMPARE_BATCH = 5000
+MAX_PRUNE_DIR_BATCH = 500
 HTTP_RETRY_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 HTTP_RETRY_ATTEMPTS = 3
 HTTP_RETRY_BACKOFF_SECONDS = 1
@@ -472,6 +474,60 @@ def http_backup_delete_view(request):
     return JsonResponse({"ok": True, "deleted": deleted})
 
 
+@csrf_exempt
+def http_backup_prune_view(request):
+    if not _auth_ok(request):
+        return _json_error("Unauthorized.", status=401)
+    if request.method != "POST":
+        return _json_error("Method not allowed.", status=405)
+    try:
+        payload = _json_request(request)
+        absolute_root = _hostfs_path(payload.get("root_path", ""))
+        if not os.path.isdir(absolute_root):
+            raise FileNotFoundError(f"Root folder not found: {payload.get('root_path', '')}")
+        directories = payload.get("directories") or {}
+        if len(directories) > MAX_PRUNE_DIR_BATCH:
+            raise ValueError(f"Prune batch too large. Maximum is {MAX_PRUNE_DIR_BATCH}.")
+        excludes = _patterns(payload.get("exclude_patterns") or [])
+        deleted = []
+        skipped = []
+        for relative_dir, expected_entries in directories.items():
+            safe_relative_dir = _safe_optional_relative_dir(relative_dir)
+            directory = Path(absolute_root).resolve() if not safe_relative_dir else _safe_child_path(absolute_root, safe_relative_dir)
+            if not directory.is_dir():
+                continue
+            expected = {
+                _safe_relative_path(f"{safe_relative_dir}/{name}".strip("/")).rsplit("/", 1)[-1]: kind
+                for name, kind in (expected_entries or {}).items()
+            }
+            with os.scandir(directory) as entries:
+                for entry in entries:
+                    relative_path = f"{safe_relative_dir}/{entry.name}".strip("/")
+                    try:
+                        if _is_excluded(f"{relative_path}/", excludes) or _is_excluded(relative_path, excludes):
+                            skipped.append({"path": relative_path, "reason": "excluded"})
+                            continue
+                        expected_kind = expected.get(entry.name)
+                        actual_is_dir = entry.is_dir(follow_symlinks=False)
+                        actual_kind = "dir" if actual_is_dir else "file"
+                        if expected_kind == actual_kind:
+                            continue
+                        path = Path(entry.path)
+                        if actual_is_dir:
+                            shutil.rmtree(path)
+                        elif entry.is_file(follow_symlinks=False) or entry.is_symlink():
+                            path.unlink()
+                        else:
+                            skipped.append({"path": relative_path, "reason": "not_file_or_dir"})
+                            continue
+                        deleted.append(relative_path)
+                    except OSError:
+                        skipped.append({"path": relative_path, "reason": "delete_failed"})
+    except Exception as exc:
+        return _json_error(exc)
+    return JsonResponse({"ok": True, "deleted": deleted, "skipped": skipped})
+
+
 def _prune_empty_dirs(root_path):
     root = Path(root_path).resolve()
     for current_root, dirnames, _ in os.walk(root, topdown=False):
@@ -598,6 +654,50 @@ def _request_remote_compare(base_url, token, root_path, source_files, timeout, j
                 else None
             )
     return {"changed": changed, "skipped": skipped}
+
+
+def _source_directory_entries(source_files):
+    directories = {"": {}}
+    for relative_path in source_files:
+        parts = _safe_relative_path(relative_path).split("/")
+        directories.setdefault("", {})[parts[0]] = "file" if len(parts) == 1 else "dir"
+        for index in range(1, len(parts)):
+            directory = "/".join(parts[:index])
+            child = parts[index]
+            directories.setdefault(directory, {})[child] = "file" if index == len(parts) - 1 else "dir"
+    return directories
+
+
+def _request_remote_prune(base_url, token, root_path, source_files, exclude_patterns, timeout, job=None, progress_callback=None):
+    directories = _source_directory_entries(source_files)
+    relative_dirs = sorted(directories, key=lambda value: (value.count("/"), value))
+    deleted = []
+    skipped = []
+    total_batches = max(1, (len(relative_dirs) + MAX_PRUNE_DIR_BATCH - 1) // MAX_PRUNE_DIR_BATCH)
+    for start in range(0, len(relative_dirs), MAX_PRUNE_DIR_BATCH):
+        batch_dirs = relative_dirs[start : start + MAX_PRUNE_DIR_BATCH]
+        result = _request_json(
+            base_url,
+            "prune",
+            token,
+            {
+                "root_path": root_path,
+                "directories": {relative_dir: directories[relative_dir] for relative_dir in batch_dirs},
+                "exclude_patterns": exclude_patterns,
+            },
+            timeout,
+            job,
+        )
+        deleted.extend(result.get("deleted", []))
+        skipped.extend(result.get("skipped", []))
+        if progress_callback:
+            batch_number = start // MAX_PRUNE_DIR_BATCH + 1
+            progress_callback(
+                f"Remote prune progress: {min(start + len(batch_dirs), len(relative_dirs))}/{len(relative_dirs)} folders checked, {len(deleted)} entries deleted."
+                if batch_number == total_batches or batch_number % HTTP_BATCH_PROGRESS_EVERY == 0
+                else None
+            )
+    return {"deleted": deleted, "skipped": skipped}
 
 
 def _request_remote_tree(base_url, token, root_path, common_payload, timeout, job=None, progress_callback=None):
@@ -888,5 +988,13 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         log(f"Pushed {index}/{len(changed)} {relative_path}")
     deleted_count = 0
     if job.delete_enabled:
-        log("Remote deletion skipped for HTTP push to avoid exhaustive destination listing. Use SSH/local rsync for strict mirror deletion.")
+        try:
+            prune_result = _request_remote_prune(base_url, token, remote_root, source_files, job.exclude_patterns_list, timeout, job, progress_callback=progress)
+        except HttpBackupError as exc:
+            if not _endpoint_missing_error(exc, "prune"):
+                raise
+            log("Remote prune endpoint is unavailable; remote deletion skipped for this run.")
+        else:
+            deleted_count = len(prune_result.get("deleted", []))
+            log(f"Remote prune: deleted {deleted_count} entries, {len(prune_result.get('skipped', []))} skipped.")
     return {"changed": len(changed), "deleted": deleted_count, "skipped": len(local_manifest.get("skipped", []))}

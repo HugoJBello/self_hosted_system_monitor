@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_remote_compare, _request_remote_file_heads, _request_remote_stats, _temporary_upload_path, _upload_file, sync_http_backup
+from .http_backups import HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .reporting import generate_report_for_rule
 from .services import collect_snapshot
@@ -1221,7 +1221,7 @@ class BackupHelpersTests(TestCase):
             "skipped": [],
         },
     )
-    def test_http_push_with_delete_uses_remote_compare_and_skips_deletion(
+    def test_http_push_with_delete_uses_remote_compare_and_prunes_remote(
         self,
         mock_build_manifest,
         mock_read_local_file,
@@ -1246,16 +1246,17 @@ class BackupHelpersTests(TestCase):
                 "missing": ["new.txt"],
                 "skipped": [],
             },
+            {"ok": True, "deleted": ["old.txt"], "skipped": []},
         ]
         logs = []
 
         stats = sync_http_backup(job, log_callback=logs.append)
 
         self.assertEqual(stats["changed"], 1)
-        self.assertEqual(stats["deleted"], 0)
+        self.assertEqual(stats["deleted"], 1)
         mock_upload_file.assert_called_once()
-        self.assertEqual(mock_request_json.call_args.args[1], "compare")
-        self.assertTrue(any("Remote deletion skipped" in line for line in logs))
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "prune"])
+        self.assertTrue(any("Remote prune: deleted 1" in line for line in logs))
 
     @patch("monitor.http_backups._upload_file")
     @patch("monitor.http_backups._request_json")
@@ -1297,17 +1298,18 @@ class BackupHelpersTests(TestCase):
                 },
                 "skipped": [],
             },
+            {"ok": True, "deleted": ["old.txt"], "skipped": []},
         ]
         logs = []
 
         stats = sync_http_backup(job, log_callback=logs.append)
 
         self.assertEqual(stats["changed"], 1)
-        self.assertEqual(stats["deleted"], 0)
-        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "stat"])
+        self.assertEqual(stats["deleted"], 1)
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "stat", "prune"])
         self.assertNotIn("list", [call.args[1] for call in mock_request_json.call_args_list])
         mock_upload_file.assert_called_once()
-        self.assertTrue(any("Remote deletion skipped" in line for line in logs))
+        self.assertTrue(any("Remote prune: deleted 1" in line for line in logs))
 
     @patch("monitor.http_backups._head_remote_file")
     @patch("monitor.http_backups._request_json")
@@ -1340,6 +1342,7 @@ class BackupHelpersTests(TestCase):
         mock_request_json.side_effect = [
             HttpBackupError("HTTP 404 from compare: Page not found"),
             HttpBackupError("HTTP 404 from stat: Page not found"),
+            HttpBackupError("HTTP 404 from prune: Page not found"),
         ]
         mock_head_remote_file.return_value = {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000}
         logs = []
@@ -1348,7 +1351,7 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(stats["changed"], 0)
         self.assertEqual(stats["deleted"], 0)
-        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "stat"])
+        self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "stat", "prune"])
         mock_head_remote_file.assert_called_once()
         self.assertTrue(any("Remote HEAD checks" in line for line in logs))
 
@@ -1445,6 +1448,42 @@ class BackupHelpersTests(TestCase):
         self.assertIsNone(progress_calls[0])
         self.assertIn("5001/5001", progress_calls[1])
 
+    def test_http_source_directory_entries_include_parent_children(self):
+        entries = _source_directory_entries({
+            "top.txt": {"size": 1},
+            "folder/nested/photo.jpg": {"size": 2},
+        })
+
+        self.assertEqual(entries[""]["top.txt"], "file")
+        self.assertEqual(entries[""]["folder"], "dir")
+        self.assertEqual(entries["folder"]["nested"], "dir")
+        self.assertEqual(entries["folder/nested"]["photo.jpg"], "file")
+
+    @patch("monitor.http_backups._request_json")
+    def test_http_prune_batches_report_progress_for_heartbeat(self, mock_request_json):
+        mock_request_json.return_value = {"ok": True, "deleted": [], "skipped": []}
+        progress_calls = []
+        source_files = {
+            f"folder-{index}/file.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000}
+            for index in range(501)
+        }
+
+        result = _request_remote_prune(
+            "https://remote.example.com/system_monitor",
+            "token-123",
+            "/srv/backups/test",
+            source_files,
+            [],
+            60,
+            progress_callback=progress_calls.append,
+        )
+
+        self.assertEqual(result["deleted"], [])
+        self.assertEqual(mock_request_json.call_count, 2)
+        self.assertEqual(len(progress_calls), 2)
+        self.assertIsNone(progress_calls[0])
+        self.assertIn("502/502", progress_calls[1])
+
     @patch("monitor.http_backups._head_remote_file", return_value=None)
     def test_http_head_fallback_reports_progress_for_heartbeat(self, mock_head_remote_file):
         progress_calls = []
@@ -1526,6 +1565,46 @@ class BackupHelpersTests(TestCase):
             self.assertTrue(payload["ok"])
             self.assertEqual(payload["changed"], ["changed.txt", "missing.txt"])
             self.assertEqual(payload["missing"], ["missing.txt"])
+
+    def test_http_prune_endpoint_deletes_entries_missing_locally(self):
+        settings_obj = MonitoringSettings.load()
+        settings_obj.http_backup_token = "receiver-token"
+        settings_obj.save()
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            os.makedirs(os.path.join(hostfs_root, "keep-dir"), exist_ok=True)
+            os.makedirs(os.path.join(hostfs_root, "old-dir", "nested"), exist_ok=True)
+            with open(os.path.join(hostfs_root, "keep.txt"), "wb") as handle:
+                handle.write(b"keep")
+            with open(os.path.join(hostfs_root, "old.txt"), "wb") as handle:
+                handle.write(b"old")
+            with open(os.path.join(hostfs_root, "old-dir", "nested", "old.txt"), "wb") as handle:
+                handle.write(b"old")
+
+            response = self.client.post(
+                self._path("monitor:backup-http-prune"),
+                data=json.dumps({
+                    "root_path": host_root,
+                    "directories": {
+                        "": {
+                            "keep.txt": "file",
+                            "keep-dir": "dir",
+                        },
+                    },
+                    "exclude_patterns": [],
+                }),
+                content_type="application/json",
+                HTTP_AUTHORIZATION="Bearer receiver-token",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertTrue(payload["ok"])
+            self.assertEqual(sorted(payload["deleted"]), ["old-dir", "old.txt"])
+            self.assertTrue(os.path.exists(os.path.join(hostfs_root, "keep.txt")))
+            self.assertTrue(os.path.isdir(os.path.join(hostfs_root, "keep-dir")))
+            self.assertFalse(os.path.exists(os.path.join(hostfs_root, "old.txt")))
+            self.assertFalse(os.path.exists(os.path.join(hostfs_root, "old-dir")))
 
     def test_http_file_head_returns_metadata_headers(self):
         settings_obj = MonitoringSettings.load()
