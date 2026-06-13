@@ -963,15 +963,23 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         extra = sorted(set(dest_files) - set(source_files))
         log(f"Remote manifest: {len(source_files)} files, {len(remote_manifest.get('skipped', []))} skipped.")
         log(f"Local manifest: {len(dest_files)} files, {len(local_manifest.get('skipped', []))} skipped.")
+        failed = []
         for index, relative_path in enumerate(changed, start=1):
             ensure_not_stopped()
-            content = _download_file(base_url, token, remote_root, relative_path, timeout, job)
-            _write_local_file(local_root, relative_path, source_files[relative_path], content)
-            log(f"Pulled {index}/{len(changed)} {relative_path}")
+            try:
+                content = _download_file(base_url, token, remote_root, relative_path, timeout, job)
+                _write_local_file(local_root, relative_path, source_files[relative_path], content)
+            except Exception as exc:
+                failed.append({"path": relative_path, "error": str(exc)})
+                log(f"Failed to pull {index}/{len(changed)} {relative_path}: {exc}")
+            else:
+                log(f"Pulled {index}/{len(changed)} {relative_path}")
         deleted = _delete_local_files(local_root, extra) if job.delete_enabled else []
         if deleted:
             log(f"Deleted {len(deleted)} local files missing on remote.")
-        return {"changed": len(changed), "deleted": len(deleted), "skipped": len(remote_manifest.get("skipped", []))}
+        if failed:
+            log(f"HTTP pull completed with {len(failed)} file error(s).")
+        return {"changed": len(changed), "transferred": len(changed) - len(failed), "failed": len(failed), "deleted": len(deleted), "skipped": len(remote_manifest.get("skipped", []))}
 
     local_root = job.source_path
     remote_root = job.http_remote_path
@@ -997,11 +1005,17 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
             log(f"Remote HEAD checks: {len(remote_manifest['files'])} matching-path files.")
         dest_files = remote_manifest["files"]
         changed = _changed_files(source_files, dest_files)
+    failed = []
     for index, relative_path in enumerate(changed, start=1):
         ensure_not_stopped()
-        content = _read_local_file(local_root, relative_path)
-        _upload_file(base_url, token, remote_root, relative_path, source_files[relative_path], content, timeout, job)
-        log(f"Pushed {index}/{len(changed)} {relative_path}")
+        try:
+            content = _read_local_file(local_root, relative_path)
+            _upload_file(base_url, token, remote_root, relative_path, source_files[relative_path], content, timeout, job)
+        except Exception as exc:
+            failed.append({"path": relative_path, "error": str(exc)})
+            log(f"Failed to push {index}/{len(changed)} {relative_path}: {exc}")
+        else:
+            log(f"Pushed {index}/{len(changed)} {relative_path}")
     deleted_count = 0
     if job.delete_enabled:
         try:
@@ -1013,4 +1027,6 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         else:
             deleted_count = len(prune_result.get("deleted", []))
             log(f"Remote prune: deleted {deleted_count} entries, {len(prune_result.get('skipped', []))} skipped.")
-    return {"changed": len(changed), "deleted": deleted_count, "skipped": len(local_manifest.get("skipped", []))}
+    if failed:
+        log(f"HTTP push completed with {len(failed)} file error(s).")
+    return {"changed": len(changed), "transferred": len(changed) - len(failed), "failed": len(failed), "deleted": deleted_count, "skipped": len(local_manifest.get("skipped", []))}

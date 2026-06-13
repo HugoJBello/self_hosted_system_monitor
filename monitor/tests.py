@@ -1241,6 +1241,80 @@ class BackupHelpersTests(TestCase):
         "monitor.http_backups.build_manifest",
         return_value={
             "files": {
+                "bad:name.txt": {"size": 3, "mtime_ns": 1, "sha256": "bad"},
+                "good.txt": {"size": 3, "mtime_ns": 2, "sha256": "good"},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_push_continues_after_one_upload_fails(
+        self,
+        mock_build_manifest,
+        mock_read_local_file,
+        mock_request_json,
+        mock_upload_file,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP push partial",
+            backup_type="http",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="push",
+            delete_enabled=False,
+        )
+        mock_request_json.return_value = {
+            "ok": True,
+            "changed": ["bad:name.txt", "good.txt"],
+            "missing": ["bad:name.txt", "good.txt"],
+            "skipped": [],
+        }
+        mock_upload_file.side_effect = [HttpBackupError("invalid filename"), None]
+        logs = []
+
+        stats = sync_http_backup(job, log_callback=logs.append)
+
+        self.assertEqual(stats["changed"], 2)
+        self.assertEqual(stats["transferred"], 1)
+        self.assertEqual(stats["failed"], 1)
+        self.assertEqual(mock_upload_file.call_count, 2)
+        self.assertEqual([call.args[3] for call in mock_upload_file.call_args_list], ["bad:name.txt", "good.txt"])
+        self.assertTrue(any("Failed to push 1/2 bad:name.txt" in line for line in logs))
+        self.assertTrue(any("Pushed 2/2 good.txt" in line for line in logs))
+
+    @patch(
+        "monitor.backups.sync_http_backup",
+        return_value={"changed": 2, "transferred": 1, "failed": 1, "deleted": 0, "skipped": 0},
+    )
+    def test_http_backup_result_is_failed_when_file_errors_occur(self, mock_sync_http_backup):
+        job = BackupJob.objects.create(
+            name="HTTP push partial result",
+            backup_type="http",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="push",
+            delete_enabled=False,
+        )
+
+        result = run_backup_job(job)
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("1/2 transferred, 1 failed", result.summary)
+
+    @patch("monitor.http_backups._upload_file")
+    @patch("monitor.http_backups._request_json")
+    @patch("monitor.http_backups._read_local_file", return_value=b"new")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
                 "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
                 "new.txt": {"size": 3, "mtime": 2, "mtime_ns": 2_000_000_000},
             },
