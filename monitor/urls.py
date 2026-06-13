@@ -1,11 +1,12 @@
 from django.urls import path
 
 from .http_backups import http_backup_compare_view, http_backup_delete_view, http_backup_file_view, http_backup_list_view, http_backup_manifest_view, http_backup_prune_view, http_backup_stat_view
-from .views import AlertDetailView, AlertsView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, LoginView, LogoutView, PasswordView, RedirectHomeView, ReportDetailView, ReportsView, SettingsView, SystemMonitorView, UsersView
+from .views import AlertDetailView, AlertsView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, LoginView, LogoutView, PasswordView, RedirectHomeView, ReportDetailView, ReportsView, SettingsView, SystemMonitorView, UsersView, healthz_view
 
 app_name = "monitor"
 
 urlpatterns = [
+    path("healthz/", healthz_view, name="healthz"),
     path("", RedirectHomeView.as_view(), name="home"),
     path("login/", LoginView.as_view(), name="login"),
     path("logout/", LogoutView.as_view(), name="logout"),

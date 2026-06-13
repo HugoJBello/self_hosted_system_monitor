@@ -5,14 +5,21 @@ services:
     restart: unless-stopped
     ports:
       - "8012:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/', timeout=3).read()"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
     environment:
+      RUN_STARTUP_TASKS: "true"
       DJANGO_SECRET_KEY: "dev-unsafe-secret-key"
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: "*"
       DJANGO_CSRF_TRUST_ANY_ORIGIN: "True"
       DJANGO_CSRF_TRUSTED_ORIGINS: "https://*.hjbello.org,https://api-android18.hjbello.org,https://api-yamcha.hjbello.org,http://localhost,http://127.0.0.1,http://localhost:8012,http://127.0.0.1:8012"
       DJANGO_DB_PATH: "/app/data/db.sqlite3"
-      APP_SUBPATH: "/system_monitor"
+      APP_SUBPATH: "${APP_SUBPATH:-/system_monitor}"
       SAMPLER_DEFAULT_INTERVAL: "60"
       MONITOR_ROOT_PATH: "/hostfs"
       MONITOR_PROCFS_PATH: "/hostfs/proc"
@@ -28,13 +35,14 @@ services:
     restart: unless-stopped
     command: ["python", "manage.py", "run_sampler"]
     environment:
+      RUN_STARTUP_TASKS: "false"
       DJANGO_SECRET_KEY: "dev-unsafe-secret-key"
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: "*"
       DJANGO_CSRF_TRUST_ANY_ORIGIN: "True"
       DJANGO_CSRF_TRUSTED_ORIGINS: "https://*.hjbello.org,https://api-android18.hjbello.org,https://api-yamcha.hjbello.org,http://localhost,http://127.0.0.1,http://localhost:8012,http://127.0.0.1:8012"
       DJANGO_DB_PATH: "/app/data/db.sqlite3"
-      APP_SUBPATH: "/system_monitor"
+      APP_SUBPATH: "${APP_SUBPATH:-/system_monitor}"
       SAMPLER_DEFAULT_INTERVAL: "60"
       MONITOR_ROOT_PATH: "/hostfs"
       MONITOR_PROCFS_PATH: "/hostfs/proc"
@@ -43,7 +51,8 @@ services:
       - ./data:/app/data
       - /:/hostfs:ro
     depends_on:
-      - system_monitor_web
+      system_monitor_web:
+        condition: service_healthy
 
   system_monitor_backup_scheduler:
     build: .
@@ -51,13 +60,14 @@ services:
     restart: unless-stopped
     command: ["python", "manage.py", "run_backup_scheduler"]
     environment:
+      RUN_STARTUP_TASKS: "false"
       DJANGO_SECRET_KEY: "dev-unsafe-secret-key"
       DJANGO_DEBUG: "True"
       DJANGO_ALLOWED_HOSTS: "*"
       DJANGO_CSRF_TRUST_ANY_ORIGIN: "True"
       DJANGO_CSRF_TRUSTED_ORIGINS: "https://*.hjbello.org,https://api-android18.hjbello.org,https://api-yamcha.hjbello.org,http://localhost,http://127.0.0.1,http://localhost:8012,http://127.0.0.1:8012"
       DJANGO_DB_PATH: "/app/data/db.sqlite3"
-      APP_SUBPATH: "/system_monitor"
+      APP_SUBPATH: "${APP_SUBPATH:-/system_monitor}"
       SAMPLER_DEFAULT_INTERVAL: "60"
       BACKUP_SCHEDULER_POLL_SECONDS: "15"
       MONITOR_ROOT_PATH: "/hostfs"
@@ -67,4 +77,5 @@ services:
       - ./data:/app/data
       - /:/hostfs
     depends_on:
-      - system_monitor_web
+      system_monitor_web:
+        condition: service_healthy

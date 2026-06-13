@@ -6,6 +6,7 @@ import gzip
 from io import BytesIO
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.test import TestCase, override_settings
@@ -46,7 +47,7 @@ class MonitorViewsTests(TestCase):
 
     def _path(self, name, args=None):
         path = reverse(name, args=args or [])
-        return path.replace("/system_monitor", "", 1)
+        return path.replace(settings.APP_SUBPATH, "", 1)
 
     def _create_snapshot(self, captured_at, **overrides):
         payload = {
@@ -91,6 +92,30 @@ class MonitorViewsTests(TestCase):
     def test_home_redirects_to_monitor(self):
         response = self.client.get(self._path("monitor:home"))
         self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+
+    def test_healthz_endpoint_is_public_and_lightweight(self):
+        self.client.logout()
+        response = self.client.get(self._path("monitor:healthz"))
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(response.content, {"ok": True})
+
+    def test_app_subpath_prefix_is_accepted_without_proxy_rewrite(self):
+        self.client.logout()
+
+        app_subpath = settings.APP_SUBPATH
+
+        health_response = self.client.get(f"{app_subpath}/healthz/")
+        self.assertEqual(health_response.status_code, 200)
+        self.assertJSONEqual(health_response.content, {"ok": True})
+
+        monitor_response = self.client.get(f"{app_subpath}/monitor/")
+        self.assertEqual(monitor_response.status_code, 302)
+        self.assertIn(f"{app_subpath}/login/", monitor_response["Location"])
+        self.assertNotIn(f"{app_subpath}{app_subpath}/", monitor_response["Location"])
+
+        duplicate_prefix_response = self.client.get(f"{app_subpath}{app_subpath}/")
+        self.assertEqual(duplicate_prefix_response.status_code, 302)
+        self.assertIn(f"{app_subpath}/login/", duplicate_prefix_response["Location"])
 
     def test_anonymous_user_is_redirected_to_login(self):
         self.client.logout()
@@ -944,7 +969,7 @@ class BackupHelpersTests(TestCase):
 
     def _path(self, name, args=None):
         path = reverse(name, args=args or [])
-        return path.replace("/system_monitor", "", 1)
+        return path.replace(settings.APP_SUBPATH, "", 1)
 
     def test_normalized_remote_host_accepts_plain_hostname(self):
         job = BackupJob(remote_host="ssh.example.com", remote_user="backup", remote_dir="/tmp", source_path="/home/test")

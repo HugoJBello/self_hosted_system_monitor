@@ -5,7 +5,7 @@
 ## Features
 
 - Bootstrap-based UI in English.
-- Reverse-proxy friendly under the `/system_monitor` subpath.
+- Reverse-proxy friendly under a configurable subpath, `/system_monitor` by default.
 - Live monitor page inspired by `htop`/`glances`, adapted for the web.
 - Configuration page to control the sampling interval and retention.
 - Configuration page for an external notifications service API.
@@ -35,6 +35,12 @@ The web UI will be available at:
 
 - `http://localhost:8012/system_monitor/`
 
+To use a different public subpath, set `APP_SUBPATH` before starting Compose:
+
+```bash
+APP_SUBPATH=/my_monitor docker compose up --build
+```
+
 Default login after first start:
 
 - username: `admin`
@@ -44,7 +50,7 @@ Change this password immediately from the account password page. The default adm
 
 ## Runtime Notes
 
-- The app is configured for reverse proxying behind Nginx under `/system_monitor`.
+- The app is configured for reverse proxying behind Nginx under `APP_SUBPATH`, `/system_monitor` by default.
 - SQLite is stored at `./data/db.sqlite3`, so the database remains accessible outside Docker.
 - The sampler runs in a separate container and reads the latest configuration from the database before each collection cycle.
 - The containers mount the host root read-only so the sampler can inspect host processes, disks, memory, and network instead of only container-local values.
@@ -79,12 +85,16 @@ Change this password immediately from the account password page. The default adm
 
 ## First Start
 
-On startup the entrypoint:
+On startup the web container entrypoint:
 
 1. applies migrations
 2. ensures the default admin user exists
 3. collects static files
 4. starts Gunicorn
+
+The background services do not run these initialization steps. This avoids concurrent writes against the shared SQLite database during `docker compose up`.
+
+The web service also exposes a lightweight healthcheck endpoint at `<APP_SUBPATH>/healthz/`, for example `/system_monitor/healthz/`. Docker uses the internal `/healthz/` endpoint as the healthcheck, and the background services wait for the web container to become healthy before they start.
 
 The sampler service waits for the database and then begins saving snapshots.
 
@@ -225,7 +235,7 @@ The Django settings already account for:
 - `DJANGO_CSRF_TRUSTED_ORIGINS` for external HTTPS form posts
 - `DJANGO_CSRF_TRUST_ANY_ORIGIN=True` when this deployment must accept form posts from arbitrary public origins
 
-If your external Nginx proxies `/system_monitor/` to this container, keep forwarding the prefix unchanged.
+If your external Nginx proxies `/system_monitor/` to this container, set `APP_SUBPATH=/system_monitor`. The app accepts both direct prefixed requests and proxy-rewritten requests.
 
 ### Nginx Example
 
@@ -258,7 +268,7 @@ Important notes:
 
 - Keep the trailing slash in `/system_monitor/`.
 - Keep the trailing slash in `proxy_pass`.
-- Nginx should strip `/system_monitor/` before forwarding to Django. `FORCE_SCRIPT_NAME` handles URL generation with the external prefix.
-- Keep `X-Forwarded-Prefix /system_monitor` so the upstream knows the public mount point.
+- With this example, Nginx strips `/system_monitor/` before forwarding to Django. `FORCE_SCRIPT_NAME` handles URL generation with the external prefix.
+- Keep `X-Forwarded-Prefix /system_monitor` aligned with `APP_SUBPATH`.
 - Add the public origin to `DJANGO_CSRF_TRUSTED_ORIGINS`, for example `https://*.hjbello.org` or explicit hosts such as `https://api-android18.hjbello.org`, otherwise login and other POST forms will be rejected by Django CSRF origin checks.
 - If the app is intentionally reached through many changing domains, set `DJANGO_CSRF_TRUST_ANY_ORIGIN=True`. This skips Django's Origin allowlist check, but forms still require a valid CSRF cookie and token.

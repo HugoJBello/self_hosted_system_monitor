@@ -28,6 +28,10 @@ from .services import _process_rows
 User = get_user_model()
 
 
+def healthz_view(request):
+    return JsonResponse({"ok": True})
+
+
 class AdminRequiredMixin(UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_authenticated and self.request.user.is_staff
