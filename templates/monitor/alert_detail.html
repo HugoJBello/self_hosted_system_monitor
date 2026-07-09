@@ -126,10 +126,11 @@
           <th>RSS MB</th>
           <th>Threads</th>
           <th>User</th>
+          {% if request.user.is_staff %}<th>Actions</th>{% endif %}
         </tr>
       </thead>
       <tbody>
-        {% for process in trigger_snapshot.processes.all %}
+        {% for process in trigger_processes %}
           <tr>
             <td>{{ process.pid }}</td>
             <td>
@@ -142,9 +143,14 @@
             <td>{{ process.memory_rss_mb }}</td>
             <td>{{ process.threads }}</td>
             <td>{{ process.username|default:"-" }}</td>
+            {% if request.user.is_staff %}
+              <td>
+                {% include "monitor/_process_actions.html" with process_is_historical=True process_control_available=process.control_available process_control_unavailable_reason=process.control_unavailable_reason process_pid=process.pid process_name=process.name process_username=process.username process_command=process.command process_snapshot_id=process.id process_container_name=process.container_name %}
+              </td>
+            {% endif %}
           </tr>
         {% empty %}
-          <tr><td colspan="8" class="text-secondary">No process capture available for this snapshot.</td></tr>
+          <tr><td colspan="{% if request.user.is_staff %}9{% else %}8{% endif %}" class="text-secondary">No process capture available for this snapshot.</td></tr>
         {% endfor %}
       </tbody>
     </table>

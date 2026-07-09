@@ -1,0 +1,55 @@
+{% if request.user.is_staff %}
+  {% if process_is_historical and not process_control_available %}
+    <span class="text-secondary small" title="{{ process_control_unavailable_reason|default:'Historical process is not currently actionable.' }}">Historical only</span>
+  {% else %}
+    <div class="process-action-shell">
+      {% if process_container_name %}
+        <span class="process-container-chip" title="Docker container">{{ process_container_name }}</span>
+      {% endif %}
+      <div class="process-actions">
+      <form method="post" action="{% url 'monitor:process-action' %}" data-confirm-submit="{% if process_container_name %}Stop Docker container {{ process_container_name }} for PID {{ process_pid }}?{% else %}Send SIGTERM to {{ process_name }} (PID {{ process_pid }})?{% endif %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="confirmed" value="yes">
+        <input type="hidden" name="action" value="terminate">
+        <input type="hidden" name="pid" value="{{ process_pid }}">
+        <input type="hidden" name="process_snapshot_id" value="{{ process_snapshot_id|default:'' }}">
+        <input type="hidden" name="expected_name" value="{{ process_name }}">
+        <input type="hidden" name="expected_username" value="{{ process_username|default:'' }}">
+        <input type="hidden" name="expected_command" value="{{ process_command|default:'' }}">
+        <button class="btn btn-outline-warning btn-sm process-action-btn" type="submit" title="Terminate">
+          <i class="bi bi-stop-circle"></i><span>Stop</span>
+        </button>
+      </form>
+      <form method="post" action="{% url 'monitor:process-action' %}" data-confirm-submit="{% if process_container_name %}Kill Docker container {{ process_container_name }} for PID {{ process_pid }} immediately?{% else %}Force kill {{ process_name }} (PID {{ process_pid }}) with SIGKILL?{% endif %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="confirmed" value="yes">
+        <input type="hidden" name="action" value="kill">
+        <input type="hidden" name="pid" value="{{ process_pid }}">
+        <input type="hidden" name="process_snapshot_id" value="{{ process_snapshot_id|default:'' }}">
+        <input type="hidden" name="expected_name" value="{{ process_name }}">
+        <input type="hidden" name="expected_username" value="{{ process_username|default:'' }}">
+        <input type="hidden" name="expected_command" value="{{ process_command|default:'' }}">
+        <button class="btn btn-outline-danger btn-sm process-action-btn" type="submit" title="Kill">
+          <i class="bi bi-x-octagon"></i><span>Kill</span>
+        </button>
+      </form>
+      <form method="post" action="{% url 'monitor:process-action' %}" data-confirm-submit="{% if process_container_name %}Restart Docker container {{ process_container_name }} for PID {{ process_pid }}?{% else %}Restart {{ process_name }} (PID {{ process_pid }}) by terminating it and launching the same command again?{% endif %}">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="confirmed" value="yes">
+        <input type="hidden" name="action" value="restart">
+        <input type="hidden" name="pid" value="{{ process_pid }}">
+        <input type="hidden" name="process_snapshot_id" value="{{ process_snapshot_id|default:'' }}">
+        <input type="hidden" name="expected_name" value="{{ process_name }}">
+        <input type="hidden" name="expected_username" value="{{ process_username|default:'' }}">
+        <input type="hidden" name="expected_command" value="{{ process_command|default:'' }}">
+        <button class="btn btn-outline-info btn-sm process-action-btn" type="submit" title="Restart">
+          <i class="bi bi-arrow-clockwise"></i><span>Restart</span>
+        </button>
+      </form>
+      </div>
+    </div>
+  {% endif %}
+{% endif %}

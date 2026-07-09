@@ -167,6 +167,116 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "Autorefresh")
         self.assertContains(response, "Arch Linux")
 
+    def test_process_action_requires_confirmation(self):
+        response = self.client.post(
+            self._path("monitor:process-action"),
+            {"action": "terminate", "pid": "123"},
+        )
+        self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+        messages_list = list(response.wsgi_request._messages)
+        self.assertTrue(any("not confirmed" in str(message) for message in messages_list))
+
+    @patch("monitor.views.terminate_process")
+    @patch("monitor.views.validate_process_identity")
+    def test_process_action_terminates_valid_live_process(self, mock_validate_process_identity, mock_terminate_process):
+        class Current:
+            name = "worker"
+            container_id = ""
+            container_name = ""
+
+        mock_validate_process_identity.return_value = Current()
+        response = self.client.post(
+            self._path("monitor:process-action"),
+            {
+                "action": "terminate",
+                "confirmed": "yes",
+                "pid": "123",
+                "expected_name": "worker",
+                "expected_username": "root",
+                "expected_command": "worker --loop",
+            },
+        )
+        self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+        mock_validate_process_identity.assert_called_once_with(
+            123,
+            expected_name="worker",
+            expected_username="root",
+            expected_command="worker --loop",
+            observed_at=None,
+        )
+        mock_terminate_process.assert_called_once_with(123)
+
+    @patch("monitor.views.kill_process")
+    @patch("monitor.views.validate_process_identity")
+    def test_process_action_validates_historical_snapshot_before_kill(self, mock_validate_process_identity, mock_kill_process):
+        class Current:
+            name = "old-worker"
+            container_id = ""
+            container_name = ""
+
+        mock_validate_process_identity.return_value = Current()
+        snapshot = self._create_snapshot(timezone.now())
+        process = ProcessSnapshot.objects.create(
+            snapshot=snapshot,
+            pid=321,
+            name="old-worker",
+            username="root",
+            status="sleeping",
+            cpu_percent=1,
+            memory_percent=1,
+            memory_rss_mb=10,
+            threads=1,
+            command="old-worker --loop",
+        )
+        response = self.client.post(
+            self._path("monitor:process-action"),
+            {
+                "action": "kill",
+                "confirmed": "yes",
+                "pid": "321",
+                "process_snapshot_id": str(process.id),
+            },
+        )
+        self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+        mock_validate_process_identity.assert_called_once_with(
+            321,
+            expected_name="old-worker",
+            expected_username="root",
+            expected_command="old-worker --loop",
+            observed_at=snapshot.captured_at,
+        )
+        mock_kill_process.assert_called_once_with(321)
+
+    @patch("monitor.views.docker_container_action")
+    @patch("monitor.views.validate_process_identity")
+    def test_process_action_restarts_docker_container_for_container_process(self, mock_validate_process_identity, mock_docker_container_action):
+        class Current:
+            name = "python"
+            container_id = "a" * 64
+            container_name = "app-worker"
+
+        mock_validate_process_identity.return_value = Current()
+        response = self.client.post(
+            self._path("monitor:process-action"),
+            {
+                "action": "restart",
+                "confirmed": "yes",
+                "pid": "456",
+                "expected_name": "python",
+            },
+        )
+        self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+        mock_docker_container_action.assert_called_once_with("a" * 64, "restart")
+
+    @patch("monitor.views.reboot_host")
+    def test_process_action_can_request_reboot(self, mock_reboot_host):
+        response = self.client.post(
+            self._path("monitor:process-action"),
+            {"action": "reboot", "confirmed": "yes"},
+        )
+        self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+        mock_reboot_host.assert_called_once_with()
+
     def test_settings_page_uses_singleton(self):
         response = self.client.get(self._path("monitor:settings"))
         self.assertEqual(response.status_code, 200)

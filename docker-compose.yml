@@ -3,6 +3,8 @@ services:
     build: .
     container_name: system_monitor_web
     restart: unless-stopped
+    pid: host
+    privileged: true
     ports:
       - "8012:8000"
     healthcheck:

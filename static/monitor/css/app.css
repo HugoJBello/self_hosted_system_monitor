@@ -195,6 +195,59 @@ body.app-shell {
   font-weight: 600;
 }
 
+.process-action-shell {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+}
+
+.process-container-chip {
+  display: inline-flex;
+  max-width: 12rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid rgba(93, 198, 255, 0.24);
+  background: rgba(93, 198, 255, 0.09);
+  color: #bfe9ff;
+  font-size: 0.74rem;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.process-container-chip::before {
+  content: "Docker";
+  color: rgba(237, 242, 247, 0.66);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+}
+
+.process-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.process-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  min-height: 2rem;
+  padding: 0.22rem 0.52rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.process-action-btn i {
+  font-size: 0.9rem;
+}
+
 .process-badges {
   display: flex;
   flex-wrap: wrap;

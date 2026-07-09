@@ -124,6 +124,7 @@
           <th>MEM avg / peak</th>
           <th>Max RSS</th>
           <th>States / last seen</th>
+          {% if request.user.is_staff %}<th>Actions</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -141,9 +142,18 @@
               <div class="small text-secondary">{{ process.statuses|join:", "|default:"-" }}</div>
               <div class="small text-secondary">{% if process.last_seen_at %}<span data-local-datetime="{{ process.last_seen_at|date:'c' }}" data-local-style="datetime-short">{{ process.last_seen_at }}</span>{% else %}-{% endif %}</div>
             </td>
+            {% if request.user.is_staff %}
+              <td>
+                {% if process.latest_process_snapshot_id %}
+                  {% include "monitor/_process_actions.html" with process_is_historical=True process_control_available=process.control_available process_control_unavailable_reason=process.control_unavailable_reason process_pid=process.latest_pid process_name=process.name process_username=process.username process_command=process.commands.0 process_snapshot_id=process.latest_process_snapshot_id process_container_name=process.container_name %}
+                {% else %}
+                  <span class="text-secondary small">Historical only</span>
+                {% endif %}
+              </td>
+            {% endif %}
           </tr>
         {% empty %}
-          <tr><td colspan="6" class="text-secondary">No process summary available for this report.</td></tr>
+          <tr><td colspan="{% if request.user.is_staff %}7{% else %}6{% endif %}" class="text-secondary">No process summary available for this report.</td></tr>
         {% endfor %}
       </tbody>
     </table>

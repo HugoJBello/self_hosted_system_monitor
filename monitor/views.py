@@ -11,6 +11,8 @@ from django.forms import modelformset_factory
 from django.db.models import Avg, Max
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.decorators import method_decorator
 from django.utils import timezone
 from django.views import View
@@ -21,6 +23,7 @@ from .backups import get_runtime_state, list_browser_roots, list_directory_child
 from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
+from .process_control import ProcessControlError, container_info_for_pid, docker_container_action, kill_process, reboot_host, restart_process, terminate_process, validate_process_identity
 from .reporting import build_time_series_chart_data
 from .services import _process_rows
 
@@ -128,6 +131,144 @@ def _best_effort_reconcile_backups():
 class RedirectHomeView(LoginRequiredMixin, View):
     def get(self, request):
         return redirect("monitor:system-monitor")
+
+
+def _safe_next_url(request):
+    next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("monitor:system-monitor")
+    if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
+        return next_url
+    return reverse("monitor:system-monitor")
+
+
+def _process_action_context_from_snapshot(process_snapshot):
+    return {
+        "pid": process_snapshot.pid,
+        "name": process_snapshot.name,
+        "username": process_snapshot.username,
+        "command": process_snapshot.command,
+        "observed_at": process_snapshot.snapshot.captured_at,
+    }
+
+
+def _apply_process_container_metadata(process):
+    pid = process["pid"] if isinstance(process, dict) else process.pid
+    container_id, container_name = container_info_for_pid(pid)
+    if isinstance(process, dict):
+        process["container_id"] = container_id
+        process["container_name"] = container_name
+    else:
+        process.container_id = container_id
+        process.container_name = container_name
+    return process
+
+
+def _apply_process_container_metadata_many(processes):
+    for process in processes:
+        _apply_process_container_metadata(process)
+    return processes
+
+
+def _mark_historical_process_actions(processes):
+    for process in processes:
+        process.control_available = False
+        process.control_unavailable_reason = "Historical only"
+        try:
+            current = validate_process_identity(
+                process.pid,
+                expected_name=process.name,
+                expected_username=process.username,
+                expected_command=process.command,
+                observed_at=process.snapshot.captured_at,
+            )
+        except ProcessControlError as exc:
+            process.control_unavailable_reason = str(exc)
+        else:
+            process.control_available = True
+            process.control_unavailable_reason = ""
+            process.container_id = current.container_id
+            process.container_name = current.container_name
+    return processes
+
+
+class ProcessActionView(AdminRequiredMixin, View):
+    def post(self, request):
+        next_url = _safe_next_url(request)
+        action = request.POST.get("action", "")
+        confirmed = request.POST.get("confirmed") == "yes"
+
+        if not confirmed:
+            messages.error(request, "Action was not confirmed.")
+            return redirect(next_url)
+
+        if action == "reboot":
+            try:
+                reboot_host()
+            except ProcessControlError as exc:
+                messages.error(request, str(exc))
+            else:
+                messages.warning(request, "Host reboot requested.")
+            return redirect(next_url)
+
+        try:
+            pid = int(request.POST.get("pid", "0"))
+        except ValueError:
+            messages.error(request, "Invalid PID.")
+            return redirect(next_url)
+
+        process_snapshot_id = request.POST.get("process_snapshot_id")
+        if process_snapshot_id:
+            process_snapshot = get_object_or_404(
+                ProcessSnapshot.objects.select_related("snapshot"),
+                pk=process_snapshot_id,
+            )
+            identity = _process_action_context_from_snapshot(process_snapshot)
+            if process_snapshot.pid != pid:
+                messages.error(request, "PID does not match the selected historical process.")
+                return redirect(next_url)
+        else:
+            identity = {
+                "pid": pid,
+                "name": request.POST.get("expected_name", ""),
+                "username": request.POST.get("expected_username", ""),
+                "command": request.POST.get("expected_command", ""),
+                "observed_at": None,
+            }
+
+        try:
+            current = validate_process_identity(
+                pid,
+                expected_name=identity["name"],
+                expected_username=identity["username"],
+                expected_command=identity["command"],
+                observed_at=identity["observed_at"],
+            )
+            if current.container_id:
+                container_label = current.container_name or current.container_id[:12]
+                if action == "terminate":
+                    docker_container_action(current.container_id, "stop")
+                    messages.warning(request, f"Docker container '{container_label}' stop requested.")
+                elif action == "kill":
+                    docker_container_action(current.container_id, "kill")
+                    messages.warning(request, f"Docker container '{container_label}' killed.")
+                elif action == "restart":
+                    docker_container_action(current.container_id, "restart")
+                    messages.warning(request, f"Docker container '{container_label}' restarted.")
+                else:
+                    messages.error(request, "Unknown process action.")
+            elif action == "terminate":
+                terminate_process(pid)
+                messages.warning(request, f"SIGTERM sent to {current.name} ({pid}).")
+            elif action == "kill":
+                kill_process(pid)
+                messages.warning(request, f"SIGKILL sent to {current.name} ({pid}).")
+            elif action == "restart":
+                restart_process(current)
+                messages.warning(request, f"Restart requested for {current.name} ({pid}).")
+            else:
+                messages.error(request, "Unknown process action.")
+        except ProcessControlError as exc:
+            messages.error(request, str(exc))
+        return redirect(next_url)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
@@ -238,6 +379,7 @@ class SystemMonitorView(LoginRequiredMixin, View):
 
             live_process_rows.sort(key=process_sort_key, reverse=(direction == "desc"))
             live_process_page = Paginator(live_process_rows, process_per_page).get_page(process_page_number)
+            _apply_process_container_metadata_many(live_process_page.object_list)
 
         context = {
             "latest_snapshot": latest_snapshot,
@@ -303,6 +445,8 @@ class HistoryView(LoginRequiredMixin, View):
             ProcessSnapshot.objects.filter(snapshot__captured_at__gte=cutoff)
             .select_related("snapshot")
             .values(
+                "id",
+                "pid",
                 "name",
                 "username",
                 "status",
@@ -325,8 +469,12 @@ class HistoryView(LoginRequiredMixin, View):
                 "peak_memory": 0.0,
                 "max_rss_mb": 0.0,
                 "last_seen_at": None,
+                "latest_process_snapshot_id": None,
+                "latest_pid": None,
                 "statuses": set(),
                 "commands": [],
+                "control_available": False,
+                "control_unavailable_reason": "Historical aggregate",
             }
         )
         for row in grouped_process_rows:
@@ -340,7 +488,10 @@ class HistoryView(LoginRequiredMixin, View):
             entry["peak_cpu"] = max(entry["peak_cpu"], float(row["cpu_percent"] or 0))
             entry["peak_memory"] = max(entry["peak_memory"], float(row["memory_percent"] or 0))
             entry["max_rss_mb"] = max(entry["max_rss_mb"], float(row["memory_rss_mb"] or 0))
-            entry["last_seen_at"] = max(filter(None, [entry["last_seen_at"], row["snapshot__captured_at"]]))
+            if entry["last_seen_at"] is None or row["snapshot__captured_at"] > entry["last_seen_at"]:
+                entry["last_seen_at"] = row["snapshot__captured_at"]
+                entry["latest_process_snapshot_id"] = row["id"]
+                entry["latest_pid"] = row["pid"]
             if row["status"]:
                 entry["statuses"].add(row["status"])
             command = (row["command"] or "").strip()
@@ -359,6 +510,10 @@ class HistoryView(LoginRequiredMixin, View):
                     "peak_memory": entry["peak_memory"],
                     "max_rss_mb": entry["max_rss_mb"],
                     "last_seen_at": entry["last_seen_at"],
+                    "latest_process_snapshot_id": entry["latest_process_snapshot_id"],
+                    "latest_pid": entry["latest_pid"],
+                    "control_available": entry["control_available"],
+                    "control_unavailable_reason": entry["control_unavailable_reason"],
                     "statuses": sorted(entry["statuses"]),
                     "commands": entry["commands"],
                 }
@@ -367,7 +522,25 @@ class HistoryView(LoginRequiredMixin, View):
             key=lambda item: (item["avg_cpu"], item["peak_memory"], item["max_rss_mb"]),
             reverse=True,
         )[:8]
-        expensive_processes_point = list(latest_snapshot.processes.all()[:8]) if latest_snapshot else []
+        latest_snapshot_ids = [
+            process["latest_process_snapshot_id"]
+            for process in expensive_processes_period
+            if process["latest_process_snapshot_id"]
+        ]
+        snapshots_by_id = {
+            process.id: process
+            for process in _mark_historical_process_actions(
+                list(ProcessSnapshot.objects.select_related("snapshot").filter(id__in=latest_snapshot_ids))
+            )
+        }
+        for process in expensive_processes_period:
+            latest_process = snapshots_by_id.get(process["latest_process_snapshot_id"])
+            if latest_process:
+                process["control_available"] = latest_process.control_available
+                process["control_unavailable_reason"] = latest_process.control_unavailable_reason
+                process["container_id"] = latest_process.container_id
+                process["container_name"] = latest_process.container_name
+        expensive_processes_point = _mark_historical_process_actions(list(latest_snapshot.processes.all()[:8])) if latest_snapshot else []
 
         return render(
             request,
@@ -509,12 +682,14 @@ class AlertDetailView(LoginRequiredMixin, View):
             "threshold": [event.threshold for _ in context_snapshots],
         }
         alert_window_processes = top_processes_for_alert_window(event.rule, trigger_snapshot, limit=8)
+        trigger_processes = _mark_historical_process_actions(list(trigger_snapshot.processes.all()))
         return render(
             request,
             self.template_name,
             {
                 "event": event,
                 "trigger_snapshot": trigger_snapshot,
+                "trigger_processes": trigger_processes,
                 "context_snapshots": context_snapshots,
                 "chart_data": chart_data,
                 "alert_window_processes": alert_window_processes,
@@ -537,6 +712,50 @@ class ReportDetailView(LoginRequiredMixin, View):
     def get(self, request, report_id):
         report = get_object_or_404(ReportRun.objects.select_related("rule"), pk=report_id)
         report_data = report.report_data or {}
+        top_processes = [dict(process) for process in report_data.get("top_processes", [])]
+        snapshot_ids = [process.get("latest_process_snapshot_id") for process in top_processes if process.get("latest_process_snapshot_id")]
+        if not snapshot_ids and top_processes:
+            latest_rows = (
+                ProcessSnapshot.objects.filter(
+                    snapshot__captured_at__gte=report.window_start,
+                    snapshot__captured_at__lte=report.window_end,
+                    name__in=[process.get("name", "") for process in top_processes],
+                )
+                .select_related("snapshot")
+                .order_by("name", "username", "-snapshot__captured_at")
+            )
+            seen_keys = set()
+            for process_snapshot in latest_rows:
+                key = (process_snapshot.name, process_snapshot.username or "")
+                if key in seen_keys:
+                    continue
+                seen_keys.add(key)
+                for process in top_processes:
+                    if (process.get("name"), process.get("username") or "") == key:
+                        process["latest_process_snapshot_id"] = process_snapshot.id
+                        process["latest_pid"] = process_snapshot.pid
+                        break
+            snapshot_ids = [process.get("latest_process_snapshot_id") for process in top_processes if process.get("latest_process_snapshot_id")]
+
+        snapshots_by_id = {
+            process.id: process
+            for process in _mark_historical_process_actions(
+                list(ProcessSnapshot.objects.select_related("snapshot").filter(id__in=snapshot_ids))
+            )
+        }
+        for process in top_processes:
+            latest_process = snapshots_by_id.get(process.get("latest_process_snapshot_id"))
+            if latest_process:
+                process["control_available"] = latest_process.control_available
+                process["control_unavailable_reason"] = latest_process.control_unavailable_reason
+                process["container_id"] = latest_process.container_id
+                process["container_name"] = latest_process.container_name
+            else:
+                process["control_available"] = False
+                process["control_unavailable_reason"] = "Historical aggregate"
+                process["container_id"] = ""
+                process["container_name"] = ""
+        report_data = {**report_data, "top_processes": top_processes}
         return render(
             request,
             self.template_name,

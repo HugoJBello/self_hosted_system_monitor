@@ -150,6 +150,14 @@
           document.documentElement.lang = locale;
         }
         applyBrowserLocaleDates(document);
+        document.querySelectorAll("form[data-confirm-submit]").forEach((form) => {
+          form.addEventListener("submit", (event) => {
+            const message = form.dataset.confirmSubmit || "Confirm this action?";
+            if (!window.confirm(message)) {
+              event.preventDefault();
+            }
+          });
+        });
       });
 
       window.applyBrowserLocaleDates = applyBrowserLocaleDates;

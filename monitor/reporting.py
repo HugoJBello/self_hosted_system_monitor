@@ -130,6 +130,8 @@ def build_period_process_summary(window_start, window_end, limit=8):
             snapshot__captured_at__lte=window_end,
         )
         .values(
+            "id",
+            "pid",
             "name",
             "username",
             "status",
@@ -152,6 +154,8 @@ def build_period_process_summary(window_start, window_end, limit=8):
             "peak_memory": 0.0,
             "max_rss_mb": 0.0,
             "last_seen_at": None,
+            "latest_process_snapshot_id": None,
+            "latest_pid": None,
             "statuses": set(),
             "commands": [],
         }
@@ -167,7 +171,10 @@ def build_period_process_summary(window_start, window_end, limit=8):
         entry["peak_cpu"] = max(entry["peak_cpu"], float(row["cpu_percent"] or 0))
         entry["peak_memory"] = max(entry["peak_memory"], float(row["memory_percent"] or 0))
         entry["max_rss_mb"] = max(entry["max_rss_mb"], float(row["memory_rss_mb"] or 0))
-        entry["last_seen_at"] = max(filter(None, [entry["last_seen_at"], row["snapshot__captured_at"]]))
+        if entry["last_seen_at"] is None or row["snapshot__captured_at"] > entry["last_seen_at"]:
+            entry["last_seen_at"] = row["snapshot__captured_at"]
+            entry["latest_process_snapshot_id"] = row["id"]
+            entry["latest_pid"] = row["pid"]
         if row["status"]:
             entry["statuses"].add(row["status"])
         command = (row["command"] or "").strip()
@@ -186,6 +193,8 @@ def build_period_process_summary(window_start, window_end, limit=8):
                 "peak_memory": round(entry["peak_memory"], 2),
                 "max_rss_mb": round(entry["max_rss_mb"], 2),
                 "last_seen_at": entry["last_seen_at"].strftime("%Y-%m-%d %H:%M:%S") if entry["last_seen_at"] else "",
+                "latest_process_snapshot_id": entry["latest_process_snapshot_id"],
+                "latest_pid": entry["latest_pid"],
                 "statuses": sorted(entry["statuses"]),
                 "commands": entry["commands"],
             }
