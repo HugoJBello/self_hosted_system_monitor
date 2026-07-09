@@ -172,6 +172,9 @@ def _mark_historical_process_actions(processes):
     for process in processes:
         process.control_available = False
         process.control_unavailable_reason = "Historical only"
+        process.container_id = ""
+        process.container_name = ""
+
         try:
             current = validate_process_identity(
                 process.pid,
@@ -185,8 +188,9 @@ def _mark_historical_process_actions(processes):
         else:
             process.control_available = True
             process.control_unavailable_reason = ""
-            process.container_id = current.container_id
-            process.container_name = current.container_name
+            process.container_id = current.container_id or ""
+            process.container_name = current.container_name or ""
+
     return processes
 
 
