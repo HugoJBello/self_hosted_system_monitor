@@ -17,6 +17,8 @@
       <option value="24" {% if hours == 24 %}selected{% endif %}>24 hours</option>
       <option value="72" {% if hours == 72 %}selected{% endif %}>3 days</option>
       <option value="168" {% if hours == 168 %}selected{% endif %}>7 days</option>
+      <option value="360" {% if hours == 360 %}selected{% endif %}>15 days</option>
+      <option value="720" {% if hours == 720 %}selected{% endif %}>1 month</option>
     </select>
     <button class="btn btn-accent" type="submit">Apply</button>
   </form>
@@ -364,7 +366,7 @@
   const rangeEndIsos = chartData.range_end_isos || [];
   const labels = labelMoments.length
     ? labelMoments.map((iso, index) => (
-        window.formatConfiguredDateTime(iso, chartData.bucket_seconds >= 86400 ? "date" : "time-short") || serverLabels[index]
+        window.formatConfiguredChartLabel(iso, { windowHours: {{ hours }}, bucketSeconds: chartData.bucket_seconds }) || serverLabels[index]
       ))
     : serverLabels;
   const denseSeries = labels.length > 40;

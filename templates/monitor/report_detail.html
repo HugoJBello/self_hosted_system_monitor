@@ -216,7 +216,7 @@
   const reportRangeStartIsos = reportChartData.range_start_isos || [];
   const reportRangeEndIsos = reportChartData.range_end_isos || [];
   const reportLabels = reportLabelMoments.map((iso, index) => (
-    window.formatConfiguredDateTime(iso, reportChartData.bucket_seconds >= 86400 ? "date" : "time-short") || reportChartData.labels[index]
+    window.formatConfiguredChartLabel(iso, { windowHours: {{ report_data.period_hours|default:0 }}, bucketSeconds: reportChartData.bucket_seconds }) || reportChartData.labels[index]
   ));
   const reportDenseSeries = reportLabels.length > 40;
 

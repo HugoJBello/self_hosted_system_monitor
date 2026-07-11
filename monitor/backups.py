@@ -708,11 +708,12 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
             summary = f"Backup timed out after {job.run_timeout_seconds}s."
             return BackupExecutionResult(False, DEFAULT_TIMEOUT_EXIT_CODE, "timed_out", summary, "\n".join(log_lines), command_line=command_line)
         failed = stats.get("failed", 0)
+        vanished = stats.get("vanished", 0)
         transferred = stats.get("transferred", stats["changed"])
         if failed:
-            summary = f"HTTP backup finished with file errors: {transferred}/{stats['changed']} transferred, {failed} failed, {stats['deleted']} deleted, {stats['skipped']} skipped."
+            summary = f"HTTP backup finished with file errors: {transferred}/{stats['changed']} transferred, {failed} failed, {vanished} vanished, {stats['deleted']} deleted, {stats['skipped']} skipped."
             return BackupExecutionResult(False, 1, "failed", summary, "\n".join(log_lines), command_line=command_line)
-        summary = f"HTTP backup finished: {stats['changed']} changed, {stats['deleted']} deleted, {stats['skipped']} skipped."
+        summary = f"HTTP backup finished: {transferred}/{stats['changed']} transferred, {vanished} vanished, {stats['deleted']} deleted, {stats['skipped']} skipped."
         return BackupExecutionResult(True, 0, "success", summary, "\n".join(log_lines), command_line=command_line)
 
     source_path = _ensure_local_source(job)

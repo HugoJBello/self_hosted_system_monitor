@@ -137,6 +137,33 @@
         return start && end ? `${start} → ${end}` : start || end || "";
       }
 
+      function formatConfiguredChartLabel(isoValue, options = {}) {
+        if (!isoValue) return "";
+        const date = new Date(isoValue);
+        if (Number.isNaN(date.getTime())) return "";
+        const locale = detectDisplayLocale();
+        const timeZone = getConfiguredTimeZone();
+        const windowHours = Number(options.windowHours || 0);
+        const bucketSeconds = Number(options.bucketSeconds || 0);
+        const dateOnly = new Intl.DateTimeFormat(locale, {
+          timeZone,
+          month: windowHours > (24 * 14) ? "short" : "2-digit",
+          day: "2-digit",
+        }).format(date);
+        const timeOnly = new Intl.DateTimeFormat(locale, {
+          timeZone,
+          hour: "2-digit",
+          minute: bucketSeconds >= 3600 ? undefined : "2-digit",
+        }).format(date);
+        if (windowHours <= 24) {
+          return timeOnly;
+        }
+        if (windowHours <= 24 * 7) {
+          return [dateOnly, timeOnly];
+        }
+        return dateOnly;
+      }
+
       function applyBrowserLocaleDates(root = document) {
         root.querySelectorAll("[data-local-datetime]").forEach((node) => {
           const formatted = formatConfiguredDateTime(node.dataset.localDatetime, node.dataset.localStyle || "datetime");
@@ -165,6 +192,7 @@
       window.applyBrowserLocaleDates = applyBrowserLocaleDates;
       window.formatConfiguredDateTime = formatConfiguredDateTime;
       window.formatConfiguredRange = formatConfiguredRange;
+      window.formatConfiguredChartLabel = formatConfiguredChartLabel;
     </script>
     {% block scripts %}{% endblock %}
   </body>

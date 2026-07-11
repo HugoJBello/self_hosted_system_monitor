@@ -99,22 +99,36 @@ def _network_stats():
 
 def _disk_devices():
     devices = []
+    seen_mounts = set()
     for partition in psutil.disk_partitions(all=False):
+        mountpoint = partition.mountpoint or ""
+        if not mountpoint.startswith(HOST_ROOT_PATH):
+            continue
+        if not os.path.isdir(mountpoint):
+            continue
+        host_mountpoint = os.path.normpath("/" + os.path.relpath(mountpoint, HOST_ROOT_PATH).lstrip("./"))
+        if host_mountpoint == "/.":
+            host_mountpoint = "/"
+        if host_mountpoint in seen_mounts:
+            continue
         try:
-            usage = psutil.disk_usage(partition.mountpoint)
+            usage = psutil.disk_usage(mountpoint)
         except PermissionError:
             continue
+        seen_mounts.add(host_mountpoint)
         devices.append(
             {
                 "device": partition.device,
-                "mountpoint": partition.mountpoint,
+                "mountpoint": host_mountpoint,
                 "fstype": partition.fstype,
                 "total_gb": _gb(usage.total),
                 "used_gb": _gb(usage.used),
                 "free_gb": _gb(usage.free),
                 "percent": round(usage.percent, 2),
+                "free_percent": round(max(100 - usage.percent, 0), 2),
             }
         )
+    devices.sort(key=lambda item: (item["mountpoint"] != "/", item["mountpoint"]))
     return devices
 
 

@@ -195,8 +195,20 @@
 {% block scripts %}
 <script>
   const detailData = JSON.parse(document.getElementById("alert-detail-chart-data").textContent);
+  const detailWindowHours = (() => {
+    const points = detailData.label_datetimes || [];
+    if (points.length < 2) {
+      return 0;
+    }
+    const start = new Date(points[0]);
+    const end = new Date(points[points.length - 1]);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return 0;
+    }
+    return Math.max((end.getTime() - start.getTime()) / 3600000, 0);
+  })();
   const detailLabels = (detailData.label_datetimes || []).map((iso, index) => (
-    window.formatConfiguredDateTime(iso, "time-short") || detailData.labels[index]
+    window.formatConfiguredChartLabel(iso, { windowHours: detailWindowHours }) || detailData.labels[index]
   ));
   new Chart(document.getElementById("alertMetricChart"), {
     type: "line",

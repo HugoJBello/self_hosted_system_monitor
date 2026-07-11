@@ -29,6 +29,7 @@ HTTP_RETRY_BACKOFF_SECONDS = 1
 HTTP_GZIP_MIN_BYTES = 64 * 1024
 MANIFEST_PROGRESS_EVERY = 1000
 HTTP_BATCH_PROGRESS_EVERY = 100
+MONITOR_RUNTIME_DIR_NAMES = ("backup_runtime", "script_job_runtime")
 
 
 class HttpBackupError(RuntimeError):
@@ -99,6 +100,23 @@ def _patterns(value):
     return [str(item).strip() for item in (value or []) if str(item).strip()]
 
 
+def _default_exclude_patterns(host_root_path):
+    patterns = []
+    db_path = os.getenv("DJANGO_DB_PATH", "/app/data/db.sqlite3")
+    runtime_base = Path(db_path).resolve().parent
+    source_root = Path(_hostfs_path(host_root_path)).resolve()
+    for dirname in MONITOR_RUNTIME_DIR_NAMES:
+        runtime_dir = runtime_base / dirname
+        try:
+            relative = runtime_dir.relative_to(source_root)
+        except ValueError:
+            continue
+        pattern = f"{relative.as_posix().strip('/')}/"
+        if pattern:
+            patterns.append(pattern)
+    return patterns
+
+
 def _is_excluded(relative_path, patterns):
     rel = relative_path.replace("\\", "/").lstrip("/")
     name = rel.rsplit("/", 1)[-1]
@@ -143,6 +161,9 @@ def build_manifest(
     if not os.path.isdir(absolute_root):
         raise FileNotFoundError(f"Root folder not found: {host_root_path}")
     excludes = _patterns(exclude_patterns)
+    for pattern in _default_exclude_patterns(host_root_path):
+        if pattern not in excludes:
+            excludes.append(pattern)
     max_size = max_size_bytes if max_size_bytes is not None else 100 * 1024 * 1024
     files = {}
     skipped = []
@@ -1006,11 +1027,15 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
         dest_files = remote_manifest["files"]
         changed = _changed_files(source_files, dest_files)
     failed = []
+    vanished = []
     for index, relative_path in enumerate(changed, start=1):
         ensure_not_stopped()
         try:
             content = _read_local_file(local_root, relative_path)
             _upload_file(base_url, token, remote_root, relative_path, source_files[relative_path], content, timeout, job)
+        except FileNotFoundError:
+            vanished.append(relative_path)
+            log(f"Skipped vanished file {index}/{len(changed)} {relative_path}")
         except Exception as exc:
             failed.append({"path": relative_path, "error": str(exc)})
             log(f"Failed to push {index}/{len(changed)} {relative_path}: {exc}")
@@ -1029,4 +1054,13 @@ def sync_http_backup(job, *, log_callback=None, heartbeat_callback=None, should_
             log(f"Remote prune: deleted {deleted_count} entries, {len(prune_result.get('skipped', []))} skipped.")
     if failed:
         log(f"HTTP push completed with {len(failed)} file error(s).")
-    return {"changed": len(changed), "transferred": len(changed) - len(failed), "failed": len(failed), "deleted": deleted_count, "skipped": len(local_manifest.get("skipped", []))}
+    if vanished:
+        log(f"HTTP push skipped {len(vanished)} transient file(s) that disappeared before upload.")
+    return {
+        "changed": len(changed),
+        "transferred": len(changed) - len(failed) - len(vanished),
+        "failed": len(failed),
+        "vanished": len(vanished),
+        "deleted": deleted_count,
+        "skipped": len(local_manifest.get("skipped", [])),
+    }
