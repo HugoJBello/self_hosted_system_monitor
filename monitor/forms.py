@@ -1,9 +1,10 @@
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm, UserCreationForm
+from django.utils import timezone
 from zoneinfo import available_timezones
 
-from .models import AlertRule, BackupJob, MonitoringSettings, ReportRule
+from .models import AlertRule, BackupJob, MonitoringSettings, ReportRule, ScriptJob
 
 
 User = get_user_model()
@@ -482,6 +483,125 @@ class BackupJobForm(forms.ModelForm):
                     )
         run_timeout_seconds = cleaned_data.get("run_timeout_seconds") or 0
         idle_timeout_seconds = cleaned_data.get("idle_timeout_seconds") or 0
+        if idle_timeout_seconds and run_timeout_seconds and idle_timeout_seconds >= run_timeout_seconds:
+            self.add_error("idle_timeout_seconds", "Idle timeout must be lower than the hard timeout.")
+
+        return cleaned_data
+
+
+class ScriptJobForm(forms.ModelForm):
+    class Meta:
+        model = ScriptJob
+        fields = (
+            "name",
+            "description",
+            "enabled",
+            "schedule_mode",
+            "schedule_minutes",
+            "schedule_unit",
+            "scheduled_for",
+            "working_directory",
+            "script_body",
+            "run_as_sudo",
+            "sudo_password",
+            "run_timeout_seconds",
+            "idle_timeout_seconds",
+        )
+        widgets = {
+            "name": forms.TextInput(attrs={"class": "form-control"}),
+            "description": forms.Textarea(attrs={"class": "form-control", "rows": 2}),
+            "enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "schedule_mode": forms.Select(attrs={"class": "form-select script-schedule-mode-select"}),
+            "schedule_minutes": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 43200, "step": 1, "list": "script-schedule-presets"}),
+            "schedule_unit": forms.Select(attrs={"class": "form-select"}),
+            "scheduled_for": forms.DateTimeInput(
+                attrs={"class": "form-control", "type": "datetime-local"},
+                format="%Y-%m-%dT%H:%M",
+            ),
+            "working_directory": forms.TextInput(attrs={"class": "form-control", "placeholder": "/root"}),
+            "script_body": forms.Textarea(
+                attrs={
+                    "class": "form-control script-editor-textarea",
+                    "rows": 16,
+                    "placeholder": "#!/usr/bin/env bash\nset -euo pipefail\necho 'hello'",
+                }
+            ),
+            "run_as_sudo": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "sudo_password": forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Optional sudo password"}, render_value=True),
+            "run_timeout_seconds": forms.NumberInput(attrs={"class": "form-control d-none backup-timeout-seconds", "min": 30, "max": 604800, "step": 30}),
+            "idle_timeout_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 30, "max": 86400, "step": 30}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["scheduled_for"].required = False
+        self.fields["script_body"].required = False
+        self.fields["schedule_minutes"].required = False
+        self.fields["schedule_unit"].required = False
+        self.fields["schedule_mode"].label = "Schedule mode"
+        self.fields["schedule_mode"].choices = [
+            ("manual", "Run only when clicking Run now"),
+            ("interval", "Recurring schedule"),
+            ("one_off", "Run once at a specific date and time"),
+        ]
+        self.fields["schedule_unit"].label = "Repeat unit"
+        self.fields["schedule_unit"].choices = [
+            ("minutes", "Minutes"),
+            ("days", "Days"),
+            ("weeks", "Weeks"),
+        ]
+        if self.instance.pk and self.instance.scheduled_for:
+            local_value = timezone.localtime(self.instance.scheduled_for)
+            self.initial.setdefault("scheduled_for", local_value.strftime("%Y-%m-%dT%H:%M"))
+
+    def clean_working_directory(self):
+        value = (self.cleaned_data.get("working_directory") or "").strip()
+        if value and not value.startswith("/"):
+            raise forms.ValidationError("Working directory must be an absolute host path.")
+        return value
+
+    def clean_script_body(self):
+        value = (self.cleaned_data.get("script_body") or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not value:
+            raise forms.ValidationError("Script content is required.")
+        return value
+
+    def clean_sudo_password(self):
+        value = (self.cleaned_data.get("sudo_password") or "").strip()
+        if value:
+            return value
+        if self.instance.pk:
+            return self.instance.sudo_password
+        return value
+
+    def clean_scheduled_for(self):
+        value = self.cleaned_data.get("scheduled_for")
+        if value and timezone.is_naive(value):
+            value = timezone.make_aware(value, timezone.get_current_timezone())
+        return value
+
+    def clean(self):
+        cleaned_data = super().clean()
+        schedule_mode = cleaned_data.get("schedule_mode") or "manual"
+        scheduled_for = cleaned_data.get("scheduled_for")
+        schedule_value = cleaned_data.get("schedule_minutes") or 1
+        schedule_unit = cleaned_data.get("schedule_unit") or "minutes"
+        cleaned_data["schedule_unit"] = schedule_unit
+        cleaned_data["schedule_minutes"] = schedule_value
+        run_timeout_seconds = cleaned_data.get("run_timeout_seconds") or 0
+        idle_timeout_seconds = cleaned_data.get("idle_timeout_seconds") or 0
+
+        if schedule_mode == "manual":
+            cleaned_data["scheduled_for"] = None
+        elif schedule_mode == "one_off":
+            if not scheduled_for:
+                self.add_error("scheduled_for", "One-off jobs need an execution date and time.")
+        else:
+            cleaned_data["scheduled_for"] = None
+            minimum = 5 if schedule_unit == "minutes" else 1
+            if schedule_value < minimum:
+                self.add_error("schedule_minutes", f"Recurring jobs need at least {minimum} {schedule_unit.rstrip('s')}.")
+
         if idle_timeout_seconds and run_timeout_seconds and idle_timeout_seconds >= run_timeout_seconds:
             self.add_error("idle_timeout_seconds", "Idle timeout must be lower than the hard timeout.")
 

@@ -54,6 +54,10 @@ def _nsenter_prefix():
     return ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid"]
 
 
+def host_namespace_prefix():
+    return _nsenter_prefix()
+
+
 def _run_host_command(command, *, check=True):
     try:
         result = subprocess.run(

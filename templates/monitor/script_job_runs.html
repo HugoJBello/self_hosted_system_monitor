@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}Job Runs | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Job history</p>
+    <h1 class="display-6 mb-1">All script runs</h1>
+    <p class="text-secondary mb-0">Search and browse every script execution without overloading the main jobs page.</p>
+  </div>
+  <a href="{% url 'monitor:script-jobs' %}" class="btn btn-outline-light btn-sm">Back to jobs</a>
+</div>
+
+<section class="panel-card p-4">
+  <form method="get" class="row g-3 align-items-end mb-4">
+    <div class="col-md-8">
+      <label class="form-label" for="scriptRunSearch">Search by job name</label>
+      <input id="scriptRunSearch" name="q" value="{{ query }}" class="form-control" placeholder="script job name">
+    </div>
+    <div class="col-md-4">
+      <button type="submit" class="btn btn-accent">Search</button>
+    </div>
+  </form>
+
+  <div class="alerts-feed">
+    {% for run in page_obj.object_list %}
+      <article class="alert-card report-card backup-run-card">
+        <div class="d-flex justify-content-between align-items-start gap-3">
+          <div class="flex-grow-1">
+            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+              {% if run.status == "success" %}
+                <span class="live-pill">SUCCESS</span>
+              {% elif run.status == "cancelled" %}
+                <span class="resolved-pill">CANCELLED</span>
+              {% elif run.status == "timed_out" %}
+                <span class="severity-pill severity-warning">TIMED OUT</span>
+              {% elif run.status == "running" %}
+                <span class="live-pill">RUNNING</span>
+              {% else %}
+                <span class="severity-pill severity-critical">FAILED</span>
+              {% endif %}
+              <span class="chip compact-chip">{{ run.job.name }}</span>
+            </div>
+            <h3 class="h6 mb-1">{{ run.summary }}</h3>
+            <div class="small text-secondary">
+              Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
+              {% if run.finished_at %} • Finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="datetime-short">{{ run.finished_at|date:"Y-m-d H:i:s" }}</span>{% endif %}
+              {% if run.heartbeat_at %} • Heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ run.heartbeat_at|date:"Y-m-d H:i:s" }}</span>{% endif %}
+              {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
+            </div>
+          </div>
+          <div class="text-end backup-run-side">
+            <div class="event-value">{{ run.exit_code }}</div>
+            {% if run.status == "running" %}
+              <form method="post" action="{% url 'monitor:script-jobs' %}" class="mt-2">
+                {% csrf_token %}
+                <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm">Stop</button>
+              </form>
+            {% else %}
+              <form method="post" action="{% url 'monitor:script-jobs' %}" class="mt-2">
+                {% csrf_token %}
+                <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
+              </form>
+            {% endif %}
+            <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="btn btn-outline-light btn-sm mt-2">Detail</a>
+          </div>
+        </div>
+      </article>
+    {% empty %}
+      <div class="text-secondary">No script runs found.</div>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-4">
+      <div class="small text-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      <div class="d-flex gap-2">
+        {% if page_obj.has_previous %}
+          <a class="btn btn-outline-light btn-sm" href="?q={{ query|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn btn-outline-light btn-sm" href="?q={{ query|urlencode }}&page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

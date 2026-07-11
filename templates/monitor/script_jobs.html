@@ -1,0 +1,498 @@
+{% extends "base.html" %}
+
+{% block title %}Jobs | System Monitor{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Automation center</p>
+    <h1 class="display-6 mb-1">Script jobs</h1>
+    <p class="text-secondary mb-0">Create recurring or one-off Bash jobs, launch them on demand, and inspect live output without leaving the monitor.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="badge text-bg-light border">Jobs {{ jobs_count }}</span>
+    <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
+    <a href="{% url 'monitor:script-job-runs' %}" class="btn btn-outline-light btn-sm">All job runs</a>
+    <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#newScriptJobModal">New job</button>
+  </div>
+</div>
+
+<section class="panel-card p-4 mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <p class="eyebrow mb-2">Scheduler</p>
+      <h2 class="h4 mb-0">Configured jobs</h2>
+    </div>
+    <span class="badge text-bg-light border">{{ jobs_count }} configured</span>
+  </div>
+
+  <datalist id="script-schedule-presets">
+    <option value="1"></option>
+    <option value="2"></option>
+    <option value="7"></option>
+    <option value="15"></option>
+    <option value="30"></option>
+    <option value="60"></option>
+    <option value="360"></option>
+    <option value="1440"></option>
+  </datalist>
+
+  <div class="backup-job-grid">
+    {% for item in job_forms %}
+      {% with form=item.form job=item.job %}
+      <article class="backup-job-summary{% if not job.enabled %} backup-job-summary-disabled{% endif %}">
+        <div class="backup-job-summary-top">
+          <div class="d-flex align-items-center gap-3 min-w-0">
+            <div class="backup-job-icon"><i class="bi bi-terminal"></i></div>
+            <div class="min-w-0">
+              <div class="d-flex gap-2 align-items-center flex-wrap mb-1">
+                {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
+                <span class="chip compact-chip">{% if job.is_manual %}Manual{% elif job.is_one_off %}One-off{% else %}Recurring{% endif %}</span>
+                {% if job.run_as_sudo %}<span class="chip compact-chip">sudo</span>{% endif %}
+              </div>
+              <h3 class="backup-job-title mb-0">{{ job.name }}</h3>
+            </div>
+          </div>
+          <div class="backup-job-next text-lg-end">
+            <div class="small text-secondary">{% if job.is_manual %}Trigger{% elif job.is_one_off %}Scheduled for{% else %}Cadence{% endif %}</div>
+            <strong>
+              {% if job.is_manual %}
+                Run now only
+              {% elif job.is_one_off and job.scheduled_for %}
+                <span data-local-datetime="{{ job.scheduled_for|date:'c' }}" data-local-style="datetime-short">{{ job.scheduled_for|date:"Y-m-d H:i" }}</span>
+              {% else %}
+                {{ job.schedule_label }}
+              {% endif %}
+            </strong>
+          </div>
+        </div>
+
+        <div class="backup-job-flow">
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Working directory</span>
+            <strong>{{ job.working_directory|default:"/" }}</strong>
+          </div>
+          <div class="backup-job-arrow"><i class="bi bi-arrow-right"></i></div>
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Preview</span>
+            <strong class="command-inline d-block">{{ job.script_preview }}</strong>
+          </div>
+        </div>
+
+        <div class="backup-job-metrics">
+          <span><i class="bi bi-clock-history"></i> {% if job.is_manual %}manual{% elif job.is_one_off %}one-off{% else %}{{ job.schedule_label|lower }}{% endif %}</span>
+          <span><i class="bi bi-shield-lock"></i> {% if job.run_as_sudo %}sudo{% else %}user{% endif %}</span>
+          <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds }}s hard</span>
+          <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds }}s idle</span>
+        </div>
+
+        <div class="backup-job-runs">
+          <div class="backup-job-runs-title">Recent runs</div>
+          <div class="backup-job-run-list">
+            {% for run in item.recent_runs %}
+              <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="backup-job-run-link">
+                {% if run.status == "success" %}
+                  <span class="run-dot success"></span>
+                {% elif run.status == "running" %}
+                  <span class="run-dot running"></span>
+                {% elif run.status == "cancelled" %}
+                  <span class="run-dot muted"></span>
+                {% else %}
+                  <span class="run-dot failed"></span>
+                {% endif %}
+                <span>{{ run.get_status_display }}</span>
+                <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i" }}</span>
+              </a>
+            {% empty %}
+              <span class="text-secondary small">No runs yet.</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        {% if form.errors %}
+          <div class="alert alert-danger mb-0">{{ form.errors }}</div>
+        {% endif %}
+
+        <div class="backup-job-actions">
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light btn-sm" {% if not job.enabled %}disabled aria-disabled="true" title="Activate this job before running it"{% endif %}><i class="bi bi-play-fill"></i> Run now</button>
+          </form>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="toggle_job" value="{{ job.id }}" class="btn {% if job.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-sm">
+              {% if job.enabled %}<i class="bi bi-pause-circle"></i> Disable{% else %}<i class="bi bi-check-circle"></i> Activate{% endif %}
+            </button>
+          </form>
+          <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#viewScriptJobModal{{ job.id }}"><i class="bi bi-code-slash"></i> View script</button>
+          <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#editScriptJobModal{{ job.id }}"><i class="bi bi-pencil-square"></i> Edit</button>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="delete_job" value="{{ job.id }}" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3"></i> Delete</button>
+          </form>
+        </div>
+      </article>
+      {% endwith %}
+    {% empty %}
+      <div class="text-secondary">No script jobs configured yet.</div>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <section class="panel-card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Running now</p>
+          <h2 class="h4 mb-0">Jobs in progress</h2>
+        </div>
+        <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
+      </div>
+      <div class="alerts-feed">
+        {% for run in running_runs %}
+          <article class="alert-card report-card backup-run-card running-backup-card" data-script-run-card data-run-id="{{ run.id }}" data-status-url="{% url 'monitor:script-job-run-status' run.id %}">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  <span class="live-pill" data-run-status-pill>RUNNING</span>
+                  <span class="chip compact-chip">{{ run.job.name }}</span>
+                </div>
+                <h3 class="h5 mb-2">{{ run.summary }}</h3>
+                <div class="small text-secondary mb-3" data-run-meta>
+                  Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
+                  {% if run.heartbeat_at %} • heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="time-short">{{ run.heartbeat_at|date:"H:i:s" }}</span>{% endif %}
+                  {% if run.runner_label %} • runner {{ run.runner_label }}{% endif %}
+                </div>
+                <details class="backup-run-log-details" open>
+                  <summary>Live log</summary>
+                  <pre class="backup-run-log mb-0" data-run-log>{{ run.log_output|default:"Waiting for live output..." }}</pre>
+                </details>
+              </div>
+              <div class="text-end backup-run-side">
+                <div class="event-value" data-run-pid>{{ run.process_pid|default:"..." }}</div>
+                <div class="small text-secondary mb-2">{{ run.get_launched_by_display }}</div>
+                <form method="post" class="mb-2">
+                  {% csrf_token %}
+                  <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm" data-run-stop>Stop run</button>
+                </form>
+                <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="btn btn-outline-light btn-sm">Open run</a>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No script jobs are running right now.</div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="panel-card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Recent executions</p>
+          <h2 class="h4 mb-0">Latest finished runs</h2>
+        </div>
+        <a href="{% url 'monitor:script-job-runs' %}" class="btn btn-outline-light btn-sm">See all runs</a>
+      </div>
+      <div class="alerts-feed">
+        {% for run in recent_runs %}
+          <article class="alert-card report-card backup-run-card compact-history-card">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  {% if run.status == "success" %}
+                    <span class="live-pill">SUCCESS</span>
+                  {% elif run.status == "cancelled" %}
+                    <span class="resolved-pill">CANCELLED</span>
+                  {% elif run.status == "timed_out" %}
+                    <span class="severity-pill severity-warning">TIMED OUT</span>
+                  {% else %}
+                    <span class="severity-pill severity-critical">FAILED</span>
+                  {% endif %}
+                  <span class="chip compact-chip">{{ run.job.name }}</span>
+                </div>
+                <h3 class="h6 mb-1">{{ run.summary }}</h3>
+                <div class="small text-secondary">
+                  <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
+                  {% if run.finished_at %} • finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="time-short">{{ run.finished_at|date:"H:i:s" }}</span>{% endif %}
+                  {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
+                </div>
+              </div>
+              <div class="text-end backup-run-side">
+                <div class="event-value">{{ run.exit_code }}</div>
+                <form method="post" class="mt-2">
+                  {% csrf_token %}
+                  <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
+                </form>
+                <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="btn btn-outline-light btn-sm mt-2">Detail</a>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No finished script runs yet.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+
+{% for item in job_forms %}
+  {% with form=item.form job=item.job %}
+  <div class="modal fade" id="viewScriptJobModal{{ job.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content backup-modal-shell">
+        <div class="modal-header border-secondary-subtle">
+          <div>
+            <p class="eyebrow mb-1">View script</p>
+            <h2 class="h4 mb-0">{{ job.name }}</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-4">
+            <div class="col-12 col-xl-4">
+              <div class="stat-stack">
+                <div class="mini-stat"><span class="label">Mode</span><strong>{% if job.is_manual %}Manual only{% elif job.is_one_off %}One-off{% else %}{{ job.schedule_label }}{% endif %}</strong></div>
+                <div class="mini-stat"><span class="label">Working directory</span><strong>{{ job.working_directory|default:"/" }}</strong></div>
+                <div class="mini-stat"><span class="label">Execution</span><strong>{% if job.run_as_sudo %}sudo{% else %}Current service user{% endif %}</strong></div>
+                <div class="mini-stat"><span class="label">Next run</span><strong>{% if job.next_run_at %}<span data-local-datetime="{{ job.next_run_at|date:'c' }}" data-local-style="datetime-short">{{ job.next_run_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong></div>
+              </div>
+            </div>
+            <div class="col-12 col-xl-8">
+              <div class="small text-secondary mb-2">Bash script</div>
+              <pre class="script-preview-shell"><code class="language-bash">{{ job.script_body }}</code></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="editScriptJobModal{{ job.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content backup-modal-shell">
+        <div class="modal-header border-secondary-subtle">
+          <div>
+            <p class="eyebrow mb-1">Edit job</p>
+            <h2 class="h4 mb-0">{{ job.name }}</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          {% include "monitor/_script_job_form.html" with form=form job=job save_name="save_job" save_value=job.id submit_label="Save config" %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endwith %}
+{% endfor %}
+
+<div class="modal fade" id="newScriptJobModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">New job</p>
+          <h2 class="h4 mb-0">Create script job</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        {% include "monitor/_script_job_form.html" with form=create_form create_job="1" submit_label="Create job" %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/shell/shell.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+<script>
+  hljs.highlightAll();
+  const scriptEditors = [];
+
+  const createScriptModalElement = document.getElementById("newScriptJobModal");
+  const createScriptModal = createScriptModalElement ? bootstrap.Modal.getOrCreateInstance(createScriptModalElement) : null;
+  if (createScriptModal && {{ show_create|yesno:"true,false" }}) {
+    createScriptModal.show();
+  }
+
+  const editScriptJobId = "{{ edit_job_id|default:'' }}";
+  if (editScriptJobId) {
+    const editModalElement = document.getElementById(`editScriptJobModal${editScriptJobId}`);
+    if (editModalElement) {
+      bootstrap.Modal.getOrCreateInstance(editModalElement).show();
+    }
+  }
+
+  function syncScriptScheduleEditor(editor) {
+    const modeSelect = editor.querySelector(".script-schedule-mode-select");
+    if (!modeSelect) return;
+    const mode = modeSelect.value;
+    const isInterval = mode === "interval";
+    const isOneOff = mode === "one_off";
+    const isManual = mode === "manual";
+    editor.querySelectorAll("[data-interval-fields]").forEach((node) => {
+      node.classList.toggle("d-none", !isInterval);
+    });
+    editor.querySelectorAll("[data-one-off-fields]").forEach((node) => {
+      node.classList.toggle("d-none", !isOneOff);
+    });
+    editor.querySelectorAll("[data-manual-fields]").forEach((node) => {
+      node.classList.toggle("d-none", !isManual);
+    });
+    editor.querySelectorAll("[data-scheduled-fields]").forEach((node) => {
+      node.classList.toggle("d-none", isManual);
+    });
+  }
+
+  document.querySelectorAll("[data-script-editor]").forEach((editor) => {
+    syncScriptScheduleEditor(editor);
+    const modeSelect = editor.querySelector(".script-schedule-mode-select");
+    if (modeSelect) {
+      modeSelect.addEventListener("change", () => syncScriptScheduleEditor(editor));
+    }
+  });
+
+  document.querySelectorAll(".script-editor-textarea").forEach((textarea) => {
+    textarea.required = false;
+    textarea.removeAttribute("required");
+    const editor = CodeMirror.fromTextArea(textarea, {
+      mode: "shell",
+      theme: "material-darker",
+      lineNumbers: true,
+      lineWrapping: true,
+      indentUnit: 2,
+      tabSize: 2,
+    });
+    editor.setSize(null, 340);
+    scriptEditors.push(editor);
+    textarea.form?.addEventListener("submit", () => {
+      editor.save();
+    });
+  });
+
+  document.querySelectorAll(".modal").forEach((modalElement) => {
+    modalElement.addEventListener("shown.bs.modal", () => {
+      window.setTimeout(() => {
+        scriptEditors.forEach((editor) => editor.refresh());
+      }, 0);
+    });
+  });
+
+  function secondsToEditorState(secondsValue) {
+    const seconds = Number(secondsValue || 0);
+    if (seconds > 0 && seconds % 3600 === 0) return { value: seconds / 3600, unit: "hours" };
+    if (seconds > 0 && seconds % 60 === 0) return { value: seconds / 60, unit: "minutes" };
+    return { value: Math.max(seconds, 1), unit: "seconds" };
+  }
+
+  function editorStateToSeconds(value, unit) {
+    const amount = Math.max(Number(value || 0), 1);
+    if (unit === "hours") return Math.round(amount * 3600);
+    if (unit === "minutes") return Math.round(amount * 60);
+    return Math.round(amount);
+  }
+
+  document.querySelectorAll("[data-timeout-editor]").forEach((editor) => {
+    const hiddenInput = document.getElementById(editor.dataset.timeoutInputId);
+    const valueInput = editor.querySelector("[data-timeout-value]");
+    const unitSelect = editor.querySelector("[data-timeout-unit]");
+    if (!hiddenInput || !valueInput || !unitSelect) return;
+
+    const initial = secondsToEditorState(hiddenInput.value);
+    valueInput.value = initial.value;
+    unitSelect.value = initial.unit;
+
+    const syncToHidden = () => {
+      hiddenInput.value = editorStateToSeconds(valueInput.value, unitSelect.value);
+    };
+
+    valueInput.addEventListener("input", syncToHidden);
+    unitSelect.addEventListener("change", syncToHidden);
+    syncToHidden();
+  });
+
+  document.querySelectorAll("[data-script-editor]").forEach((editor) => {
+    const scheduleValueInput = editor.querySelector('input[name$="-schedule_minutes"]');
+    const scheduleUnitSelect = editor.querySelector('select[name$="-schedule_unit"]');
+    if (!scheduleValueInput || !scheduleUnitSelect) return;
+
+    const syncScheduleValueForUnit = (force = false) => {
+      const currentValue = Number(scheduleValueInput.value || 0);
+      if (scheduleUnitSelect.value === "minutes") {
+        if (force && currentValue < 5) {
+          scheduleValueInput.value = 60;
+        }
+        return;
+      }
+      if (force || currentValue >= 5) {
+        scheduleValueInput.value = 1;
+      }
+    };
+
+    scheduleUnitSelect.addEventListener("change", () => syncScheduleValueForUnit(true));
+    syncScheduleValueForUnit(false);
+  });
+
+  document.querySelectorAll("[data-script-run-card]").forEach((card) => {
+    const poll = async () => {
+      try {
+        const response = await fetch(card.dataset.statusUrl, { headers: { "X-Requested-With": "fetch" } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const logNode = card.querySelector("[data-run-log]");
+        if (logNode) {
+          const shouldStick = logNode.scrollHeight - logNode.scrollTop - logNode.clientHeight < 40;
+          if (logNode.textContent !== payload.log_output) {
+            logNode.textContent = payload.log_output || "No log output recorded.";
+            if (shouldStick) logNode.scrollTop = logNode.scrollHeight;
+          }
+        }
+        const pidNode = card.querySelector("[data-run-pid]");
+        if (pidNode) pidNode.textContent = payload.process_pid || "...";
+        const metaNode = card.querySelector("[data-run-meta]");
+        if (metaNode) {
+          const parts = [];
+          if (payload.heartbeat_at) {
+            parts.push(`heartbeat ${window.formatConfiguredDateTime(payload.heartbeat_at, "time-short") || payload.heartbeat_at}`);
+          }
+          if (payload.runner_label) {
+            parts.push(`runner ${payload.runner_label}`);
+          }
+          metaNode.textContent = parts.join(" • ");
+        }
+        const pill = card.querySelector("[data-run-status-pill]");
+        if (pill && payload.status !== "running") {
+          pill.className = payload.status === "success" ? "live-pill" : payload.status === "cancelled" ? "resolved-pill" : payload.status === "timed_out" ? "severity-pill severity-warning" : "severity-pill severity-critical";
+          pill.textContent = (payload.status_label || payload.status).toUpperCase();
+          const stopButton = card.querySelector("[data-run-stop]");
+          if (stopButton) {
+            stopButton.disabled = true;
+            stopButton.textContent = payload.status_label || payload.status;
+          }
+          card.dataset.pollingDone = "1";
+        }
+      } catch (_) {
+      }
+    };
+
+    poll();
+    const timer = window.setInterval(() => {
+      if (card.dataset.pollingDone === "1") {
+        window.clearInterval(timer);
+        return;
+      }
+      poll();
+    }, 4000);
+  });
+</script>
+{% endblock %}

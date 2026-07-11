@@ -343,6 +343,143 @@ class ReportRun(models.Model):
         return f"{self.rule.name} report @ {self.generated_at:%Y-%m-%d %H:%M:%S}"
 
 
+class ScriptJob(models.Model):
+    SCHEDULE_MODE_CHOICES = [
+        ("manual", "Run only when clicking Run now"),
+        ("interval", "Recurring schedule"),
+        ("one_off", "Run once at a specific date and time"),
+    ]
+    SCHEDULE_UNIT_CHOICES = [
+        ("minutes", "Minutes"),
+        ("days", "Days"),
+        ("weeks", "Weeks"),
+    ]
+
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    enabled = models.BooleanField(default=True)
+    schedule_mode = models.CharField(max_length=16, choices=SCHEDULE_MODE_CHOICES, default="interval")
+    schedule_minutes = models.PositiveIntegerField(
+        default=60,
+        validators=[MinValueValidator(5), MaxValueValidator(60 * 24 * 30)],
+    )
+    schedule_unit = models.CharField(max_length=16, choices=SCHEDULE_UNIT_CHOICES, default="minutes")
+    scheduled_for = models.DateTimeField(blank=True, null=True)
+    working_directory = models.CharField(max_length=500, blank=True, default="")
+    script_body = models.TextField(default="")
+    run_as_sudo = models.BooleanField(default=False)
+    sudo_password = models.CharField(max_length=255, blank=True, default="")
+    run_timeout_seconds = models.PositiveIntegerField(
+        default=7200,
+        validators=[MinValueValidator(30), MaxValueValidator(60 * 60 * 24 * 7)],
+    )
+    idle_timeout_seconds = models.PositiveIntegerField(
+        default=900,
+        validators=[MinValueValidator(30), MaxValueValidator(60 * 60 * 24)],
+    )
+    next_run_at = models.DateTimeField(blank=True, null=True)
+    last_run_at = models.DateTimeField(blank=True, null=True)
+    position = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("position", "id")
+
+    @property
+    def is_one_off(self):
+        return self.schedule_mode == "one_off"
+
+    @property
+    def is_manual(self):
+        return self.schedule_mode == "manual"
+
+    @property
+    def cadence_delta(self):
+        value = max(int(self.schedule_minutes or 0), 1)
+        if self.schedule_unit == "weeks":
+            return timezone.timedelta(weeks=value)
+        if self.schedule_unit == "days":
+            return timezone.timedelta(days=value)
+        return timezone.timedelta(minutes=max(value, 5))
+
+    @property
+    def schedule_label(self):
+        if self.is_manual:
+            return "Run only on demand"
+        if self.is_one_off:
+            return (
+                timezone.localtime(self.scheduled_for).strftime("%Y-%m-%d %H:%M")
+                if self.scheduled_for
+                else "Date pending"
+            )
+        unit_map = {
+            "minutes": "minute",
+            "days": "day",
+            "weeks": "week",
+        }
+        unit_label = unit_map.get(self.schedule_unit, "minute")
+        plural = "" if int(self.schedule_minutes or 0) == 1 else "s"
+        return f"Every {self.schedule_minutes} {unit_label}{plural}"
+
+    @property
+    def script_preview(self):
+        for line in (self.script_body or "").splitlines():
+            stripped = line.strip()
+            if stripped:
+                return stripped[:120]
+        return "(empty script)"
+
+    def save(self, *args, **kwargs):
+        if not self.enabled:
+            self.next_run_at = None
+        elif self.is_manual:
+            self.next_run_at = None
+        elif self.is_one_off:
+            self.next_run_at = self.scheduled_for
+        elif self.next_run_at is None:
+            self.next_run_at = timezone.now() + self.cadence_delta
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
+class ScriptJobRun(models.Model):
+    STATUS_CHOICES = [
+        ("running", "Running"),
+        ("success", "Success"),
+        ("failed", "Failed"),
+        ("cancelled", "Cancelled"),
+        ("timed_out", "Timed out"),
+    ]
+    LAUNCH_CHOICES = [
+        ("manual", "Manual"),
+        ("scheduler", "Scheduler"),
+    ]
+
+    job = models.ForeignKey(ScriptJob, related_name="runs", on_delete=models.CASCADE)
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    finished_at = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default="success")
+    exit_code = models.IntegerField(default=0)
+    summary = models.CharField(max_length=255, blank=True, default="")
+    log_output = models.TextField(blank=True, default="")
+    launched_by = models.CharField(max_length=16, choices=LAUNCH_CHOICES, default="manual")
+    process_pid = models.PositiveIntegerField(blank=True, null=True)
+    heartbeat_at = models.DateTimeField(blank=True, null=True)
+    last_output_at = models.DateTimeField(blank=True, null=True)
+    stop_requested_at = models.DateTimeField(blank=True, null=True)
+    command_line = models.TextField(blank=True, default="")
+    runner_label = models.CharField(max_length=255, blank=True, default="")
+
+    class Meta:
+        ordering = ("-started_at",)
+
+    def __str__(self):
+        return f"{self.job.name} @ {self.started_at:%Y-%m-%d %H:%M:%S}"
+
+
 class BackupJob(models.Model):
     BACKUP_TYPE_CHOICES = [
         ("local", "Local memory backup"),

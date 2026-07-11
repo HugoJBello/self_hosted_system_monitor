@@ -17,8 +17,9 @@ from unittest.mock import patch
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
-from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .reporting import generate_report_for_rule
+from .script_jobs import _build_script_command, dispatch_scheduled_script_jobs, request_script_run_stop, run_script_job
 from .services import collect_snapshot
 
 
@@ -467,10 +468,29 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Configured backup jobs")
 
+    def test_script_jobs_page_loads(self):
+        response = self.client.get(self._path("monitor:script-jobs"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Script jobs")
+
     def test_backup_runs_page_loads(self):
         response = self.client.get(self._path("monitor:backup-runs"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "All backup runs")
+
+    @patch("monitor.views.start_background_script_job")
+    def test_script_job_run_now_starts_background_process(self, mock_start_background):
+        job = ScriptJob.objects.create(
+            name="APT update",
+            schedule_mode="manual",
+            schedule_minutes=30,
+            script_body="echo ok",
+            position=1,
+        )
+
+        response = self.client.post(self._path("monitor:script-jobs"), {"run_now": str(job.id)})
+        self.assertRedirects(response, reverse("monitor:script-jobs"), fetch_redirect_response=False)
+        mock_start_background.assert_called_once()
 
     @patch("monitor.views.start_background_backup")
     def test_backup_run_now_starts_background_process(self, mock_start_background):
@@ -1161,6 +1181,86 @@ class BackupHelpersTests(TestCase):
             },
         )
         self.assertEqual(response.status_code, 302)
+
+    def test_build_script_command_uses_sudo_with_password_when_configured(self):
+        job = ScriptJob(
+            name="APT update",
+            schedule_mode="interval",
+            schedule_minutes=30,
+            script_body="apt-get update",
+            working_directory="/root",
+            run_as_sudo=True,
+            sudo_password="secret",
+        )
+
+        command, stdin_text = _build_script_command(job)
+        self.assertIn("sudo", command)
+        self.assertIn("-S", command)
+        self.assertEqual(stdin_text, "secret\n")
+        self.assertEqual(command[-2], "-lc")
+        self.assertIn("cd /root && apt-get update", command[-1])
+
+    @patch("monitor.script_jobs.host_namespace_prefix", return_value=["nsenter", "--target", "1"])
+    @patch("monitor.script_jobs._run_streaming_command")
+    def test_run_script_job_reports_success(self, mock_run_streaming_command, _mock_prefix):
+        mock_run_streaming_command.return_value = StreamingCommandResult(0, "done", "")
+        job = ScriptJob.objects.create(
+            name="APT update",
+            schedule_mode="interval",
+            schedule_minutes=30,
+            script_body="echo done",
+            position=1,
+        )
+
+        result = run_script_job(job)
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "success")
+        self.assertIn("Script content:", result.log_output)
+
+    @patch("monitor.script_jobs.start_background_script_job")
+    def test_dispatch_scheduled_script_jobs_starts_due_job(self, mock_start_background):
+        job = ScriptJob.objects.create(
+            name="APT update",
+            schedule_mode="interval",
+            schedule_minutes=30,
+            schedule_unit="minutes",
+            script_body="echo done",
+            enabled=True,
+            next_run_at=timezone.now() - timezone.timedelta(minutes=1),
+            position=1,
+        )
+
+        dispatch_scheduled_script_jobs(timezone.now())
+        mock_start_background.assert_called_once_with(job, launched_by="scheduler")
+
+    def test_request_script_run_stop_marks_running_run(self):
+        job = ScriptJob.objects.create(
+            name="APT update",
+            schedule_mode="interval",
+            schedule_minutes=30,
+            script_body="echo done",
+            position=1,
+        )
+        run = ScriptJobRun.objects.create(job=job, status="running", summary="Running")
+
+        self.assertTrue(request_script_run_stop(run))
+        run.refresh_from_db()
+        self.assertIsNotNone(run.stop_requested_at)
+
+    @patch("monitor.script_jobs.start_background_script_job")
+    def test_dispatch_scheduled_script_jobs_skips_manual_jobs(self, mock_start_background):
+        ScriptJob.objects.create(
+            name="Manual only",
+            schedule_mode="manual",
+            schedule_minutes=1,
+            schedule_unit="days",
+            script_body="echo done",
+            enabled=True,
+            position=1,
+        )
+
+        dispatch_scheduled_script_jobs(timezone.now())
+        mock_start_background.assert_not_called()
 
     def test_cloudflare_mode_rejects_partial_service_token_pair(self):
         response = self.client.post(

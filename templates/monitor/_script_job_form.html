@@ -1,0 +1,46 @@
+<form method="post" class="vstack gap-3">
+  {% csrf_token %}
+  {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+  {% if create_job %}<input type="hidden" name="create_job" value="{{ create_job }}">{% endif %}
+  <div class="row g-3" data-script-editor>
+    <div class="col-md-4"><label class="form-label" for="{{ form.name.id_for_label }}">Job name</label>{{ form.name }}</div>
+    <div class="col-md-4"><label class="form-label" for="{{ form.schedule_mode.id_for_label }}">Schedule mode</label>{{ form.schedule_mode }}</div>
+    <div class="col-md-2" data-interval-fields><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every</label>{{ form.schedule_minutes }}</div>
+    <div class="col-md-2" data-interval-fields><label class="form-label" for="{{ form.schedule_unit.id_for_label }}">Unit</label>{{ form.schedule_unit }}</div>
+    <div class="col-md-4" data-one-off-fields><label class="form-label" for="{{ form.scheduled_for.id_for_label }}">Run once at</label>{{ form.scheduled_for }}</div>
+    <div class="col-md-4"><label class="form-label" for="{{ form.working_directory.id_for_label }}">Working directory</label>{{ form.working_directory }}</div>
+    <div class="col-md-4"><label class="form-label" for="{{ form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ form.enabled }}</div></div>
+    <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
+    <div class="col-12">
+      <label class="form-label" for="{{ form.script_body.id_for_label }}">Bash script</label>
+      {{ form.script_body }}
+      <div class="form-text">The command always runs through Bash on the host namespace. Relative paths resolve from the working directory above.</div>
+    </div>
+    <div class="col-md-3"><label class="form-label" for="{{ form.run_as_sudo.id_for_label }}">Run as sudo</label><div class="form-check form-switch mt-2">{{ form.run_as_sudo }}</div></div>
+    <div class="col-md-5"><label class="form-label" for="{{ form.sudo_password.id_for_label }}">Sudo password</label>{{ form.sudo_password }}<div class="form-text">Leave empty if the target user has passwordless sudo.</div></div>
+    <div class="col-md-2">
+      <label class="form-label" for="{{ form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
+      {{ form.run_timeout_seconds }}
+      <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.run_timeout_seconds.id_for_label }}">
+        <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+        <select class="form-select" data-timeout-unit>
+          <option value="minutes">minutes</option>
+          <option value="hours">hours</option>
+          <option value="seconds">seconds</option>
+        </select>
+      </div>
+    </div>
+    <div class="col-md-2"><label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ form.idle_timeout_seconds }}</div>
+    <div class="col-12" data-manual-fields><div class="form-text">Manual jobs are never scheduled automatically. They run only when you click <strong>Run now</strong>.</div></div>
+    <div class="col-12" data-scheduled-fields><div class="form-text">A job never overlaps with itself. If the schedule fires while the same job is still running, the scheduler waits.</div></div>
+  </div>
+
+  {% if form.errors %}
+    <div class="alert alert-danger mb-0">{{ form.errors }}</div>
+  {% endif %}
+
+  <div class="d-flex gap-2 flex-wrap justify-content-end">
+    {% if save_name %}<button type="submit" name="{{ save_name }}" value="{{ save_value }}" class="btn btn-accent">{{ submit_label }}</button>{% else %}<button type="submit" class="btn btn-accent">{{ submit_label }}</button>{% endif %}
+    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+  </div>
+</form>

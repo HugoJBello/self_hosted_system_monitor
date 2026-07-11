@@ -20,11 +20,12 @@ from django.views.decorators.csrf import csrf_exempt
 
 from .alerting import ensure_default_alert_rules, top_processes_for_alert_window
 from .backups import get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
-from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
-from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
+from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, ScriptJobForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
 from .process_control import ProcessControlError, container_info_for_pid, docker_container_action, kill_process, reboot_host, restart_process, terminate_process, validate_process_identity
 from .reporting import build_time_series_chart_data
+from .script_jobs import get_runtime_state as get_script_runtime_state, mark_stale_running_script_jobs, request_script_run_stop, start_background_script_job
 from .services import _process_rows
 
 
@@ -124,6 +125,13 @@ class UsersView(AdminRequiredMixin, View):
 def _best_effort_reconcile_backups():
     try:
         mark_stale_running_backups()
+    except OperationalError:
+        pass
+
+
+def _best_effort_reconcile_script_jobs():
+    try:
+        mark_stale_running_script_jobs()
     except OperationalError:
         pass
 
@@ -770,6 +778,214 @@ class ReportDetailView(LoginRequiredMixin, View):
                 "settings_obj": MonitoringSettings.load(),
             },
         )
+
+
+@method_decorator(csrf_exempt, name="dispatch")
+class ScriptJobsView(LoginRequiredMixin, View):
+    template_name = "monitor/script_jobs.html"
+
+    def get(self, request):
+        _best_effort_reconcile_script_jobs()
+        return render(request, self.template_name, self._context())
+
+    def post(self, request):
+        _best_effort_reconcile_script_jobs()
+        if "stop_run" in request.POST:
+            script_run = get_object_or_404(ScriptJobRun.objects.select_related("job"), pk=request.POST.get("stop_run"))
+            if request_script_run_stop(script_run):
+                messages.warning(request, f"Stop requested for script job '{script_run.job.name}'.")
+            else:
+                messages.info(request, f"Script job '{script_run.job.name}' is no longer running.")
+            return redirect("monitor:script-jobs")
+
+        if "rerun_run" in request.POST:
+            script_run = get_object_or_404(ScriptJobRun.objects.select_related("job"), pk=request.POST.get("rerun_run"))
+            if not script_run.job.enabled:
+                messages.warning(request, f"Script job '{script_run.job.name}' is disabled. Activate it before running it again.")
+                return redirect("monitor:script-jobs")
+            running_run = ScriptJobRun.objects.filter(job=script_run.job, status="running").order_by("-started_at").first()
+            if running_run:
+                messages.warning(request, f"Script job '{script_run.job.name}' is already running.")
+                return redirect("monitor:script-jobs")
+            try:
+                start_background_script_job(script_run.job, launched_by="manual")
+            except OSError as exc:
+                messages.error(request, f"Script job '{script_run.job.name}' could not start: {exc}")
+                return redirect("monitor:script-jobs")
+            messages.success(request, f"Script job '{script_run.job.name}' started again.")
+            return redirect("monitor:script-jobs")
+
+        if "run_now" in request.POST:
+            job = get_object_or_404(ScriptJob, pk=request.POST.get("run_now"))
+            if not job.enabled:
+                messages.warning(request, f"Script job '{job.name}' is disabled. Activate it before running it.")
+                return redirect("monitor:script-jobs")
+            running_run = ScriptJobRun.objects.filter(job=job, status="running").order_by("-started_at").first()
+            if running_run:
+                messages.warning(request, f"Script job '{job.name}' is already running.")
+                return redirect("monitor:script-jobs")
+            try:
+                start_background_script_job(job, launched_by="manual")
+            except OSError as exc:
+                messages.error(request, f"Script job '{job.name}' could not start: {exc}")
+                return redirect("monitor:script-jobs")
+            messages.success(request, f"Script job '{job.name}' started in background.")
+            return redirect("monitor:script-jobs")
+
+        if "toggle_job" in request.POST:
+            job = get_object_or_404(ScriptJob, pk=request.POST.get("toggle_job"))
+            job.enabled = not job.enabled
+            job.save()
+            state = "activated" if job.enabled else "disabled"
+            messages.success(request, f"Script job '{job.name}' {state}.")
+            return redirect("monitor:script-jobs")
+
+        if "save_job" in request.POST:
+            job = get_object_or_404(ScriptJob, pk=request.POST.get("save_job"))
+            form = ScriptJobForm(request.POST, instance=job, prefix=f"job-{job.id}")
+            if form.is_valid():
+                instance = form.save(commit=False)
+                instance.save()
+                messages.success(request, f"Script job '{instance.name}' updated.")
+                return redirect("monitor:script-jobs")
+            return render(request, self.template_name, self._context(job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
+
+        if "delete_job" in request.POST:
+            job = get_object_or_404(ScriptJob, pk=request.POST.get("delete_job"))
+            job_name = job.name
+            job.delete()
+            messages.success(request, f"Script job '{job_name}' deleted.")
+            return redirect("monitor:script-jobs")
+
+        if "create_job" in request.POST:
+            create_form = ScriptJobForm(request.POST, prefix="new")
+            if create_form.is_valid():
+                instance = create_form.save(commit=False)
+                instance.save()
+                messages.success(request, f"Script job '{instance.name}' created.")
+                return redirect("monitor:script-jobs")
+            return render(request, self.template_name, self._context(create_form=create_form, show_create=True))
+
+        return render(request, self.template_name, self._context())
+
+    def _context(self, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
+        job_form_overrides = job_form_overrides or {}
+        running_runs = list(ScriptJobRun.objects.select_related("job").filter(status="running").order_by("-started_at")[:20])
+        recent_runs = list(ScriptJobRun.objects.select_related("job").exclude(status="running").order_by("-started_at")[:8])
+        jobs = list(ScriptJob.objects.all())
+        runs_by_job = {
+            job.id: list(ScriptJobRun.objects.filter(job=job).order_by("-started_at")[:3])
+            for job in jobs
+        }
+        job_forms = [
+            {
+                "job": job,
+                "form": job_form_overrides.get(job.id) or ScriptJobForm(instance=job, prefix=f"job-{job.id}"),
+                "recent_runs": runs_by_job.get(job.id, []),
+            }
+            for job in jobs
+        ]
+        return {
+            "running_runs": running_runs,
+            "running_runs_count": len(running_runs),
+            "recent_runs": recent_runs,
+            "recent_runs_count": len(recent_runs),
+            "job_forms": job_forms,
+            "jobs": jobs,
+            "jobs_count": len(jobs),
+            "create_form": create_form or ScriptJobForm(prefix="new"),
+            "show_create": show_create,
+            "edit_job_id": edit_job_id,
+            "settings_obj": MonitoringSettings.load(),
+        }
+
+
+class ScriptJobRunsView(LoginRequiredMixin, View):
+    template_name = "monitor/script_job_runs.html"
+
+    def get(self, request):
+        _best_effort_reconcile_script_jobs()
+        query = (request.GET.get("q") or "").strip()
+        runs_qs = ScriptJobRun.objects.select_related("job").order_by("-started_at")
+        if query:
+            runs_qs = runs_qs.filter(job__name__icontains=query)
+        paginator = Paginator(runs_qs, 20)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_obj": page_obj,
+                "query": query,
+                "settings_obj": MonitoringSettings.load(),
+            },
+        )
+
+
+class ScriptJobRunStatusView(LoginRequiredMixin, View):
+    def get(self, request, run_id):
+        script_run = get_object_or_404(ScriptJobRun.objects.select_related("job"), pk=run_id)
+        runtime_state = get_script_runtime_state(run_id) if script_run.status == "running" else None
+        return JsonResponse(
+            {
+                "id": script_run.id,
+                "job_name": script_run.job.name,
+                "status": (runtime_state or {}).get("status") or script_run.status,
+                "status_label": (runtime_state or {}).get("status_label") or script_run.get_status_display(),
+                "summary": (runtime_state or {}).get("summary") or script_run.summary,
+                "exit_code": (runtime_state or {}).get("exit_code", script_run.exit_code),
+                "log_output": (runtime_state or {}).get("log_output") or script_run.log_output or "",
+                "process_pid": (runtime_state or {}).get("process_pid") or script_run.process_pid,
+                "runner_label": (runtime_state or {}).get("runner_label") or script_run.runner_label,
+                "launched_by": script_run.get_launched_by_display(),
+                "heartbeat_at": (runtime_state or {}).get("heartbeat_at") or (script_run.heartbeat_at.isoformat() if script_run.heartbeat_at else None),
+                "last_output_at": (runtime_state or {}).get("last_output_at") or (script_run.last_output_at.isoformat() if script_run.last_output_at else None),
+                "finished_at": (runtime_state or {}).get("finished_at") or (script_run.finished_at.isoformat() if script_run.finished_at else None),
+                "command_line": (runtime_state or {}).get("command_line") or script_run.command_line or "",
+            }
+        )
+
+
+class ScriptJobRunDetailView(LoginRequiredMixin, View):
+    template_name = "monitor/script_job_run_detail.html"
+
+    def get(self, request, run_id):
+        _best_effort_reconcile_script_jobs()
+        script_run = get_object_or_404(ScriptJobRun.objects.select_related("job"), pk=run_id)
+        return render(
+            request,
+            self.template_name,
+            {
+                "script_run": script_run,
+                "settings_obj": MonitoringSettings.load(),
+            },
+        )
+
+    def post(self, request, run_id):
+        _best_effort_reconcile_script_jobs()
+        script_run = get_object_or_404(ScriptJobRun.objects.select_related("job"), pk=run_id)
+        if "stop_run" in request.POST:
+            if request_script_run_stop(script_run):
+                messages.warning(request, f"Stop requested for script job '{script_run.job.name}'.")
+            else:
+                messages.info(request, f"Script job '{script_run.job.name}' is no longer running.")
+            return redirect("monitor:script-job-run-detail", run_id=script_run.id)
+        if "rerun_run" in request.POST:
+            if not script_run.job.enabled:
+                messages.warning(request, f"Script job '{script_run.job.name}' is disabled. Activate it before running it again.")
+                return redirect("monitor:script-job-run-detail", run_id=script_run.id)
+            running_run = ScriptJobRun.objects.filter(job=script_run.job, status="running").order_by("-started_at").first()
+            if running_run:
+                messages.warning(request, f"Script job '{script_run.job.name}' is already running.")
+                return redirect("monitor:script-job-run-detail", run_id=script_run.id)
+            try:
+                started_run = start_background_script_job(script_run.job, launched_by="manual")
+            except OSError as exc:
+                messages.error(request, f"Script job '{script_run.job.name}' could not start: {exc}")
+                return redirect("monitor:script-job-run-detail", run_id=script_run.id)
+            messages.success(request, f"Script job '{script_run.job.name}' started again.")
+            return redirect("monitor:script-job-run-detail", run_id=started_run.id)
+        return redirect("monitor:script-job-run-detail", run_id=script_run.id)
 
 
 @method_decorator(csrf_exempt, name="dispatch")
