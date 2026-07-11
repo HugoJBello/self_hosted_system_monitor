@@ -6,6 +6,7 @@ from django.db.models import Avg, Max
 from django.urls import reverse
 from django.utils import timezone
 
+from .memory import build_memory_breakdown, build_snapshot_memory_breakdown
 from .models import MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
 from .notification_client import send_json_notification
 
@@ -39,6 +40,11 @@ def build_time_series_chart_data(snapshots, *, hours, sample_interval_seconds, w
     dataset_keys = {
         "cpu_percent": "cpu",
         "memory_percent": "memory",
+        "memory_used_mb": "memory_used_mb",
+        "memory_available_mb": "memory_available_mb",
+        "memory_cached_mb": "memory_cached_mb",
+        "memory_buffers_mb": "memory_buffers_mb",
+        "memory_slab_mb": "memory_slab_mb",
         "swap_percent": "swap",
         "disk_percent": "disk",
         "load_avg_1": "load",
@@ -217,6 +223,11 @@ def build_report_data(rule, settings_obj, *, window_end=None):
             "captured_at",
             "cpu_percent",
             "memory_percent",
+            "memory_used_mb",
+            "memory_available_mb",
+            "memory_cached_mb",
+            "memory_buffers_mb",
+            "memory_slab_mb",
             "swap_percent",
             "disk_percent",
             "load_avg_1",
@@ -238,6 +249,11 @@ def build_report_data(rule, settings_obj, *, window_end=None):
     aggregates = snapshots_qs.aggregate(
         avg_cpu=Avg("cpu_percent"),
         avg_memory=Avg("memory_percent"),
+        avg_memory_used_mb=Avg("memory_used_mb"),
+        avg_memory_available_mb=Avg("memory_available_mb"),
+        avg_memory_cached_mb=Avg("memory_cached_mb"),
+        avg_memory_buffers_mb=Avg("memory_buffers_mb"),
+        avg_memory_slab_mb=Avg("memory_slab_mb"),
         avg_disk=Avg("disk_percent"),
         avg_load=Avg("load_avg_1"),
         avg_process_total=Avg("process_count_total"),
@@ -250,6 +266,11 @@ def build_report_data(rule, settings_obj, *, window_end=None):
     summary_lines = [
         f"CPU average {float(aggregates['avg_cpu'] or 0):.1f}% with peak {float(aggregates['max_cpu'] or 0):.1f}%.",
         f"Memory average {float(aggregates['avg_memory'] or 0):.1f}% with peak {float(aggregates['max_memory'] or 0):.1f}%.",
+        (
+            f"Average available RAM {float(aggregates['avg_memory_available_mb'] or 0):.0f} MB; "
+            f"cached and buffer memory averaged "
+            f"{float(aggregates['avg_memory_cached_mb'] or 0) + float(aggregates['avg_memory_buffers_mb'] or 0):.0f} MB."
+        ),
         f"Disk average {float(aggregates['avg_disk'] or 0):.1f}% with peak {float(aggregates['max_disk'] or 0):.1f}%.",
         f"Load average {float(aggregates['avg_load'] or 0):.2f} with peak {float(aggregates['max_load'] or 0):.2f}.",
     ]
@@ -271,6 +292,14 @@ def build_report_data(rule, settings_obj, *, window_end=None):
         "latest_snapshot_at": latest_snapshot.captured_at.strftime("%Y-%m-%d %H:%M:%S") if latest_snapshot else "",
         "chart_data": chart_data,
         "aggregates": {key: round(float(value or 0), 2) for key, value in aggregates.items()},
+        "average_memory_breakdown": build_memory_breakdown(
+            used_mb=aggregates["avg_memory_used_mb"],
+            available_mb=aggregates["avg_memory_available_mb"],
+            cached_mb=aggregates["avg_memory_cached_mb"],
+            buffers_mb=aggregates["avg_memory_buffers_mb"],
+            slab_mb=aggregates["avg_memory_slab_mb"],
+        ),
+        "latest_memory_breakdown": build_snapshot_memory_breakdown(latest_snapshot),
         "top_processes": top_processes,
         "summary_lines": summary_lines,
     }

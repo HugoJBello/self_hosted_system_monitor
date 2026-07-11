@@ -129,6 +129,9 @@ class SystemSnapshot(models.Model):
     memory_total_mb = models.FloatField()
     memory_used_mb = models.FloatField()
     memory_available_mb = models.FloatField()
+    memory_cached_mb = models.FloatField(default=0)
+    memory_buffers_mb = models.FloatField(default=0)
+    memory_slab_mb = models.FloatField(default=0)
     memory_percent = models.FloatField()
 
     swap_total_mb = models.FloatField(default=0)
@@ -156,6 +159,10 @@ class SystemSnapshot(models.Model):
 
     class Meta:
         ordering = ("-captured_at",)
+
+    @property
+    def memory_reclaimable_mb(self):
+        return round(float(self.memory_cached_mb or 0) + float(self.memory_buffers_mb or 0), 2)
 
     def __str__(self):
         return f"{self.hostname} @ {self.captured_at:%Y-%m-%d %H:%M:%S}"

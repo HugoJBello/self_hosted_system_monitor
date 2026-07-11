@@ -45,21 +45,28 @@
 {% endif %}
 
 <div class="row g-4 mb-4">
-  <div class="col-12 col-md-4">
+  <div class="col-12 col-md-6 col-xl-3">
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Average CPU</p>
       <h2 class="h1 mb-0">{{ aggregates.avg_cpu|default:0|floatformat:1 }}%</h2>
       <p class="text-secondary mb-0 mt-2">Peak {{ aggregates.max_cpu|default:0|floatformat:1 }}%</p>
     </section>
   </div>
-  <div class="col-12 col-md-4">
+  <div class="col-12 col-md-6 col-xl-3">
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Average memory</p>
       <h2 class="h1 mb-0">{{ aggregates.avg_memory|default:0|floatformat:1 }}%</h2>
       <p class="text-secondary mb-0 mt-2">Peak {{ aggregates.max_memory|default:0|floatformat:1 }}%</p>
     </section>
   </div>
-  <div class="col-12 col-md-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Average available RAM</p>
+      <h2 class="h1 mb-0">{{ average_memory_breakdown.available_mb|floatformat:0 }} MB</h2>
+      <p class="text-secondary mb-0 mt-2">Still ready for new work</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Average disk</p>
       <h2 class="h1 mb-0">{{ aggregates.avg_disk|default:0|floatformat:1 }}%</h2>
@@ -86,7 +93,8 @@
   <div class="col-12 col-xl-6">
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Memory detail</p>
-      <h2 class="h4 mb-4">Memory and swap trend</h2>
+      <h2 class="h4 mb-2">Memory composition trend</h2>
+      <p class="text-secondary mb-4">Used memory, available memory and cache do not mean the same thing. This view separates them.</p>
       <div class="chart-shell history-chart-shell"><canvas id="memoryDetailChart"></canvas></div>
     </section>
   </div>
@@ -95,6 +103,46 @@
       <p class="eyebrow mb-2">Network</p>
       <h2 class="h4 mb-4">Send and receive rate</h2>
       <div class="chart-shell history-chart-shell"><canvas id="networkChart"></canvas></div>
+    </section>
+  </div>
+  <div class="col-12">
+    <section class="panel-card p-4">
+      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+        <div>
+          <p class="eyebrow mb-2">Memory reading</p>
+          <h2 class="h4 mb-1">How to interpret high RAM</h2>
+          <p class="text-secondary mb-0">If RAM percent climbs but available memory and cached or buffered memory remain substantial, the system may be caching aggressively rather than leaking.</p>
+        </div>
+        {% if latest_snapshot %}
+          <span class="chip">Latest available {{ latest_memory_breakdown.available_mb }} MB</span>
+        {% endif %}
+      </div>
+      <div class="memory-breakdown-grid memory-breakdown-grid-wide">
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Used</span>
+          <strong>{{ latest_memory_breakdown.used_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item memory-breakdown-item-accent">
+          <span class="memory-breakdown-label">Cached</span>
+          <strong>{{ latest_memory_breakdown.cached_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Buffers</span>
+          <strong>{{ latest_memory_breakdown.buffers_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Slab</span>
+          <strong>{{ latest_memory_breakdown.slab_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Available</span>
+          <strong>{{ latest_memory_breakdown.available_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Cached + buffers</span>
+          <strong>{{ latest_memory_breakdown.reclaimable_mb }} MB</strong>
+        </article>
+      </div>
     </section>
   </div>
   <div class="col-12">
@@ -479,8 +527,11 @@
     data: {
       labels,
       datasets: [
-        lineDataset("Memory %", chartData.memory, "#4dd4ac", "rgba(77,212,172,0.14)"),
-        lineDataset("Swap %", chartData.swap, "#ffb84d", "rgba(255,184,77,0.10)", false),
+        lineDataset("Used MB", chartData.memory_used_mb, "#4dd4ac", "rgba(77,212,172,0.14)"),
+        lineDataset("Available MB", chartData.memory_available_mb, "#5dc6ff", "rgba(93,198,255,0.12)"),
+        lineDataset("Cached MB", chartData.memory_cached_mb, "#ffd166", "rgba(255,209,102,0.10)", false),
+        lineDataset("Buffers MB", chartData.memory_buffers_mb, "#ff9b73", "rgba(255,155,115,0.10)", false),
+        lineDataset("Slab MB", chartData.memory_slab_mb, "#c084fc", "rgba(192,132,252,0.10)", false),
       ]
     },
     options: baseChartOptions()

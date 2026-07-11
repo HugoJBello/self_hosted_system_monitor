@@ -24,6 +24,7 @@ from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportR
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
 from .process_control import ProcessControlError, container_info_for_pid, docker_container_action, kill_process, reboot_host, restart_process, terminate_process, validate_process_identity
+from .memory import build_memory_breakdown, build_snapshot_memory_breakdown
 from .reporting import build_time_series_chart_data
 from .script_jobs import get_runtime_state as get_script_runtime_state, mark_stale_running_script_jobs, request_script_run_stop, start_background_script_job
 from .services import _process_rows
@@ -395,6 +396,7 @@ class SystemMonitorView(LoginRequiredMixin, View):
 
         context = {
             "latest_snapshot": latest_snapshot,
+            "memory_breakdown": build_snapshot_memory_breakdown(latest_snapshot),
             "settings_obj": MonitoringSettings.load(),
             "live_process_page": live_process_page,
             "process_sort": sort,
@@ -424,6 +426,11 @@ class HistoryView(LoginRequiredMixin, View):
                 "captured_at",
                 "cpu_percent",
                 "memory_percent",
+                "memory_used_mb",
+                "memory_available_mb",
+                "memory_cached_mb",
+                "memory_buffers_mb",
+                "memory_slab_mb",
                 "swap_percent",
                 "disk_percent",
                 "load_avg_1",
@@ -446,6 +453,11 @@ class HistoryView(LoginRequiredMixin, View):
         aggregates = snapshots_qs.aggregate(
             avg_cpu=Avg("cpu_percent"),
             avg_memory=Avg("memory_percent"),
+            avg_memory_used_mb=Avg("memory_used_mb"),
+            avg_memory_available_mb=Avg("memory_available_mb"),
+            avg_memory_cached_mb=Avg("memory_cached_mb"),
+            avg_memory_buffers_mb=Avg("memory_buffers_mb"),
+            avg_memory_slab_mb=Avg("memory_slab_mb"),
             avg_disk=Avg("disk_percent"),
             max_cpu=Max("cpu_percent"),
             max_memory=Max("memory_percent"),
@@ -563,6 +575,14 @@ class HistoryView(LoginRequiredMixin, View):
                 "snapshot_count": len(snapshots),
                 "aggregates": aggregates,
                 "latest_snapshot": latest_snapshot,
+                "latest_memory_breakdown": build_snapshot_memory_breakdown(latest_snapshot),
+                "average_memory_breakdown": build_memory_breakdown(
+                    used_mb=aggregates["avg_memory_used_mb"],
+                    available_mb=aggregates["avg_memory_available_mb"],
+                    cached_mb=aggregates["avg_memory_cached_mb"],
+                    buffers_mb=aggregates["avg_memory_buffers_mb"],
+                    slab_mb=aggregates["avg_memory_slab_mb"],
+                ),
                 "expensive_processes_period": expensive_processes_period,
                 "expensive_processes_point": expensive_processes_point,
                 "settings_obj": settings_obj,

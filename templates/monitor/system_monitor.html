@@ -60,7 +60,7 @@
     <section class="panel-card stat-card memory">
       <p class="eyebrow mb-2">Memory</p>
       <h2>{{ latest_snapshot.memory_percent }}%</h2>
-      <p class="text-secondary mb-0">{{ latest_snapshot.memory_used_mb }} / {{ latest_snapshot.memory_total_mb }} MB</p>
+      <p class="text-secondary mb-0">{{ memory_breakdown.used_mb }} / {{ latest_snapshot.memory_total_mb }} MB used</p>
     </section>
   </div>
   <div class="col-12 col-md-6 col-xl-3">
@@ -117,6 +117,34 @@
           <div class="d-flex justify-content-between mb-2"><span>Swap usage</span><strong>{{ latest_snapshot.swap_percent }}%</strong></div>
           <div class="progress dark-progress"><div class="progress-bar bg-warning" style="width: {{ latest_snapshot.swap_percent }}%"></div></div>
         </div>
+        <section class="memory-breakdown-panel">
+          <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+            <div>
+              <div class="memory-breakdown-title">RAM composition</div>
+              <div class="small text-secondary">High RAM can still be healthy when available memory and cache remain strong.</div>
+            </div>
+            <span class="chip">{{ memory_breakdown.available_mb }} MB available</span>
+          </div>
+          <div class="memory-breakdown-grid">
+            <article class="memory-breakdown-item">
+              <span class="memory-breakdown-label">Used</span>
+              <strong>{{ memory_breakdown.used_mb }} MB</strong>
+            </article>
+            <article class="memory-breakdown-item memory-breakdown-item-accent">
+              <span class="memory-breakdown-label">Cached</span>
+              <strong>{{ memory_breakdown.cached_mb }} MB</strong>
+            </article>
+            <article class="memory-breakdown-item">
+              <span class="memory-breakdown-label">Buffers</span>
+              <strong>{{ memory_breakdown.buffers_mb }} MB</strong>
+            </article>
+            <article class="memory-breakdown-item">
+              <span class="memory-breakdown-label">Slab</span>
+              <strong>{{ memory_breakdown.slab_mb }} MB</strong>
+            </article>
+          </div>
+          <div class="small text-secondary mt-3">Cached + buffers currently sum to {{ memory_breakdown.reclaimable_mb }} MB and are typically reusable when another workload needs RAM.</div>
+        </section>
         <div class="process-badges">
           <span class="chip">Processes {{ latest_snapshot.process_count_total }}</span>
           <span class="chip">Running {{ latest_snapshot.process_count_running }}</span>

@@ -12,6 +12,7 @@ from django.db import OperationalError
 from django.utils import timezone
 
 from .alerting import evaluate_alerts
+from .memory import build_memory_breakdown
 from .models import MonitoringSettings, ProcessSnapshot, SystemSnapshot
 from .reporting import dispatch_scheduled_reports
 
@@ -204,6 +205,13 @@ def collect_snapshot():
     cpu_percent = round(psutil.cpu_percent(interval=1), 2)
     per_cpu = [round(value, 2) for value in psutil.cpu_percent(interval=None, percpu=True)]
     memory = psutil.virtual_memory()
+    memory_breakdown = build_memory_breakdown(
+        used_mb=_mb(memory.used),
+        available_mb=_mb(memory.available),
+        cached_mb=_mb(getattr(memory, "cached", 0)),
+        buffers_mb=_mb(getattr(memory, "buffers", 0)),
+        slab_mb=_mb(getattr(memory, "slab", 0)),
+    )
     swap = psutil.swap_memory()
     disk = psutil.disk_usage(HOST_ROOT_PATH)
     load_avg = _safe_load_avg()
@@ -225,8 +233,11 @@ def collect_snapshot():
             load_avg_15=round(load_avg[2], 2),
             per_cpu_percent=per_cpu,
             memory_total_mb=_mb(memory.total),
-            memory_used_mb=_mb(memory.used),
-            memory_available_mb=_mb(memory.available),
+            memory_used_mb=memory_breakdown["used_mb"],
+            memory_available_mb=memory_breakdown["available_mb"],
+            memory_cached_mb=memory_breakdown["cached_mb"],
+            memory_buffers_mb=memory_breakdown["buffers_mb"],
+            memory_slab_mb=memory_breakdown["slab_mb"],
             memory_percent=round(memory.percent, 2),
             swap_total_mb=_mb(swap.total),
             swap_used_mb=_mb(swap.used),

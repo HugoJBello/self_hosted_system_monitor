@@ -254,6 +254,59 @@ body.app-shell {
   gap: 0.65rem;
 }
 
+.memory-breakdown-panel {
+  padding: 1rem 1.05rem;
+  border-radius: 1rem;
+  background:
+    linear-gradient(180deg, rgba(93, 198, 255, 0.07), rgba(255, 255, 255, 0.02) 34%),
+    rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.memory-breakdown-title {
+  color: #fff;
+  font-size: 0.94rem;
+  font-weight: 600;
+}
+
+.memory-breakdown-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+}
+
+.memory-breakdown-grid-wide {
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+}
+
+.memory-breakdown-item {
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.memory-breakdown-item strong {
+  display: block;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.memory-breakdown-item-accent {
+  border-color: rgba(255, 209, 102, 0.24);
+  background: rgba(255, 209, 102, 0.06);
+}
+
+.memory-breakdown-label {
+  display: block;
+  margin-bottom: 0.28rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .stat-stack {
   display: grid;
   gap: 1rem;

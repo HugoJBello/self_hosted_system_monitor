@@ -44,6 +44,13 @@
   </div>
   <div class="col-12 col-md-6 col-xl-3">
     <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Available RAM</p>
+      <h2 class="h4 mb-1">{{ report_data.average_memory_breakdown.available_mb|floatformat:0 }} MB</h2>
+      <p class="text-secondary mb-0">Average available memory in this window</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
       <p class="eyebrow mb-2">Disk average</p>
       <h2 class="h4 mb-1">{{ report_data.aggregates.avg_disk|default:0|floatformat:1 }}%</h2>
       <p class="text-secondary mb-0">Peak {{ report_data.aggregates.max_disk|default:0|floatformat:1 }}%</p>
@@ -81,9 +88,49 @@
 <div class="row g-4 mb-4">
   <div class="col-12 col-xl-6">
     <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Memory insight</p>
+      <h2 class="h4 mb-3">Latest memory composition in this report</h2>
+      <div class="memory-breakdown-grid">
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Used</span>
+          <strong>{{ report_data.latest_memory_breakdown.used_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item memory-breakdown-item-accent">
+          <span class="memory-breakdown-label">Cached</span>
+          <strong>{{ report_data.latest_memory_breakdown.cached_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Buffers</span>
+          <strong>{{ report_data.latest_memory_breakdown.buffers_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Slab</span>
+          <strong>{{ report_data.latest_memory_breakdown.slab_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Available</span>
+          <strong>{{ report_data.latest_memory_breakdown.available_mb }} MB</strong>
+        </article>
+        <article class="memory-breakdown-item">
+          <span class="memory-breakdown-label">Cached + buffers</span>
+          <strong>{{ report_data.latest_memory_breakdown.reclaimable_mb }} MB</strong>
+        </article>
+      </div>
+      <div class="small text-secondary mt-3">This separates real memory pressure from cache that the kernel can often reuse quickly.</div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4">
       <p class="eyebrow mb-2">Network</p>
       <h2 class="h4 mb-4">Send and receive rate</h2>
       <div class="chart-shell history-chart-shell"><canvas id="reportNetworkChart"></canvas></div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Memory trend</p>
+      <h2 class="h4 mb-4">Used, available and cache over time</h2>
+      <div class="chart-shell history-chart-shell"><canvas id="reportMemoryChart"></canvas></div>
     </section>
   </div>
   <div class="col-12 col-xl-6">
@@ -285,6 +332,21 @@
       datasets: [
         reportLineDataset("Sent kbps", reportChartData.net_sent, "#ff5d8f", "rgba(255,93,143,0.14)"),
         reportLineDataset("Received kbps", reportChartData.net_recv, "#5dc6ff", "rgba(93,198,255,0.14)")
+      ]
+    },
+    options: reportChartOptions()
+  });
+
+  new Chart(document.getElementById("reportMemoryChart"), {
+    type: "line",
+    data: {
+      labels: reportLabels,
+      datasets: [
+        reportLineDataset("Used MB", reportChartData.memory_used_mb, "#4dd4ac", "rgba(77,212,172,0.14)"),
+        reportLineDataset("Available MB", reportChartData.memory_available_mb, "#5dc6ff", "rgba(93,198,255,0.14)"),
+        reportLineDataset("Cached MB", reportChartData.memory_cached_mb, "#ffd166", "rgba(255,209,102,0.10)", false),
+        reportLineDataset("Buffers MB", reportChartData.memory_buffers_mb, "#ff9b73", "rgba(255,155,115,0.10)", false),
+        reportLineDataset("Slab MB", reportChartData.memory_slab_mb, "#c084fc", "rgba(192,132,252,0.10)", false)
       ]
     },
     options: reportChartOptions()
