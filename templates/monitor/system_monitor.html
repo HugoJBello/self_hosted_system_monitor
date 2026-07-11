@@ -173,33 +173,42 @@
               <div class="mounted-device-main">
                 <div class="mounted-device-path">{{ disk.mountpoint }}</div>
               </div>
-              <div class="mounted-device-percent">{{ disk.percent }}%</div>
+              <div class="mounted-device-status-shell">
+                <span class="mounted-device-status {% if disk.is_mounted %}is-mounted{% else %}is-idle{% endif %}">{{ disk.status_label }}</span>
+                {% if disk.percent is not None %}
+                  <div class="mounted-device-percent">{{ disk.percent }}%</div>
+                {% endif %}
+              </div>
             </div>
             <div class="mounted-device-chip-row">
               <span class="mounted-device-chip">{{ disk.device }}</span>
               <span class="mounted-device-chip">{{ disk.fstype|upper }}</span>
             </div>
-            <div class="mounted-device-usage-row">
-              <div class="mounted-device-usage-item">
-                <span class="mounted-device-label">Used</span>
-                <strong>{{ disk.used_gb }} GB</strong>
+            {% if disk.is_mounted %}
+              <div class="mounted-device-usage-row">
+                <div class="mounted-device-usage-item">
+                  <span class="mounted-device-label">Used</span>
+                  <strong>{{ disk.used_gb }} GB</strong>
+                </div>
+                <div class="mounted-device-usage-item mounted-device-usage-item-right">
+                  <span class="mounted-device-label">Free</span>
+                  <strong>{{ disk.free_gb }} GB</strong>
+                </div>
               </div>
-              <div class="mounted-device-usage-item mounted-device-usage-item-right">
-                <span class="mounted-device-label">Free</span>
-                <strong>{{ disk.free_gb }} GB</strong>
+              <div class="progress dark-progress mounted-device-progress" role="progressbar" aria-valuenow="{{ disk.percent }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar mounted-device-progress-used" style="width: {{ disk.percent }}%"></div>
               </div>
-            </div>
-            <div class="progress dark-progress mounted-device-progress" role="progressbar" aria-valuenow="{{ disk.percent }}" aria-valuemin="0" aria-valuemax="100">
-              <div class="progress-bar mounted-device-progress-used" style="width: {{ disk.percent }}%"></div>
-            </div>
+            {% else %}
+              <div class="mounted-device-idle-note">This filesystem is configured in the host as an automount and is currently idle, so live used/free figures are not available until it is mounted.</div>
+            {% endif %}
             <div class="mounted-device-footer">
               <div class="mounted-device-stat">
                 <span class="mounted-device-label">Total capacity</span>
-                <strong>{{ disk.total_gb }} GB</strong>
+                <strong>{% if disk.total_gb is not None %}{{ disk.total_gb }} GB{% else %}-{% endif %}</strong>
               </div>
               <div class="mounted-device-stat">
-                <span class="mounted-device-label">Free space</span>
-                <strong>{{ disk.free_percent }}%</strong>
+                <span class="mounted-device-label">{% if disk.is_mounted %}Free space{% else %}Current state{% endif %}</span>
+                <strong>{% if disk.is_mounted and disk.free_percent is not None %}{{ disk.free_percent }}%{% else %}Idle{% endif %}</strong>
               </div>
             </div>
           </article>

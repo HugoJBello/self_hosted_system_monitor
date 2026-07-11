@@ -298,6 +298,36 @@ body.app-shell {
   font-weight: 700;
 }
 
+.mounted-device-status-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+.mounted-device-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mounted-device-status.is-mounted {
+  color: #c9fff0;
+  background: rgba(77, 212, 172, 0.12);
+  border: 1px solid rgba(77, 212, 172, 0.22);
+}
+
+.mounted-device-status.is-idle {
+  color: #ffe2a1;
+  background: rgba(255, 209, 102, 0.12);
+  border: 1px solid rgba(255, 209, 102, 0.22);
+}
+
 .mounted-device-chip-row {
   display: flex;
   flex-wrap: wrap;
@@ -348,6 +378,17 @@ body.app-shell {
   background: linear-gradient(90deg, #5dc6ff, #8db5ff);
 }
 
+.mounted-device-idle-note {
+  margin-bottom: 0.85rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.9rem;
+  background: rgba(255, 209, 102, 0.06);
+  border: 1px solid rgba(255, 209, 102, 0.12);
+  color: #d8e1ea;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .mounted-device-footer {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -381,6 +422,10 @@ body.app-shell {
   .mounted-device-usage-row {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .mounted-device-status-shell {
+    align-items: flex-start;
   }
 
   .mounted-device-usage-item-right {

@@ -5,6 +5,7 @@ import time
 import logging
 from collections import Counter
 from datetime import datetime, timezone as dt_timezone
+from pathlib import Path
 
 import psutil
 from django.db import transaction
@@ -98,8 +99,7 @@ def _network_stats():
 
 
 def _disk_devices():
-    devices = []
-    seen_mounts = set()
+    devices_by_mount = {}
     for partition in psutil.disk_partitions(all=False):
         mountpoint = partition.mountpoint or ""
         if not mountpoint.startswith(HOST_ROOT_PATH):
@@ -109,27 +109,105 @@ def _disk_devices():
         host_mountpoint = os.path.normpath("/" + os.path.relpath(mountpoint, HOST_ROOT_PATH).lstrip("./"))
         if host_mountpoint == "/.":
             host_mountpoint = "/"
-        if host_mountpoint in seen_mounts:
-            continue
         try:
             usage = psutil.disk_usage(mountpoint)
         except PermissionError:
             continue
-        seen_mounts.add(host_mountpoint)
-        devices.append(
-            {
-                "device": partition.device,
-                "mountpoint": host_mountpoint,
-                "fstype": partition.fstype,
-                "total_gb": _gb(usage.total),
-                "used_gb": _gb(usage.used),
-                "free_gb": _gb(usage.free),
-                "percent": round(usage.percent, 2),
-                "free_percent": round(max(100 - usage.percent, 0), 2),
-            }
-        )
+        current = devices_by_mount.get(host_mountpoint)
+        candidate = {
+            "device": partition.device,
+            "mountpoint": host_mountpoint,
+            "fstype": partition.fstype,
+            "total_gb": _gb(usage.total),
+            "used_gb": _gb(usage.used),
+            "free_gb": _gb(usage.free),
+            "percent": round(usage.percent, 2),
+            "free_percent": round(max(100 - usage.percent, 0), 2),
+            "is_mounted": True,
+            "status_label": "Mounted",
+        }
+        if current is None or (current.get("fstype") == "autofs" and partition.fstype != "autofs"):
+            devices_by_mount[host_mountpoint] = candidate
+
+    for entry in _fstab_automount_entries():
+        devices_by_mount.setdefault(entry["mountpoint"], entry)
+
+    devices = list(devices_by_mount.values())
     devices.sort(key=lambda item: (item["mountpoint"] != "/", item["mountpoint"]))
     return devices
+
+
+def _fstab_automount_entries():
+    fstab_path = os.path.join(HOST_ROOT_PATH, "etc", "fstab")
+    entries = []
+    try:
+        with open(fstab_path, encoding="utf-8") as handle:
+            for raw_line in handle:
+                line = raw_line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                parts = line.split()
+                if len(parts) < 4:
+                    continue
+                source, mountpoint, fstype, options = parts[:4]
+                if not mountpoint.startswith("/"):
+                    continue
+                if fstype in {"swap", "proc", "sysfs", "tmpfs", "devtmpfs", "cgroup2", "overlay"}:
+                    continue
+                option_set = {item.strip() for item in options.split(",") if item.strip()}
+                if "x-systemd.automount" not in option_set:
+                    continue
+                entries.append(
+                    {
+                        "device": _resolve_fstab_source(source),
+                        "mountpoint": mountpoint,
+                        "fstype": fstype,
+                        "total_gb": _fstab_entry_total_gb(source),
+                        "used_gb": None,
+                        "free_gb": None,
+                        "percent": None,
+                        "free_percent": None,
+                        "is_mounted": False,
+                        "status_label": "Idle automount",
+                    }
+                )
+    except OSError:
+        return []
+    return entries
+
+
+def _resolve_fstab_source(source):
+    if source.startswith("UUID="):
+        uuid_value = source.split("=", 1)[1]
+        resolved = Path(HOST_ROOT_PATH) / "dev" / "disk" / "by-uuid" / uuid_value
+        try:
+            target = resolved.resolve(strict=True)
+        except OSError:
+            return source
+        target_text = str(target)
+        if target_text.startswith(HOST_ROOT_PATH):
+            return target_text[len(HOST_ROOT_PATH):] or "/"
+        return target_text
+    return source
+
+
+def _fstab_entry_total_gb(source):
+    block_name = _source_block_name(source)
+    if not block_name:
+        return None
+    size_path = Path(HOST_ROOT_PATH) / "sys" / "class" / "block" / block_name / "size"
+    try:
+        sectors = int(size_path.read_text(encoding="utf-8").strip() or "0")
+    except OSError:
+        return None
+    return _gb(sectors * 512)
+
+
+def _source_block_name(source):
+    resolved = _resolve_fstab_source(source)
+    if resolved.startswith("/dev/"):
+        return os.path.basename(resolved)
+    return ""
 
 
 def _process_rows(limit):
