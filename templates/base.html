@@ -16,6 +16,7 @@
     {% block extra_head %}{% endblock %}
   </head>
   <body class="app-shell">
+    <div class="page-busy-bar" id="pageBusyBar" aria-hidden="true"></div>
     <nav class="navbar navbar-expand-lg navbar-dark topbar">
       <div class="container-fluid px-4">
         <a class="navbar-brand fw-semibold d-inline-flex align-items-center gap-2" href="{% url 'monitor:system-monitor' %}">
@@ -179,6 +180,87 @@
           document.documentElement.lang = locale;
         }
         applyBrowserLocaleDates(document);
+        const pageBusyBar = document.getElementById("pageBusyBar");
+
+        function showPageBusyBar() {
+          if (pageBusyBar) {
+            pageBusyBar.classList.add("is-active");
+          }
+        }
+
+        function isModifiedNavigation(event) {
+          return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0;
+        }
+
+        function isIgnoredPendingElement(element) {
+          return element.matches([
+            "[data-no-loading]",
+            "[data-bs-toggle]",
+            "[data-bs-dismiss]",
+            "[data-password-toggle]",
+            ".backup-source-picker",
+            ".backup-browser-toggle",
+            ".backup-browser-select",
+            ".navbar-toggler",
+            ".btn-close",
+          ].join(","));
+        }
+
+        function isNavigatingLink(element) {
+          if (!(element instanceof HTMLAnchorElement)) return false;
+          const href = element.getAttribute("href") || "";
+          if (!href || href === "#" || href.startsWith("javascript:")) return false;
+          if (element.hasAttribute("download")) return false;
+          if (element.target && element.target.toLowerCase() === "_blank") return false;
+          if (href.startsWith("#")) return false;
+          return element.matches("a.btn[href], a.nav-link[href], a.backup-job-run-link[href], a.process-sort-link[href]");
+        }
+
+        function markPendingElement(element) {
+          if (!element || element.classList.contains("action-pending") || isIgnoredPendingElement(element)) {
+            return;
+          }
+          const width = Math.ceil(element.getBoundingClientRect().width);
+          if (width > 0 && !element.style.minWidth) {
+            element.style.minWidth = `${width}px`;
+          }
+          element.classList.add("action-pending");
+          element.setAttribute("aria-busy", "true");
+
+          if (element instanceof HTMLButtonElement) {
+            if (!element.querySelector(".action-pending-spinner")) {
+              const spinner = document.createElement("span");
+              spinner.className = "spinner-border spinner-border-sm action-pending-spinner";
+              spinner.setAttribute("aria-hidden", "true");
+              const label = document.createElement("span");
+              label.className = "action-pending-label";
+              while (element.firstChild) {
+                label.appendChild(element.firstChild);
+              }
+              element.append(spinner, label);
+            }
+            element.disabled = true;
+          } else if (element instanceof HTMLInputElement && element.type === "submit") {
+            if (!element.dataset.pendingOriginalValue) {
+              element.dataset.pendingOriginalValue = element.value;
+            }
+            element.value = element.dataset.pendingLabel || "Working...";
+            element.disabled = true;
+          } else if (element instanceof HTMLAnchorElement) {
+            if (!element.querySelector(".action-pending-spinner")) {
+              const spinner = document.createElement("span");
+              spinner.className = "spinner-border spinner-border-sm action-pending-spinner";
+              spinner.setAttribute("aria-hidden", "true");
+              const label = document.createElement("span");
+              label.className = "action-pending-label";
+              while (element.firstChild) {
+                label.appendChild(element.firstChild);
+              }
+              element.append(spinner, label);
+            }
+          }
+        }
+
         document.querySelectorAll("form[data-confirm-submit]").forEach((form) => {
           form.addEventListener("submit", (event) => {
             const message = form.dataset.confirmSubmit || "Confirm this action?";
@@ -186,6 +268,45 @@
               event.preventDefault();
             }
           });
+        });
+
+        document.querySelectorAll("form").forEach((form) => {
+          form.addEventListener("submit", (event) => {
+            if (event.defaultPrevented) return;
+            const submitter = event.submitter;
+            if (submitter && isIgnoredPendingElement(submitter)) return;
+
+            if (submitter && submitter.name) {
+              const markerName = `__pending_submitter_${submitter.name}`;
+              if (!form.querySelector(`input[type="hidden"][data-pending-submit-marker="${markerName}"]`)) {
+                const hiddenSubmitter = document.createElement("input");
+                hiddenSubmitter.type = "hidden";
+                hiddenSubmitter.name = submitter.name;
+                hiddenSubmitter.value = submitter.value;
+                hiddenSubmitter.dataset.pendingSubmitMarker = markerName;
+                form.appendChild(hiddenSubmitter);
+              }
+            }
+
+            if (submitter) {
+              markPendingElement(submitter);
+            }
+            form.querySelectorAll("button[type='submit'], input[type='submit']").forEach((control) => {
+              if (submitter && control === submitter) return;
+              if (isIgnoredPendingElement(control)) return;
+              control.disabled = true;
+            });
+            showPageBusyBar();
+          });
+        });
+
+        document.addEventListener("click", (event) => {
+          const link = event.target.closest("a[href]");
+          if (!link || !isNavigatingLink(link) || isIgnoredPendingElement(link) || isModifiedNavigation(event)) {
+            return;
+          }
+          markPendingElement(link);
+          showPageBusyBar();
         });
       });
 
