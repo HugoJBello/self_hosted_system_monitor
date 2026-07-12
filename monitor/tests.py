@@ -16,6 +16,7 @@ from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .docker_runtime import _group_containers_by_family
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .reporting import generate_report_for_rule
@@ -472,6 +473,83 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:script-jobs"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Script jobs")
+
+    @patch("monitor.docker_views.get_docker_overview")
+    def test_docker_overview_page_loads(self, mock_get_docker_overview):
+        family = {
+            "key": "compose:test",
+            "name": "test",
+            "kind": "Compose project",
+            "running_count": 1,
+            "container_count": 1,
+            "containers": [
+                {
+                    "id": "abc",
+                    "name": "test-web",
+                    "image_name": "nginx:latest",
+                    "compose_service": "web",
+                    "running": True,
+                    "health": "healthy",
+                    "networks": ["default"],
+                    "ports": ["8012->8000/tcp"],
+                    "restart_policy": "unless stopped",
+                    "status_text": "running",
+                }
+            ],
+            "images": ["nginx:latest"],
+        }
+        mock_get_docker_overview.return_value = {
+            "families": [family],
+            "running_families": [family],
+            "stopped_families": [],
+            "images": [{"name": "nginx:latest", "repository": "nginx", "tag": "latest", "image_id": "123456789abc", "size": "188MB", "created_since": "2 days ago", "used_by": 1}],
+            "running_containers_count": 1,
+            "stopped_containers_count": 0,
+            "family_count": 1,
+            "image_count": 1,
+        }
+
+        response = self.client.get(self._path("monitor:docker-overview"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Docker runtime")
+        self.assertContains(response, "test-web")
+        self.assertContains(response, "nginx:latest")
+
+    @patch("monitor.docker_views.get_container_logs")
+    def test_docker_logs_view_returns_container_logs(self, mock_get_container_logs):
+        mock_get_container_logs.return_value = {
+            "tail": 200,
+            "content": "2026-07-12T12:00:00Z hello from docker",
+            "entries": [
+                {
+                    "source": "test-web",
+                    "source_key": "abc123",
+                    "timestamp": "2026-07-12T12:00:00Z",
+                    "message": "hello from docker",
+                }
+            ],
+        }
+
+        response = self.client.get(self._path("monitor:docker-logs"), {"scope": "container", "id": "abc123"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertJSONEqual(
+            response.content,
+            {
+                "scope": "container",
+                "id": "abc123",
+                "tail": 200,
+                "content": "2026-07-12T12:00:00Z hello from docker",
+                "entries": [
+                    {
+                        "source": "test-web",
+                        "source_key": "abc123",
+                        "timestamp": "2026-07-12T12:00:00Z",
+                        "message": "hello from docker",
+                    }
+                ],
+            },
+        )
 
     def test_backup_runs_page_loads(self):
         response = self.client.get(self._path("monitor:backup-runs"))
@@ -1103,6 +1181,35 @@ class BackupHelpersTests(TestCase):
     def _path(self, name, args=None):
         path = reverse(name, args=args or [])
         return path.replace(settings.APP_SUBPATH, "", 1)
+
+    def test_group_containers_by_family_prefers_compose_project(self):
+        containers = [
+            {
+                "family_key": "compose:alpha",
+                "family_name": "alpha",
+                "family_kind": "Compose project",
+                "name": "alpha-web",
+                "image_name": "nginx:latest",
+                "compose_service": "web",
+                "running": True,
+            },
+            {
+                "family_key": "compose:alpha",
+                "family_name": "alpha",
+                "family_kind": "Compose project",
+                "name": "alpha-worker",
+                "image_name": "python:3.12",
+                "compose_service": "worker",
+                "running": False,
+            },
+        ]
+
+        families = _group_containers_by_family(containers)
+
+        self.assertEqual(len(families), 1)
+        self.assertEqual(families[0]["name"], "alpha")
+        self.assertEqual(families[0]["running_count"], 1)
+        self.assertEqual(families[0]["container_count"], 2)
 
     def test_normalized_remote_host_accepts_plain_hostname(self):
         job = BackupJob(remote_host="ssh.example.com", remote_user="backup", remote_dir="/tmp", source_path="/home/test")
