@@ -81,6 +81,7 @@
           <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds }}s idle</span>
           <span><i class="bi bi-file-earmark"></i> {{ job.max_size|default:"no max" }}</span>
           <span><i class="bi bi-trash3"></i> {% if job.delete_enabled %}delete on{% else %}delete off{% endif %}</span>
+          {% if job.verify_mounted_device %}<span><i class="bi bi-hdd-stack"></i> verify mount</span>{% endif %}
           {% if job.trigger_on_mount %}<span><i class="bi bi-usb-drive"></i> mount trigger</span>{% endif %}
         </div>
 
@@ -265,9 +266,11 @@
               </div>
               <div class="col-md-3"><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
               <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
-              <div class="col-md-6" data-local-fields><label class="form-label" for="{{ form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button></div></div>
+              <div class="col-12" data-local-fields><label class="form-label" for="{{ form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button></div></div>
+              <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.verify_mounted_device.id_for_label }}">Verify mounted device</label><div class="form-check form-switch mt-2">{{ form.verify_mounted_device }}</div></div>
+              <div class="col-md-3" data-local-fields><div class="form-text pt-4">Checks that this folder, or one of its parent folders, is backed by a mounted external path under <code>/media</code>, <code>/mnt</code>, or <code>/run/media</code>. If not, the run fails before starting.</div></div>
               <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.trigger_on_mount.id_for_label }}">Run when mount appears</label><div class="form-check form-switch mt-2">{{ form.trigger_on_mount }}</div></div>
-              <div class="col-md-3" data-local-fields><div class="form-text pt-4">If this destination is on a USB or removable mount, the scheduler runs it as soon as that mount appears, and then keeps the normal cadence while it stays mounted.</div></div>
+              <div class="col-md-3" data-local-fields><div class="form-text pt-4">When that mounted path appears, the scheduler launches the job. If it is not mounted at a scheduled check, the run is skipped instead of failing.</div></div>
               <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ form.remote_host.id_for_label }}">Hostname or IP</label>{{ form.remote_host }}</div>
               <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.remote_user.id_for_label }}">SSH user</label>{{ form.remote_user }}</div>
               <div class="col-md-5" data-remote-fields><label class="form-label" for="{{ form.remote_dir.id_for_label }}">Remote directory</label>{{ form.remote_dir }}</div>
@@ -361,9 +364,11 @@
             </div>
             <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
             <div class="col-12"><label class="form-label" for="{{ create_form.description.id_for_label }}">Description</label>{{ create_form.description }}</div>
-            <div class="col-md-6" data-local-fields><label class="form-label" for="{{ create_form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ create_form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.local_dest_path.id_for_label }}">Browse</button></div></div>
+            <div class="col-12" data-local-fields><label class="form-label" for="{{ create_form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ create_form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.local_dest_path.id_for_label }}">Browse</button></div></div>
+            <div class="col-md-3" data-local-fields><label class="form-label" for="{{ create_form.verify_mounted_device.id_for_label }}">Verify mounted device</label><div class="form-check form-switch mt-2">{{ create_form.verify_mounted_device }}</div></div>
+            <div class="col-md-3" data-local-fields><div class="form-text pt-4">Use this for USB or removable targets. The run only starts if the destination sits under a mounted external path or one of its parent folders does.</div></div>
             <div class="col-md-3" data-local-fields><label class="form-label" for="{{ create_form.trigger_on_mount.id_for_label }}">Run when mount appears</label><div class="form-check form-switch mt-2">{{ create_form.trigger_on_mount }}</div></div>
-            <div class="col-md-3" data-local-fields><div class="form-text pt-4">Useful for USB disks. If the mount is absent, the scheduled slot is skipped without failing the monitor.</div></div>
+            <div class="col-md-3" data-local-fields><div class="form-text pt-4">The scheduler watches for that mount to appear and starts the job then. If it is absent, the scheduled run is skipped.</div></div>
             <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ create_form.remote_host.id_for_label }}">Hostname or IP</label>{{ create_form.remote_host }}</div>
             <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ create_form.remote_user.id_for_label }}">SSH user</label>{{ create_form.remote_user }}</div>
             <div class="col-md-5" data-remote-fields><label class="form-label" for="{{ create_form.remote_dir.id_for_label }}">Remote directory</label>{{ create_form.remote_dir }}</div>

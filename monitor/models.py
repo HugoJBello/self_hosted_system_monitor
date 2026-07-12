@@ -513,6 +513,7 @@ class BackupJob(models.Model):
     backup_type = models.CharField(max_length=16, choices=BACKUP_TYPE_CHOICES, default="remote")
     source_path = models.CharField(max_length=500, help_text="Host path, for example /home/user/Documents")
     local_dest_path = models.CharField(max_length=500, blank=True, default="")
+    verify_mounted_device = models.BooleanField(default=False)
     trigger_on_mount = models.BooleanField(default=False)
     last_mount_was_available = models.BooleanField(default=False)
     schedule_minutes = models.PositiveIntegerField(

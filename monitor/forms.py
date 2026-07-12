@@ -268,6 +268,7 @@ class BackupJobForm(forms.ModelForm):
             "backup_type",
             "source_path",
             "local_dest_path",
+            "verify_mounted_device",
             "trigger_on_mount",
             "schedule_minutes",
             "remote_host",
@@ -300,6 +301,7 @@ class BackupJobForm(forms.ModelForm):
             "backup_type": forms.Select(attrs={"class": "form-select backup-type-select"}),
             "source_path": forms.TextInput(attrs={"class": "form-control backup-source-input", "placeholder": "/home/user/Documents"}),
             "local_dest_path": forms.TextInput(attrs={"class": "form-control backup-destination-input", "placeholder": "/media/usb/backups/laptop"}),
+            "verify_mounted_device": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "trigger_on_mount": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "schedule_minutes": forms.NumberInput(attrs={"class": "form-control", "min": 5, "max": 43200, "step": 5, "list": "backup-schedule-presets"}),
             "remote_host": forms.TextInput(attrs={"class": "form-control", "placeholder": "backup-host.example.com"}),
@@ -427,6 +429,8 @@ class BackupJobForm(forms.ModelForm):
         cleaned_data["backup_type"] = backup_type
         auth_mode = cleaned_data.get("auth_mode")
         local_dest_path = (cleaned_data.get("local_dest_path") or "").strip()
+        verify_mounted_device = bool(cleaned_data.get("verify_mounted_device"))
+        trigger_on_mount = bool(cleaned_data.get("trigger_on_mount"))
         password_file_path = (cleaned_data.get("password_file_path") or "").strip()
         ssh_password = (cleaned_data.get("ssh_password") or "").strip()
         public_key_path = (cleaned_data.get("public_key_path") or "").strip()
@@ -446,6 +450,16 @@ class BackupJobForm(forms.ModelForm):
                 self.add_error("source_path", "Local backups need a source folder.")
             if not local_dest_path:
                 self.add_error("local_dest_path", "Local backups need a destination folder on this machine.")
+            if (
+                local_dest_path
+                and (verify_mounted_device or trigger_on_mount)
+                and not local_dest_path.startswith(("/media/", "/mnt/", "/run/media/"))
+                and local_dest_path not in {"/media", "/mnt", "/run/media"}
+            ):
+                self.add_error(
+                    "local_dest_path",
+                    "Mount-aware local backups must use a destination under /media, /mnt, or /run/media.",
+                )
         elif backup_type == "http":
             if http_direction == "push" and not source_path:
                 self.add_error("source_path", "HTTP push backups need a local source folder.")

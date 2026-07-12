@@ -223,7 +223,10 @@ def _mounted_host_paths():
                 parts = line.split()
                 if len(parts) < 2:
                     continue
-                mounts.add(os.path.normpath(_decode_mount_path(parts[1])))
+                mount_path = os.path.normpath(_decode_mount_path(parts[1]))
+                if mount_path == HOST_ROOT_PREFIX or mount_path.startswith(f"{HOST_ROOT_PREFIX}/"):
+                    mount_path = os.path.normpath("/" + os.path.relpath(mount_path, HOST_ROOT_PREFIX).lstrip("./"))
+                mounts.add(mount_path)
     except OSError:
         return set()
     return mounts
@@ -246,15 +249,22 @@ def _local_destination_is_available(job, mounted_paths=None):
     destination_path = os.path.normpath((job.local_dest_path or "").strip() or "/")
     if not destination_path.startswith("/"):
         return False
+    if not destination_path.startswith(MOUNT_SENSITIVE_ROOTS):
+        return False
     return _path_is_on_sensitive_mount(destination_path, mounted_paths=mounted_paths)
+
+
+def _local_destination_requires_mount_check(job):
+    return bool(getattr(job, "verify_mounted_device", False) or getattr(job, "trigger_on_mount", False))
 
 
 def _ensure_local_destination(job):
     if not (job.local_dest_path or "").strip():
         raise ValueError("Local backup destination path is required.")
-    mounted_paths = _mounted_host_paths()
-    if not _local_destination_is_available(job, mounted_paths=mounted_paths):
-        raise RuntimeError(f"Local destination is not mounted right now: {job.local_dest_path}")
+    if _local_destination_requires_mount_check(job):
+        mounted_paths = _mounted_host_paths()
+        if not _local_destination_is_available(job, mounted_paths=mounted_paths):
+            raise RuntimeError(f"Local destination is not mounted right now: {job.local_dest_path}")
     destination_path = _hostfs_path(job.local_dest_path)
     os.makedirs(destination_path, exist_ok=True)
     if not os.path.isdir(destination_path):
@@ -1249,7 +1259,11 @@ def dispatch_scheduled_backups(snapshot_time=None):
     for job in due_jobs:
         if BackupRun.objects.filter(job=job, status="running").exists():
             continue
-        if job.is_local and not _local_destination_is_available(job, mounted_paths=mounted_paths):
+        if (
+            job.is_local
+            and _local_destination_requires_mount_check(job)
+            and not _local_destination_is_available(job, mounted_paths=mounted_paths)
+        ):
             _skip_job_schedule(job, snapshot_time)
             continue
         try:

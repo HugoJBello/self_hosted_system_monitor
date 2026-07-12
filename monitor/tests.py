@@ -15,7 +15,7 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .reporting import generate_report_for_rule
@@ -737,6 +737,7 @@ class MonitorViewsTests(TestCase):
             backup_type="local",
             source_path="/home/test/Documents",
             local_dest_path="/media/usb/docs",
+            verify_mounted_device=False,
             trigger_on_mount=False,
             schedule_minutes=30,
         )
@@ -751,6 +752,7 @@ class MonitorViewsTests(TestCase):
                 f"job-{job.id}-backup_type": "local",
                 f"job-{job.id}-source_path": "/home/test/UpdatedDocuments",
                 f"job-{job.id}-local_dest_path": "/media/usb/updated-docs",
+                f"job-{job.id}-verify_mounted_device": "on",
                 f"job-{job.id}-trigger_on_mount": "on",
                 f"job-{job.id}-schedule_minutes": "30",
                 f"job-{job.id}-remote_host": "",
@@ -776,6 +778,7 @@ class MonitorViewsTests(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.backup_type, "local")
         self.assertEqual(job.local_dest_path, "/media/usb/updated-docs")
+        self.assertTrue(job.verify_mounted_device)
         self.assertTrue(job.trigger_on_mount)
 
     def test_backup_run_status_prefers_runtime_state_for_running_job(self):
@@ -1395,6 +1398,54 @@ class BackupHelpersTests(TestCase):
         command = mock_run_streaming_command.call_args.args[0]
         self.assertIn("/hostfs/home/test/Documents/", command)
         self.assertIn("/hostfs/media/usb/docs/", command)
+
+    @patch("monitor.backups._mounted_host_paths", return_value=set())
+    def test_local_backup_job_without_mount_verification_allows_unmounted_destination(
+        self,
+        mock_mounted_paths,
+    ):
+        job = BackupJob.objects.create(
+            name="USB clone",
+            backup_type="local",
+            source_path="/home/test/Documents",
+            local_dest_path="/media/usb/docs",
+            verify_mounted_device=False,
+            trigger_on_mount=False,
+            schedule_minutes=30,
+        )
+
+        with patch("monitor.backups.os.makedirs") as mock_makedirs, patch("monitor.backups.os.path.isdir", return_value=True):
+            destination = _ensure_local_destination(job)
+
+        self.assertEqual(destination, "/hostfs/media/usb/docs")
+        mock_makedirs.assert_called_once_with("/hostfs/media/usb/docs", exist_ok=True)
+
+    @patch("monitor.backups._mounted_host_paths", return_value={"/media/disk_usb_backups"})
+    def test_local_backup_job_mount_verification_accepts_parent_mount(
+        self,
+        mock_mounted_paths,
+    ):
+        job = BackupJob(
+            backup_type="local",
+            local_dest_path="/media/disk_usb_backups/backups/android18",
+            verify_mounted_device=True,
+        )
+
+        self.assertTrue(_local_destination_is_available(job))
+
+    def test_mounted_host_paths_strips_hostfs_prefix_from_mountpoints(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            proc_dir = Path(tmpdir) / "proc"
+            proc_dir.mkdir(parents=True, exist_ok=True)
+            (proc_dir / "mounts").write_text(
+                "/dev/sdd1 /hostfs/media/disk_usb_backups ext4 rw,relatime 0 0\n"
+                "proc /proc proc rw,nosuid,nodev,noexec,relatime 0 0\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"MONITOR_PROCFS_PATH": str(proc_dir)}):
+                mounts = _mounted_host_paths()
+
+        self.assertIn("/media/disk_usb_backups", mounts)
 
     @patch("monitor.http_backups._upload_file")
     @patch("monitor.http_backups._request_json")
@@ -2147,6 +2198,7 @@ class BackupHelpersTests(TestCase):
             backup_type="local",
             source_path="/home/test/Documents",
             local_dest_path="/media/usb/docs",
+            verify_mounted_device=True,
             schedule_minutes=30,
             next_run_at=timezone.now() - timezone.timedelta(minutes=1),
         )
