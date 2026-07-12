@@ -551,6 +551,27 @@ class MonitorViewsTests(TestCase):
             },
         )
 
+    @patch("monitor.docker_views.perform_docker_action")
+    def test_docker_action_view_dispatches_compose_recreate(self, mock_perform_docker_action):
+        mock_perform_docker_action.return_value = "Compose project recreated."
+
+        response = self.client.post(
+            self._path("monitor:docker-action"),
+            {
+                "scope": "family",
+                "id": "compose:self_hosted_system_monitor",
+                "docker_action": "compose_up_force_recreate",
+                "next": reverse("monitor:docker-overview"),
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:docker-overview"), fetch_redirect_response=False)
+        mock_perform_docker_action.assert_called_once_with(
+            "family",
+            "compose:self_hosted_system_monitor",
+            "compose_up_force_recreate",
+        )
+
     def test_backup_runs_page_loads(self):
         response = self.client.get(self._path("monitor:backup-runs"))
         self.assertEqual(response.status_code, 200)

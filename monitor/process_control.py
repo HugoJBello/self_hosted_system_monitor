@@ -58,14 +58,14 @@ def host_namespace_prefix():
     return _nsenter_prefix()
 
 
-def _run_host_command(command, *, check=True):
+def _run_host_command(command, *, check=True, timeout_seconds=30):
     try:
         result = subprocess.run(
             [*_nsenter_prefix(), *command],
             check=check,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=timeout_seconds,
         )
     except FileNotFoundError as exc:
         raise ProcessControlError("Cannot enter the host namespace because nsenter is not installed.") from exc

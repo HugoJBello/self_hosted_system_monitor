@@ -1,11 +1,19 @@
+from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.http import JsonResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views import View
+from django.contrib.auth.mixins import UserPassesTestMixin
 
+from .docker_control import perform_docker_action
 from .docker_runtime import get_container_logs, get_docker_overview, get_family_logs
 from .models import MonitoringSettings
 from .process_control import ProcessControlError
+
+
+class DockerAdminRequiredMixin(UserPassesTestMixin):
+    def test_func(self):
+        return self.request.user.is_authenticated and self.request.user.is_staff
 
 
 class DockerOverviewView(LoginRequiredMixin, View):
@@ -34,6 +42,21 @@ class DockerOverviewView(LoginRequiredMixin, View):
             "settings_obj": MonitoringSettings.load(),
         }
         return render(request, self.template_name, context)
+
+
+class DockerActionView(DockerAdminRequiredMixin, View):
+    def post(self, request):
+        scope = request.POST.get("scope", "")
+        identifier = request.POST.get("id", "")
+        action = request.POST.get("docker_action", "")
+        next_url = request.POST.get("next") or "monitor:docker-overview"
+        try:
+            summary = perform_docker_action(scope, identifier, action)
+        except ProcessControlError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, summary)
+        return redirect(next_url)
 
 
 class DockerLogsView(LoginRequiredMixin, View):

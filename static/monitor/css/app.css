@@ -765,6 +765,72 @@ body.app-shell {
   gap: 1rem;
 }
 
+.docker-action-list {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr;
+  width: 100%;
+}
+
+.docker-action-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(156, 177, 198, 0.16);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.docker-action-copy {
+  min-width: 0;
+}
+
+.docker-action-heading {
+  color: #f4f8fc;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.docker-action-note {
+  margin-top: 0.28rem;
+  color: #8ea3b9;
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.docker-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.6rem;
+  min-width: 13rem;
+  text-align: center;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+[data-docker-action-form] {
+  width: 100%;
+}
+
+[data-docker-action-list] > .docker-action-card {
+  width: 100%;
+  margin: 0;
+}
+
+@media (max-width: 767.98px) {
+  .docker-action-card {
+    grid-template-columns: 1fr;
+  }
+
+  .docker-action-btn {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .docker-container-list,
 .docker-family-mini-list,
 .docker-image-list {

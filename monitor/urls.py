@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .docker_views import DockerLogsView, DockerOverviewView
+from .docker_views import DockerActionView, DockerLogsView, DockerOverviewView
 from .http_backups import http_backup_compare_view, http_backup_delete_view, http_backup_file_view, http_backup_list_view, http_backup_manifest_view, http_backup_prune_view, http_backup_stat_view
 from .views import AlertDetailView, AlertsView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, LoginView, LogoutView, PasswordView, ProcessActionView, RedirectHomeView, ReportDetailView, ReportsView, ScriptJobRunDetailView, ScriptJobRunsView, ScriptJobRunStatusView, ScriptJobsView, SettingsView, SystemMonitorView, UsersView, healthz_view
 
@@ -22,6 +22,7 @@ urlpatterns = [
     path("reports/", ReportsView.as_view(), name="reports"),
     path("reports/<int:report_id>/", ReportDetailView.as_view(), name="report-detail"),
     path("docker/", DockerOverviewView.as_view(), name="docker-overview"),
+    path("docker/action/", DockerActionView.as_view(), name="docker-action"),
     path("docker/logs/", DockerLogsView.as_view(), name="docker-logs"),
     path("jobs/", ScriptJobsView.as_view(), name="script-jobs"),
     path("jobs/runs/", ScriptJobRunsView.as_view(), name="script-job-runs"),

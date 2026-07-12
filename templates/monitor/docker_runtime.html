@@ -74,14 +74,26 @@
             <h3 class="backup-job-title mb-1">{{ family.name }}</h3>
             <div class="small text-secondary">{{ family.images|join:", " }}</div>
           </div>
-          <button
-            type="button"
-            class="btn btn-outline-light btn-sm"
-            data-docker-log-button
-            data-log-scope="family"
-            data-log-id="{{ family.key }}"
-            data-log-title="{{ family.name }} family logs"
-          >Family logs</button>
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              class="btn btn-outline-light btn-sm"
+              data-docker-log-button
+              data-log-scope="family"
+              data-log-id="{{ family.key }}"
+              data-log-title="{{ family.name }} family logs"
+            >Family logs</button>
+            <button
+              type="button"
+              class="btn btn-accent btn-sm"
+              data-docker-action-button
+              data-action-scope="family"
+              data-action-id="{{ family.key }}"
+              data-action-title="{{ family.name }}"
+              data-action-kind="{{ family.kind }}"
+              data-action-compose="{% if family.kind == 'Compose project' %}true{% else %}false{% endif %}"
+            >Actions</button>
+          </div>
         </div>
 
         <div class="docker-container-list">
@@ -155,14 +167,26 @@
               <h3 class="h6 mb-1">{{ family.name }}</h3>
               <div class="small text-secondary">{{ family.images|join:", " }}</div>
             </div>
-            <button
-              type="button"
-              class="btn btn-outline-light btn-sm"
-              data-docker-log-button
-              data-log-scope="family"
-              data-log-id="{{ family.key }}"
-              data-log-title="{{ family.name }} family logs"
-            >Family logs</button>
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                class="btn btn-outline-light btn-sm"
+                data-docker-log-button
+                data-log-scope="family"
+                data-log-id="{{ family.key }}"
+                data-log-title="{{ family.name }} family logs"
+              >Family logs</button>
+              <button
+                type="button"
+                class="btn btn-accent btn-sm"
+                data-docker-action-button
+                data-action-scope="family"
+                data-action-id="{{ family.key }}"
+                data-action-title="{{ family.name }}"
+                data-action-kind="{{ family.kind }}"
+                data-action-compose="{% if family.kind == 'Compose project' %}true{% else %}false{% endif %}"
+              >Actions</button>
+            </div>
           </article>
         {% empty %}
           <div class="text-secondary">No stopped families to show.</div>
@@ -187,7 +211,18 @@
                 <div class="docker-image-name">{{ image.name }}</div>
                 <div class="small text-secondary">{{ image.image_id }} • {{ image.created_since }}</div>
               </div>
-              <span class="chip compact-chip">{{ image.size }}</span>
+              <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end">
+                <span class="chip compact-chip">{{ image.size }}</span>
+                <button
+                  type="button"
+                  class="btn btn-accent btn-sm"
+                  data-docker-action-button
+                  data-action-scope="image"
+                  data-action-id="{{ image.name }}"
+                  data-action-title="{{ image.name }}"
+                  data-image-used-by="{{ image.used_by }}"
+                >Actions</button>
+              </div>
             </div>
             <div class="docker-image-footer">
               <span class="docker-container-chip">{{ image.repository }}</span>
@@ -200,6 +235,30 @@
         {% endfor %}
       </div>
     </section>
+  </div>
+</div>
+
+<div class="modal fade" id="dockerActionsModal" tabindex="-1" aria-labelledby="dockerActionsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">Docker actions</p>
+          <h2 class="h4 mb-0" id="dockerActionsModalLabel">Runtime action</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-secondary mb-3" data-docker-action-description>Choose an action.</p>
+        <form method="post" action="{% url 'monitor:docker-action' %}" data-docker-action-form>
+          {% csrf_token %}
+          <input type="hidden" name="scope" value="">
+          <input type="hidden" name="id" value="">
+          <input type="hidden" name="next" value="{% url 'monitor:docker-overview' %}">
+          <div class="docker-action-list" data-docker-action-list></div>
+        </form>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -239,6 +298,12 @@
 
 {% block scripts %}
 <script>
+  const dockerActionsModalElement = document.getElementById("dockerActionsModal");
+  const dockerActionsModal = dockerActionsModalElement ? bootstrap.Modal.getOrCreateInstance(dockerActionsModalElement) : null;
+  const dockerActionsForm = document.querySelector("[data-docker-action-form]");
+  const dockerActionsList = document.querySelector("[data-docker-action-list]");
+  const dockerActionsTitle = document.getElementById("dockerActionsModalLabel");
+  const dockerActionsDescription = document.querySelector("[data-docker-action-description]");
   const dockerLogsModalElement = document.getElementById("dockerLogsModal");
   const dockerLogsModal = dockerLogsModalElement ? bootstrap.Modal.getOrCreateInstance(dockerLogsModalElement) : null;
   const dockerLogsOutput = document.querySelector("[data-docker-logs-output]");
@@ -252,6 +317,103 @@
   let dockerLogsFollowEnabled = false;
   let dockerLogsFollowTimer = null;
   let dockerLogsRequestInFlight = false;
+
+  function dockerActionDefinitions(meta) {
+    if (meta.scope === "family" && meta.compose === "true") {
+      return [
+        { value: "compose_up_force_recreate", label: "Recreate with build", note: "Runs docker compose up -d --build --force-recreate for the whole project.", buttonClass: "btn-accent", confirm: `Recreate compose project '${meta.title}' with build and force-recreate? This can take a while.` },
+        { value: "compose_restart", label: "Restart project", note: "Restarts every service in the compose project.", buttonClass: "btn-outline-light", confirm: `Restart compose project '${meta.title}'?` },
+        { value: "compose_stop", label: "Stop project", note: "Stops all services in the compose project.", buttonClass: "btn-outline-warning", confirm: `Stop compose project '${meta.title}'?` },
+        { value: "compose_start", label: "Start project", note: "Starts the existing services without rebuilding.", buttonClass: "btn-outline-success", confirm: `Start compose project '${meta.title}'?` },
+      ];
+    }
+    if (meta.scope === "family") {
+      return [
+        { value: "restart_containers", label: "Restart containers", note: "Restarts every container in this family.", buttonClass: "btn-accent", confirm: `Restart all containers in '${meta.title}'?` },
+        { value: "stop_containers", label: "Stop containers", note: "Stops every container in this family.", buttonClass: "btn-outline-warning", confirm: `Stop all containers in '${meta.title}'?` },
+        { value: "start_containers", label: "Start containers", note: "Starts containers in this family that are currently stopped.", buttonClass: "btn-outline-success", confirm: `Start all containers in '${meta.title}'?` },
+      ];
+    }
+    if (meta.scope === "image") {
+      const actions = [
+        { value: "restart_containers", label: "Restart containers", note: "Restarts containers currently using this image.", buttonClass: "btn-accent", confirm: `Restart all containers using image '${meta.title}'?` },
+        { value: "stop_containers", label: "Stop containers", note: "Stops containers currently using this image.", buttonClass: "btn-outline-warning", confirm: `Stop all containers using image '${meta.title}'?` },
+        { value: "start_containers", label: "Start containers", note: "Starts stopped containers that use this image.", buttonClass: "btn-outline-success", confirm: `Start all containers using image '${meta.title}'?` },
+      ];
+      if (Number(meta.usedBy || 0) === 0) {
+        actions.push({ value: "remove_image", label: "Remove image", note: "Removes this image because no container is currently using it.", buttonClass: "btn-outline-danger", confirm: `Remove unused image '${meta.title}'?` });
+      }
+      return actions;
+    }
+    return [];
+  }
+
+  function renderDockerActions(meta) {
+    if (!dockerActionsForm || !dockerActionsList || !dockerActionsTitle || !dockerActionsDescription) return;
+    dockerActionsForm.querySelector('input[name="scope"]').value = meta.scope || "";
+    dockerActionsForm.querySelector('input[name="id"]').value = meta.id || "";
+    dockerActionsTitle.textContent = meta.title || "Runtime action";
+    dockerActionsDescription.textContent = meta.scope === "image"
+      ? "Run a Docker action for this image and any containers that currently use it."
+      : "Run a Docker or Docker Compose action for this family.";
+    dockerActionsList.innerHTML = "";
+    dockerActionDefinitions(meta).forEach((action) => {
+      const card = document.createElement("div");
+      card.className = "docker-action-card";
+
+      const text = document.createElement("div");
+      text.className = "docker-action-copy";
+
+      const heading = document.createElement("div");
+      heading.className = "docker-action-heading";
+      heading.textContent = action.label;
+
+      const note = document.createElement("div");
+      note.className = "docker-action-note";
+      note.textContent = action.note || "";
+
+      const button = document.createElement("button");
+      button.type = "submit";
+      button.name = "docker_action";
+      button.value = action.value;
+      button.className = `btn ${action.buttonClass} docker-action-btn`;
+      button.textContent = action.label;
+      button.dataset.confirmMessage = action.confirm;
+
+      text.appendChild(heading);
+      if (action.note) {
+        text.appendChild(note);
+      }
+      card.appendChild(text);
+      card.appendChild(button);
+      dockerActionsList.appendChild(card);
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    const actionButton = event.target.closest("[data-docker-action-button]");
+    if (!actionButton || !dockerActionsModal) return;
+    event.preventDefault();
+    renderDockerActions({
+      scope: actionButton.dataset.actionScope,
+      id: actionButton.dataset.actionId,
+      title: actionButton.dataset.actionTitle,
+      compose: actionButton.dataset.actionCompose || "false",
+      usedBy: actionButton.dataset.imageUsedBy || "0",
+    });
+    dockerActionsModal.show();
+  });
+
+  if (dockerActionsForm) {
+    dockerActionsForm.addEventListener("submit", (event) => {
+      const submitter = event.submitter;
+      if (!submitter) return;
+      const message = submitter.dataset.confirmMessage || "Run this Docker action?";
+      if (!window.confirm(message)) {
+        event.preventDefault();
+      }
+    });
+  }
 
   function sourceColor(sourceKey) {
     const raw = String(sourceKey || "");
