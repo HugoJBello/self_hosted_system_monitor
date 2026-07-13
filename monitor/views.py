@@ -19,7 +19,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
 from .alerting import ensure_default_alert_rules, top_processes_for_alert_window
-from .backups import get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
+from .backups import _normalize_stream_output, get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
 from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, ScriptJobForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
@@ -1101,6 +1101,10 @@ class BackupsView(LoginRequiredMixin, View):
         job_form_overrides = job_form_overrides or {}
         latest_snapshot = SystemSnapshot.objects.order_by("-captured_at").first()
         running_runs = list(BackupRun.objects.select_related("job").filter(status="running").order_by("-started_at")[:20])
+        for run in running_runs:
+            runtime_state = get_runtime_state(run.id)
+            if runtime_state:
+                run.log_output = _normalize_stream_output(runtime_state.get("log_output") or run.log_output or "")
         recent_runs = list(BackupRun.objects.select_related("job").exclude(status="running").order_by("-started_at")[:8])
         jobs = list(BackupJob.objects.all())
         runs_by_job = {
@@ -1172,6 +1176,7 @@ class BackupRunStatusView(LoginRequiredMixin, View):
     def get(self, request, run_id):
         backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=run_id)
         runtime_state = get_runtime_state(run_id) if backup_run.status == "running" else None
+        runtime_log_output = _normalize_stream_output((runtime_state or {}).get("log_output") or "")
         return JsonResponse(
             {
                 "id": backup_run.id,
@@ -1180,7 +1185,7 @@ class BackupRunStatusView(LoginRequiredMixin, View):
                 "status_label": (runtime_state or {}).get("status_label") or backup_run.get_status_display(),
                 "summary": (runtime_state or {}).get("summary") or backup_run.summary,
                 "exit_code": (runtime_state or {}).get("exit_code", backup_run.exit_code),
-                "log_output": (runtime_state or {}).get("log_output") or backup_run.log_output or "",
+                "log_output": runtime_log_output or backup_run.log_output or "",
                 "process_pid": (runtime_state or {}).get("process_pid") or backup_run.process_pid,
                 "runner_label": (runtime_state or {}).get("runner_label") or backup_run.runner_label,
                 "launched_by": backup_run.get_launched_by_display(),
@@ -1198,6 +1203,10 @@ class BackupRunDetailView(LoginRequiredMixin, View):
     def get(self, request, run_id):
         _best_effort_reconcile_backups()
         backup_run = get_object_or_404(BackupRun.objects.select_related("job"), pk=run_id)
+        if backup_run.status == "running":
+            runtime_state = get_runtime_state(run_id)
+            if runtime_state:
+                backup_run.log_output = _normalize_stream_output(runtime_state.get("log_output") or backup_run.log_output or "")
         return render(
             request,
             self.template_name,

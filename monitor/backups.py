@@ -76,6 +76,32 @@ class StreamingCommandResult:
     termination_reason: str = ""
 
 
+def _normalize_stream_output(text):
+    return (text or "").replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _consume_stream_buffer(buffer, collected, on_output):
+    while buffer:
+        newline_index = buffer.find("\n")
+        carriage_index = buffer.find("\r")
+        delimiter_indexes = [index for index in (newline_index, carriage_index) if index != -1]
+        if not delimiter_indexes:
+            break
+        delimiter_index = min(delimiter_indexes)
+        delimiter = buffer[delimiter_index]
+        line = buffer[:delimiter_index]
+        if delimiter == "\r" and delimiter_index + 1 < len(buffer) and buffer[delimiter_index + 1] == "\n":
+            buffer = buffer[delimiter_index + 2 :]
+        else:
+            buffer = buffer[delimiter_index + 1 :]
+        cleaned = line.rstrip("\r")
+        if cleaned:
+            collected.append(cleaned)
+            if on_output:
+                on_output(cleaned)
+    return buffer
+
+
 def _runner_label():
     return socket.gethostname()
 
@@ -488,13 +514,7 @@ def _run_streaming_command(
                     continue
                 last_activity = time.monotonic()
                 buffer += chunk.decode("utf-8", errors="replace")
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    cleaned = line.rstrip("\r")
-                    if cleaned:
-                        collected.append(cleaned)
-                        if on_output:
-                            on_output(cleaned)
+                buffer = _consume_stream_buffer(buffer, collected, on_output)
 
             if process.poll() is not None and not selector.get_map():
                 exit_code = process.returncode
@@ -1167,6 +1187,7 @@ def start_background_backup(job, *, launched_by="manual"):
 def mark_stale_running_backups(snapshot_time=None):
     snapshot_time = snapshot_time or timezone.now()
     stale_before = snapshot_time - timedelta(seconds=BACKUP_STALE_AFTER_SECONDS)
+    current_runner = _runner_label()
     stale_runs = _with_db_retry(
         lambda: list(BackupRun.objects.select_related("job").filter(status="running")),
         default=[],
@@ -1184,9 +1205,12 @@ def mark_stale_running_backups(snapshot_time=None):
             except ValueError:
                 runtime_heartbeat = None
                 runtime_last_output = None
+        runtime_runner = (runtime_state or {}).get("runner_label") or backup_run.runner_label
         timestamps = [value for value in [runtime_last_output, runtime_heartbeat, backup_run.last_output_at, backup_run.heartbeat_at, backup_run.started_at] if value is not None]
         reference_time = max(timestamps) if timestamps else None
-        if backup_run.stop_requested_at and not _pid_is_alive(backup_run.process_pid):
+        same_runner = bool(runtime_runner and runtime_runner == current_runner)
+        pid_is_alive = same_runner and _pid_is_alive(backup_run.process_pid)
+        if backup_run.stop_requested_at and not pid_is_alive:
             result = BackupExecutionResult(
                 False,
                 DEFAULT_STOP_EXIT_CODE,
@@ -1206,7 +1230,7 @@ def mark_stale_running_backups(snapshot_time=None):
             finalize_backup_run(backup_run, result, finished_at=snapshot_time)
             updated.append(backup_run)
             continue
-        if reference_time is not None and reference_time < stale_before and _pid_is_alive(backup_run.process_pid):
+        if reference_time is not None and reference_time < stale_before and pid_is_alive:
             continue
         if reference_time is None or reference_time >= stale_before:
             continue

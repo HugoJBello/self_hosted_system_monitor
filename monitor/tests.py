@@ -15,7 +15,7 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .docker_runtime import _group_containers_by_family
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
@@ -1313,6 +1313,22 @@ class BackupHelpersTests(TestCase):
         )
         self.assertEqual(response.status_code, 302)
 
+    def test_stream_buffer_consumes_carriage_return_progress(self):
+        collected = []
+        buffer = "29.37K   0%    0.00kB/s    0:00:00  \r        10.94M   0%   10.41MB/s    5:04:38  \rfinal line\ntrailing"
+
+        remaining = _consume_stream_buffer(buffer, collected, None)
+
+        self.assertEqual(remaining, "trailing")
+        self.assertEqual(
+            collected,
+            [
+                "29.37K   0%    0.00kB/s    0:00:00  ",
+                "        10.94M   0%   10.41MB/s    5:04:38  ",
+                "final line",
+            ],
+        )
+
     def test_build_script_command_uses_sudo_with_password_when_configured(self):
         job = ScriptJob(
             name="APT update",
@@ -2420,8 +2436,9 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(backup_run.status, "failed")
         self.assertIn("heartbeat became stale", backup_run.log_output)
 
+    @patch("monitor.backups._runner_label", return_value="runner-a")
     @patch("monitor.backups._pid_is_alive", return_value=True)
-    def test_mark_stale_running_backups_keeps_live_worker_running(self, mock_pid_is_alive):
+    def test_mark_stale_running_backups_keeps_live_worker_running(self, mock_pid_is_alive, mock_runner_label):
         job = BackupJob.objects.create(
             name="Docs",
             source_path="/home/test/Documents",
@@ -2439,6 +2456,7 @@ class BackupHelpersTests(TestCase):
             heartbeat_at=stale_time,
             last_output_at=stale_time,
             process_pid=12345,
+            runner_label="runner-a",
             log_output="still running",
         )
 
@@ -2449,6 +2467,40 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(backup_run.status, "running")
         self.assertNotIn("heartbeat became stale", backup_run.log_output)
         mock_pid_is_alive.assert_called_with(12345)
+        mock_runner_label.assert_called_once()
+
+    @patch("monitor.backups._runner_label", return_value="runner-b")
+    @patch("monitor.backups._pid_is_alive", return_value=True)
+    def test_mark_stale_running_backups_reconciles_runner_mismatch(self, mock_pid_is_alive, mock_runner_label):
+        job = BackupJob.objects.create(
+            name="Docs",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        stale_time = timezone.now() - timezone.timedelta(minutes=10)
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="running",
+            summary="Running",
+            started_at=stale_time,
+            heartbeat_at=stale_time,
+            last_output_at=stale_time,
+            process_pid=12345,
+            runner_label="runner-a",
+            log_output="still running",
+        )
+
+        updated = mark_stale_running_backups(stale_time + timezone.timedelta(minutes=20))
+
+        backup_run.refresh_from_db()
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(backup_run.status, "failed")
+        self.assertIn("heartbeat became stale", backup_run.log_output)
+        mock_pid_is_alive.assert_not_called()
+        mock_runner_label.assert_called_once()
 
     def test_periodic_heartbeat_runs_until_stopped(self):
         calls = []
