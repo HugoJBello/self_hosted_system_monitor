@@ -8,6 +8,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db import OperationalError
 from django.utils import timezone
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -15,7 +16,7 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .backups import BackupExecutionResult, StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, finalize_backup_run, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .docker_runtime import _group_containers_by_family
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
@@ -2410,6 +2411,39 @@ class BackupHelpersTests(TestCase):
             self.assertIsNotNone(backup_run.stop_requested_at)
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "backup_runtime", f"run_{backup_run.id}.stop")))
 
+    @patch("monitor.backups.time.sleep", return_value=None)
+    @patch("monitor.backups._remove_runtime_files")
+    @patch("monitor.backups._write_runtime_state")
+    def test_finalize_backup_run_falls_back_to_direct_update(
+        self,
+        mock_write_runtime_state,
+        mock_remove_runtime_files,
+        mock_sleep,
+    ):
+        job = BackupJob.objects.create(
+            name="Docs",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        backup_run = BackupRun.objects.create(job=job, status="running", summary="Running", log_output="still running")
+        result = BackupExecutionResult(True, 0, "success", "Backup finished", "done", command_line="rsync /src /dst")
+
+        with patch.object(BackupRun, "save", side_effect=OperationalError("database is locked")) as mock_save:
+            finalize_backup_run(backup_run, result, finished_at=timezone.now())
+
+        backup_run.refresh_from_db()
+        self.assertEqual(backup_run.status, "success")
+        self.assertEqual(backup_run.exit_code, 0)
+        self.assertEqual(backup_run.summary, "Backup finished")
+        self.assertEqual(backup_run.log_output, "done")
+        mock_write_runtime_state.assert_called_once()
+        mock_remove_runtime_files.assert_called_once()
+        self.assertTrue(mock_save.called)
+        self.assertTrue(mock_sleep.called)
+
     def test_mark_stale_running_backups_fails_orphaned_run(self):
         job = BackupJob.objects.create(
             name="Docs",
@@ -2437,8 +2471,9 @@ class BackupHelpersTests(TestCase):
         self.assertIn("heartbeat became stale", backup_run.log_output)
 
     @patch("monitor.backups._runner_label", return_value="runner-a")
+    @patch("monitor.backups._process_cmdline", return_value="/usr/local/bin/python manage.py run_backup_job 7 --run-id 123")
     @patch("monitor.backups._pid_is_alive", return_value=True)
-    def test_mark_stale_running_backups_keeps_live_worker_running(self, mock_pid_is_alive, mock_runner_label):
+    def test_mark_stale_running_backups_keeps_live_worker_running(self, mock_pid_is_alive, mock_process_cmdline, mock_runner_label):
         job = BackupJob.objects.create(
             name="Docs",
             source_path="/home/test/Documents",
@@ -2459,6 +2494,7 @@ class BackupHelpersTests(TestCase):
             runner_label="runner-a",
             log_output="still running",
         )
+        mock_process_cmdline.return_value = f"/usr/local/bin/python manage.py run_backup_job {job.id} --run-id {backup_run.id}"
 
         updated = mark_stale_running_backups(stale_time + timezone.timedelta(minutes=20))
 
@@ -2467,11 +2503,13 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(backup_run.status, "running")
         self.assertNotIn("heartbeat became stale", backup_run.log_output)
         mock_pid_is_alive.assert_called_with(12345)
+        mock_process_cmdline.assert_called_with(12345)
         mock_runner_label.assert_called_once()
 
     @patch("monitor.backups._runner_label", return_value="runner-b")
+    @patch("monitor.backups._process_cmdline", return_value="/usr/local/bin/python manage.py run_backup_job 7 --run-id 123")
     @patch("monitor.backups._pid_is_alive", return_value=True)
-    def test_mark_stale_running_backups_reconciles_runner_mismatch(self, mock_pid_is_alive, mock_runner_label):
+    def test_mark_stale_running_backups_reconciles_runner_mismatch(self, mock_pid_is_alive, mock_process_cmdline, mock_runner_label):
         job = BackupJob.objects.create(
             name="Docs",
             source_path="/home/test/Documents",
@@ -2500,6 +2538,36 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(backup_run.status, "failed")
         self.assertIn("heartbeat became stale", backup_run.log_output)
         mock_pid_is_alive.assert_not_called()
+        mock_process_cmdline.assert_not_called()
+        mock_runner_label.assert_called_once()
+
+    @patch("monitor.backups._runner_label", return_value="runner-a")
+    @patch("monitor.backups._process_cmdline", return_value="/usr/bin/sleep 9999")
+    @patch("monitor.backups._pid_is_alive", return_value=True)
+    def test_request_backup_run_stop_cancels_when_pid_reused(self, mock_pid_is_alive, mock_process_cmdline, mock_runner_label):
+        job = BackupJob.objects.create(
+            name="Docs",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+        )
+        backup_run = BackupRun.objects.create(
+            job=job,
+            status="running",
+            summary="Running",
+            process_pid=12345,
+            runner_label="runner-a",
+            log_output="still running",
+        )
+
+        self.assertTrue(request_backup_run_stop(backup_run))
+        backup_run.refresh_from_db()
+        self.assertEqual(backup_run.status, "cancelled")
+        self.assertIsNotNone(backup_run.finished_at)
+        mock_pid_is_alive.assert_called_with(12345)
+        mock_process_cmdline.assert_called_with(12345)
         mock_runner_label.assert_called_once()
 
     def test_periodic_heartbeat_runs_until_stopped(self):
@@ -2556,6 +2624,34 @@ class BackupHelpersTests(TestCase):
 
         self.assertTrue(result.ok)
         self.assertEqual(result.status, "success")
+        self.assertEqual(mock_run_streaming_command.call_args.kwargs["timeout_seconds"], 7200)
+        self.assertEqual(mock_run_streaming_command.call_args.kwargs["idle_timeout_seconds"], None)
+
+    @patch("monitor.backups._command_env", return_value={})
+    @patch("monitor.backups._run_streaming_command")
+    @patch("monitor.backups._rsync_command", return_value=["rsync", "/src/", "host:/dst/"])
+    @patch("monitor.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
+    def test_local_rsync_transfer_has_no_hard_timeout(
+        self,
+        mock_ensure_local_source,
+        mock_rsync_command,
+        mock_run_streaming_command,
+        mock_command_env,
+    ):
+        job = BackupJob.objects.create(
+            name="USB clone",
+            backup_type="local",
+            source_path="/home/test/Documents",
+            local_dest_path="/media/usb/docs",
+            schedule_minutes=30,
+        )
+        mock_run_streaming_command.return_value = StreamingCommandResult(0, "", "")
+
+        result = run_backup_job(job)
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.status, "success")
+        self.assertIsNone(mock_run_streaming_command.call_args.kwargs["timeout_seconds"])
         self.assertEqual(mock_run_streaming_command.call_args.kwargs["idle_timeout_seconds"], None)
 
 

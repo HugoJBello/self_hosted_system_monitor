@@ -122,6 +122,37 @@ def _pid_is_alive(pid):
     return True
 
 
+def _process_cmdline(pid):
+    if not pid:
+        return ""
+    try:
+        raw = Path(f"/proc/{int(pid)}/cmdline").read_bytes()
+    except OSError:
+        return ""
+    return raw.replace(b"\x00", b" ").decode("utf-8", errors="replace").strip()
+
+
+def _backup_worker_matches_run(backup_run, *, current_runner=None):
+    current_runner = current_runner or _runner_label()
+    if (backup_run.runner_label or "") != current_runner:
+        return False
+    if not _pid_is_alive(backup_run.process_pid):
+        return False
+    cmdline = _process_cmdline(backup_run.process_pid)
+    if not cmdline:
+        return False
+    return all(
+        fragment in cmdline
+        for fragment in (
+            "manage.py",
+            "run_backup_job",
+            str(backup_run.job_id),
+            "--run-id",
+            str(backup_run.id),
+        )
+    )
+
+
 def _with_db_retry(action, *, default=None, label="database operation"):
     for attempt in range(SQLITE_LOCK_RETRY_ATTEMPTS):
         try:
@@ -811,14 +842,17 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
 
     rsync_cmd = _with_low_priority(_rsync_command(job, source_path, password, use_key_auth))
     push_log(f"Starting rsync transfer with command: {_format_command(rsync_cmd)}")
+    transfer_timeout_seconds = None if job.is_local else _job_timeout_seconds(job)
+    if job.is_local:
+        push_log("Local rsync transfer runs without a hard timeout; it is limited by stop requests and process health.")
     command_result = _run_streaming_command(
         rsync_cmd,
         env=_command_env(job),
         on_output=push_log,
-        timeout_seconds=_job_timeout_seconds(job),
+        timeout_seconds=transfer_timeout_seconds,
         # Rsync can legitimately stay quiet for long periods while a large file is
         # transferred over SSH. Using an output-based idle timeout here produces
-        # false failures, so only the hard timeout applies to the main transfer.
+        # false failures, so only the hard timeout applies to non-local transfers.
         idle_timeout_seconds=None,
         heartbeat_callback=heartbeat_callback,
         should_stop=should_stop,
@@ -970,7 +1004,7 @@ def request_backup_run_stop(backup_run):
         label="request backup stop",
     )
     _request_runtime_stop(backup_run.id)
-    if not backup_run.process_pid:
+    if not _backup_worker_matches_run(backup_run):
         result = BackupExecutionResult(
             False,
             DEFAULT_STOP_EXIT_CODE,
@@ -1025,21 +1059,39 @@ def finalize_backup_run(backup_run, result, *, finished_at=None):
     now = finished_at or timezone.now()
     backup_run.finished_at = now
     backup_run.heartbeat_at = now
-    _with_db_retry(
-        lambda: backup_run.save(
-            update_fields=[
-                "status",
-                "exit_code",
-                "summary",
-                "log_output",
-                "created_remote_dir",
-                "command_line",
-                "finished_at",
-                "heartbeat_at",
-            ]
-        ),
+    update_fields = [
+        "status",
+        "exit_code",
+        "summary",
+        "log_output",
+        "created_remote_dir",
+        "command_line",
+        "finished_at",
+        "heartbeat_at",
+    ]
+    persisted = _with_db_retry(
+        lambda: (backup_run.save(update_fields=update_fields) or True),
+        default=False,
         label="finalize backup run",
     )
+    if not persisted:
+        logger.warning(
+            "Falling back to direct update for backup run %s after repeated SQLite lock contention.",
+            backup_run.id,
+        )
+        _with_db_retry(
+            lambda: BackupRun.objects.filter(pk=backup_run.pk).update(
+                status=backup_run.status,
+                exit_code=backup_run.exit_code,
+                summary=backup_run.summary,
+                log_output=backup_run.log_output,
+                created_remote_dir=backup_run.created_remote_dir,
+                command_line=backup_run.command_line,
+                finished_at=backup_run.finished_at,
+                heartbeat_at=backup_run.heartbeat_at,
+            ),
+            label="finalize backup run fallback",
+        )
     _write_runtime_state(backup_run.id, _runtime_state_from_backup_run(backup_run))
     _remove_runtime_files(backup_run.id)
     return backup_run
@@ -1208,9 +1260,8 @@ def mark_stale_running_backups(snapshot_time=None):
         runtime_runner = (runtime_state or {}).get("runner_label") or backup_run.runner_label
         timestamps = [value for value in [runtime_last_output, runtime_heartbeat, backup_run.last_output_at, backup_run.heartbeat_at, backup_run.started_at] if value is not None]
         reference_time = max(timestamps) if timestamps else None
-        same_runner = bool(runtime_runner and runtime_runner == current_runner)
-        pid_is_alive = same_runner and _pid_is_alive(backup_run.process_pid)
-        if backup_run.stop_requested_at and not pid_is_alive:
+        worker_matches = _backup_worker_matches_run(backup_run, current_runner=current_runner) if runtime_runner else False
+        if backup_run.stop_requested_at and not worker_matches:
             result = BackupExecutionResult(
                 False,
                 DEFAULT_STOP_EXIT_CODE,
@@ -1230,7 +1281,7 @@ def mark_stale_running_backups(snapshot_time=None):
             finalize_backup_run(backup_run, result, finished_at=snapshot_time)
             updated.append(backup_run)
             continue
-        if reference_time is not None and reference_time < stale_before and pid_is_alive:
+        if reference_time is not None and reference_time < stale_before and worker_matches:
             continue
         if reference_time is None or reference_time >= stale_before:
             continue
