@@ -68,11 +68,11 @@
 </div>
 
 <div class="row g-4">
-  <div class="col-12 col-xl-5">
-    <section class="panel-card p-4 h-100">
+  <div class="col-12">
+    <section class="panel-card p-4 backup-run-config-card">
       <p class="eyebrow mb-2">Job configuration</p>
       <h2 class="h4 mb-4">Source and destination</h2>
-      <div class="stat-stack">
+      <div class="stat-stack backup-run-config-grid">
         <div class="mini-stat">
           <span class="label">Source</span>
           <strong>{{ backup_run.job.source_path }}</strong>
@@ -112,17 +112,17 @@
       </div>
     </section>
   </div>
-  <div class="col-12 col-xl-7">
-    <section class="panel-card p-4 h-100">
+  <div class="col-12">
+    <section class="panel-card p-4 backup-run-log-card">
       <p class="eyebrow mb-2">Execution log</p>
       <h2 class="h4 mb-4">Captured command output</h2>
       {% if backup_run.command_line %}
-        <div class="mb-3">
-          <div class="small text-secondary mb-1">Command</div>
-          <pre class="command-modal-block mb-0" data-run-command>{{ backup_run.command_line }}</pre>
+        <div class="script-run-command-strip mb-3">
+          <span>Command</span>
+          <code data-run-command>{{ backup_run.command_line }}</code>
         </div>
       {% endif %}
-      <pre class="command-modal-block mb-0" data-run-log>{{ backup_run.log_output|default:"No log output recorded." }}</pre>
+      <pre class="command-modal-block backup-run-output-log mb-0" data-run-log>{{ backup_run.log_output|default:"No log output recorded." }}</pre>
     </section>
   </div>
 </div>

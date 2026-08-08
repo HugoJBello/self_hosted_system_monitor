@@ -374,6 +374,7 @@ class ScriptJob(models.Model):
     scheduled_for = models.DateTimeField(blank=True, null=True)
     working_directory = models.CharField(max_length=500, blank=True, default="")
     script_body = models.TextField(default="")
+    script_arguments = models.JSONField(default=dict, blank=True)
     run_as_sudo = models.BooleanField(default=False)
     sudo_password = models.CharField(max_length=255, blank=True, default="")
     run_timeout_seconds = models.PositiveIntegerField(
@@ -436,6 +437,41 @@ class ScriptJob(models.Model):
             if stripped:
                 return stripped[:120]
         return "(empty script)"
+
+    @property
+    def normalized_script_arguments(self):
+        payload = self.script_arguments if isinstance(self.script_arguments, dict) else {}
+        positionals = []
+        flags = []
+        for item in payload.get("positionals", []):
+            if not isinstance(item, dict):
+                continue
+            value = str(item.get("value", ""))
+            if value:
+                positionals.append({"value": value})
+        for item in payload.get("flags", []):
+            if not isinstance(item, dict):
+                continue
+            flag = str(item.get("flag", ""))
+            value = str(item.get("value", ""))
+            if flag:
+                flags.append({"flag": flag, "value": value})
+        return {"positionals": positionals, "flags": flags}
+
+    @property
+    def script_argument_parts(self):
+        payload = self.normalized_script_arguments
+        parts = [item["value"] for item in payload["positionals"]]
+        for item in payload["flags"]:
+            parts.append(item["flag"])
+            if item["value"]:
+                parts.append(item["value"])
+        return parts
+
+    @property
+    def script_arguments_count(self):
+        payload = self.normalized_script_arguments
+        return len(payload["positionals"]) + len(payload["flags"])
 
     def save(self, *args, **kwargs):
         if not self.enabled:

@@ -88,6 +88,7 @@
         <div class="backup-job-metrics">
           <span><i class="bi bi-clock-history"></i> {% if job.is_manual %}manual{% elif job.is_one_off %}one-off{% else %}{{ job.schedule_label|lower }}{% endif %}</span>
           <span><i class="bi bi-shield-lock"></i> {% if job.run_as_sudo %}sudo{% else %}user{% endif %}</span>
+          <span><i class="bi bi-input-cursor-text"></i> {{ job.script_arguments_count }} params</span>
           <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds }}s hard</span>
           <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds }}s idle</span>
         </div>
@@ -261,12 +262,33 @@
                 <div class="mini-stat"><span class="label">Mode</span><strong>{% if job.is_manual %}Manual only{% elif job.is_one_off %}One-off{% else %}{{ job.schedule_label }}{% endif %}</strong></div>
                 <div class="mini-stat"><span class="label">Working directory</span><strong>{{ job.working_directory|default:"/" }}</strong></div>
                 <div class="mini-stat"><span class="label">Execution</span><strong>{% if job.run_as_sudo %}sudo{% else %}Current service user{% endif %}</strong></div>
+                <div class="mini-stat"><span class="label">Parameters</span><strong>{{ job.script_arguments_count }}</strong></div>
                 <div class="mini-stat"><span class="label">Next run</span><strong>{% if job.next_run_at %}<span data-local-datetime="{{ job.next_run_at|date:'c' }}" data-local-style="datetime-short">{{ job.next_run_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong></div>
               </div>
             </div>
             <div class="col-12 col-xl-8">
               <div class="small text-secondary mb-2">Bash script</div>
               <pre class="script-preview-shell"><code class="language-bash">{{ job.script_body }}</code></pre>
+              {% with args=job.normalized_script_arguments %}
+                <div class="script-argument-preview mt-3">
+                  <div>
+                    <span class="backup-job-endpoint-label">By order</span>
+                    {% for item in args.positionals %}
+                      <code>{{ forloop.counter }}: {{ item.value }}</code>
+                    {% empty %}
+                      <span class="text-secondary small">None</span>
+                    {% endfor %}
+                  </div>
+                  <div>
+                    <span class="backup-job-endpoint-label">Flags</span>
+                    {% for item in args.flags %}
+                      <code>{{ item.flag }}{% if item.value %} {{ item.value }}{% endif %}</code>
+                    {% empty %}
+                      <span class="text-secondary small">None</span>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endwith %}
             </div>
           </div>
         </div>
@@ -374,11 +396,171 @@
       tabSize: 2,
     });
     editor.setSize(null, 340);
+    textarea.scriptEditor = editor;
     scriptEditors.push(editor);
     textarea.form?.addEventListener("submit", () => {
       editor.save();
     });
   });
+
+  function parseScriptArgumentPayload(rawValue) {
+    try {
+      const payload = JSON.parse(rawValue || "{}");
+      return {
+        positionals: Array.isArray(payload.positionals) ? payload.positionals.filter((item) => item && typeof item === "object") : [],
+        flags: Array.isArray(payload.flags) ? payload.flags.filter((item) => item && typeof item === "object") : [],
+      };
+    } catch (_) {
+      return { positionals: [], flags: [] };
+    }
+  }
+
+  function compactScriptArgumentPayload(payload) {
+    return {
+      positionals: payload.positionals
+        .map((item) => ({ value: String(item.value || "").trim() }))
+        .filter((item) => item.value),
+      flags: payload.flags
+        .map((item) => ({ flag: String(item.flag || "").trim(), value: String(item.value || "").trim() }))
+        .filter((item) => item.flag || item.value),
+    };
+  }
+
+  function getScriptTextForArgumentEditor(editorElement) {
+    const scriptTextarea = editorElement.closest("[data-script-editor]")?.querySelector(".script-editor-textarea");
+    if (!scriptTextarea) return "";
+    return scriptTextarea.scriptEditor ? scriptTextarea.scriptEditor.getValue() : scriptTextarea.value;
+  }
+
+  function suggestScriptArguments(scriptText) {
+    const suggestions = { positionals: [], flags: [] };
+    const positionalIndexes = new Set();
+    const positionalPattern = /\$(\d+)|\$\{(\d+)(?::[-=?][^}]*)?\}/g;
+    let match;
+    while ((match = positionalPattern.exec(scriptText)) !== null) {
+      const index = Number(match[1] || match[2] || 0);
+      if (index > 0 && index <= 40) positionalIndexes.add(index);
+    }
+    const maxPositionalIndex = positionalIndexes.size ? Math.max(...positionalIndexes) : 0;
+    for (let index = 1; index <= maxPositionalIndex; index += 1) {
+      suggestions.positionals.push({ value: "" });
+    }
+
+    const flagNames = new Set();
+    const caseFlagPattern = /(^|[\s|;&(])(--[A-Za-z0-9][A-Za-z0-9_.:-]*|-[A-Za-z0-9])\)/g;
+    while ((match = caseFlagPattern.exec(scriptText)) !== null) {
+      flagNames.add(match[2]);
+    }
+    const getoptsPattern = /getopts\s+["']([A-Za-z0-9:]+)["']/g;
+    while ((match = getoptsPattern.exec(scriptText)) !== null) {
+      const optString = match[1] || "";
+      for (const char of optString.replace(/:/g, "")) {
+        flagNames.add(`-${char}`);
+      }
+    }
+    Array.from(flagNames).sort().forEach((flag) => {
+      suggestions.flags.push({ flag, value: "" });
+    });
+    return suggestions;
+  }
+
+  function setupScriptArgumentEditor(editorElement) {
+    const form = editorElement.closest("form");
+    const hiddenInput = form?.querySelector("[data-script-arguments-input]");
+    const positionalList = editorElement.querySelector("[data-positional-list]");
+    const flagList = editorElement.querySelector("[data-flag-list]");
+    const emptyPositionals = editorElement.querySelector("[data-empty-positionals]");
+    const emptyFlags = editorElement.querySelector("[data-empty-flags]");
+    if (!form || !hiddenInput || !positionalList || !flagList) return;
+
+    let payload = compactScriptArgumentPayload(parseScriptArgumentPayload(hiddenInput.value));
+
+    const syncHidden = () => {
+      hiddenInput.value = JSON.stringify(compactScriptArgumentPayload(payload));
+      if (emptyPositionals) emptyPositionals.classList.toggle("d-none", payload.positionals.length > 0);
+      if (emptyFlags) emptyFlags.classList.toggle("d-none", payload.flags.length > 0);
+    };
+
+    const render = () => {
+      positionalList.innerHTML = "";
+      flagList.innerHTML = "";
+
+      payload.positionals.forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = "script-argument-row";
+        row.innerHTML = `
+          <span class="script-argument-index">$${index + 1}</span>
+          <input type="text" class="form-control form-control-sm" value="" placeholder="value">
+          <button type="button" class="btn btn-outline-danger btn-sm" aria-label="Remove parameter"><i class="bi bi-x-lg"></i></button>
+        `;
+        const input = row.querySelector("input");
+        input.value = item.value || "";
+        input.addEventListener("input", () => {
+          payload.positionals[index].value = input.value;
+          syncHidden();
+        });
+        row.querySelector("button").addEventListener("click", () => {
+          payload.positionals.splice(index, 1);
+          render();
+        });
+        positionalList.appendChild(row);
+      });
+
+      payload.flags.forEach((item, index) => {
+        const row = document.createElement("div");
+        row.className = "script-argument-row script-argument-row-flag";
+        row.innerHTML = `
+          <input type="text" class="form-control form-control-sm script-argument-flag-input" value="" placeholder="-o / --option">
+          <input type="text" class="form-control form-control-sm" value="" placeholder="value">
+          <button type="button" class="btn btn-outline-danger btn-sm" aria-label="Remove flag"><i class="bi bi-x-lg"></i></button>
+        `;
+        const inputs = row.querySelectorAll("input");
+        inputs[0].value = item.flag || "";
+        inputs[1].value = item.value || "";
+        inputs[0].addEventListener("input", () => {
+          payload.flags[index].flag = inputs[0].value;
+          syncHidden();
+        });
+        inputs[1].addEventListener("input", () => {
+          payload.flags[index].value = inputs[1].value;
+          syncHidden();
+        });
+        row.querySelector("button").addEventListener("click", () => {
+          payload.flags.splice(index, 1);
+          render();
+        });
+        flagList.appendChild(row);
+      });
+      syncHidden();
+    };
+
+    editorElement.querySelector("[data-add-positional]")?.addEventListener("click", () => {
+      payload.positionals.push({ value: "" });
+      render();
+    });
+    editorElement.querySelector("[data-add-flag]")?.addEventListener("click", () => {
+      payload.flags.push({ flag: "", value: "" });
+      render();
+    });
+    editorElement.querySelector("[data-suggest-script-arguments]")?.addEventListener("click", () => {
+      const suggestions = suggestScriptArguments(getScriptTextForArgumentEditor(editorElement));
+      while (payload.positionals.length < suggestions.positionals.length) {
+        payload.positionals.push({ value: "" });
+      }
+      const currentFlags = new Set(payload.flags.map((item) => item.flag).filter(Boolean));
+      suggestions.flags.forEach((item) => {
+        if (!currentFlags.has(item.flag)) {
+          payload.flags.push(item);
+          currentFlags.add(item.flag);
+        }
+      });
+      render();
+    });
+    form.addEventListener("submit", syncHidden);
+    render();
+  }
+
+  document.querySelectorAll("[data-script-argument-editor]").forEach(setupScriptArgumentEditor);
 
   document.querySelectorAll(".modal").forEach((modalElement) => {
     modalElement.addEventListener("shown.bs.modal", () => {

@@ -16,6 +16,35 @@
       {{ form.script_body }}
       <div class="form-text">The command always runs through Bash on the host namespace. Relative paths resolve from the working directory above.</div>
     </div>
+    <div class="col-12">
+      <div class="script-argument-editor" data-script-argument-editor>
+        <div class="script-argument-header">
+          <div>
+            <div class="form-label mb-1">Script parameters</div>
+            <div class="form-text mt-0">Positional parameters become $1, $2... Flags are appended after them as separate arguments.</div>
+          </div>
+          <button type="button" class="btn btn-outline-light btn-sm" data-suggest-script-arguments><i class="bi bi-magic"></i> Suggest from script</button>
+        </div>
+        <div class="script-argument-columns">
+          <section class="script-argument-group" data-argument-group="positionals">
+            <div class="script-argument-group-title">
+              <span>By order</span>
+              <button type="button" class="btn btn-outline-light btn-sm" data-add-positional><i class="bi bi-plus-lg"></i></button>
+            </div>
+            <div class="script-argument-list" data-positional-list></div>
+            <div class="script-argument-empty" data-empty-positionals>No positional parameters.</div>
+          </section>
+          <section class="script-argument-group" data-argument-group="flags">
+            <div class="script-argument-group-title">
+              <span>Flags</span>
+              <button type="button" class="btn btn-outline-light btn-sm" data-add-flag><i class="bi bi-plus-lg"></i></button>
+            </div>
+            <div class="script-argument-list" data-flag-list></div>
+            <div class="script-argument-empty" data-empty-flags>No flag parameters.</div>
+          </section>
+        </div>
+      </div>
+    </div>
     <div class="col-md-3"><label class="form-label" for="{{ form.run_as_sudo.id_for_label }}">Run as sudo</label><div class="form-check form-switch mt-2">{{ form.run_as_sudo }}</div></div>
     <div class="col-md-5"><label class="form-label" for="{{ form.sudo_password.id_for_label }}">Sudo password</label>{{ form.sudo_password }}<div class="form-text">Leave empty if the target user has passwordless sudo.</div></div>
     <div class="col-md-2">

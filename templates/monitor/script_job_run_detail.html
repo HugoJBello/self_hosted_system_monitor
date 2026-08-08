@@ -71,9 +71,9 @@
   </div>
 </div>
 
-<div class="row g-4">
-  <div class="col-12 col-xl-5">
-    <section class="panel-card p-4 h-100">
+<div class="row g-4 align-items-stretch">
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4 h-100 script-run-balanced-card">
       <p class="eyebrow mb-2">Job configuration</p>
       <h2 class="h4 mb-4">Execution settings</h2>
       <div class="stat-stack">
@@ -87,22 +87,24 @@
       </div>
     </section>
   </div>
-  <div class="col-12 col-xl-7">
-    <section class="panel-card p-4 mb-4">
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4 h-100 script-run-balanced-card script-run-script-card">
       <p class="eyebrow mb-2">Script</p>
       <h2 class="h4 mb-4">Bash content</h2>
       <pre class="script-preview-shell"><code class="language-bash">{{ script_run.job.script_body }}</code></pre>
     </section>
-    <section class="panel-card p-4 h-100">
+  </div>
+  <div class="col-12">
+    <section class="panel-card p-4 script-run-log-card">
       <p class="eyebrow mb-2">Execution log</p>
       <h2 class="h4 mb-4">Captured command output</h2>
       {% if script_run.command_line %}
-        <div class="mb-3">
-          <div class="small text-secondary mb-1">Command</div>
-          <pre class="command-modal-block mb-0" data-run-command>{{ script_run.command_line }}</pre>
+        <div class="script-run-command-strip mb-3">
+          <span>Command</span>
+          <code data-run-command>{{ script_run.command_line }}</code>
         </div>
       {% endif %}
-      <pre class="command-modal-block mb-0" data-run-log>{{ script_run.log_output|default:"No log output recorded." }}</pre>
+      <pre class="command-modal-block script-run-output-log mb-0" data-run-log>{{ script_run.log_output|default:"No log output recorded." }}</pre>
     </section>
   </div>
 </div>

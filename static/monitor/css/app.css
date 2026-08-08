@@ -571,12 +571,19 @@ body.app-shell {
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
+  min-width: 0;
 }
 
 .mini-stat .label {
   display: block;
   color: var(--muted);
   margin-bottom: 0.35rem;
+}
+
+.mini-stat strong {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .config-section {
@@ -1492,6 +1499,177 @@ body.app-shell {
   white-space: pre;
 }
 
+.script-run-script-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.script-run-script-card .script-preview-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.script-run-log-card {
+  position: relative;
+  z-index: 1;
+}
+
+.script-run-command-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.75rem;
+  background: rgba(5, 10, 17, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.script-run-command-strip span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.7;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.script-run-command-strip code {
+  display: block;
+  min-width: 0;
+  max-height: 6.5rem;
+  overflow: auto;
+  color: #dfe8f1;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.script-run-output-log {
+  background: rgba(5, 10, 17, 0.94);
+  border-color: rgba(255, 255, 255, 0.08);
+  max-height: min(62vh, 44rem);
+  overflow: auto;
+}
+
+.backup-run-config-card,
+.backup-run-log-card {
+  position: relative;
+  z-index: 1;
+}
+
+.backup-run-config-grid {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  align-items: stretch;
+}
+
+.backup-run-output-log {
+  background: rgba(5, 10, 17, 0.94);
+  border-color: rgba(255, 255, 255, 0.08);
+  max-height: min(64vh, 46rem);
+  overflow: auto;
+}
+
+.script-argument-editor {
+  padding: 0.95rem;
+  border-radius: 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(5, 10, 17, 0.38);
+}
+
+.script-argument-header,
+.script-argument-group-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.script-argument-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-top: 0.9rem;
+}
+
+.script-argument-group {
+  min-width: 0;
+  padding: 0.8rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.script-argument-group-title span {
+  color: #edf2f7;
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.script-argument-list {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+}
+
+.script-argument-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.script-argument-row-flag {
+  grid-template-columns: minmax(6rem, 0.7fr) minmax(0, 1fr) auto;
+}
+
+.script-argument-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.25rem;
+  min-height: 1.95rem;
+  padding: 0 0.45rem;
+  border-radius: 0.55rem;
+  color: #dff6ff;
+  background: rgba(93, 198, 255, 0.11);
+  border: 1px solid rgba(93, 198, 255, 0.2);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.script-argument-empty {
+  margin-top: 0.7rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.script-argument-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.script-argument-preview > div {
+  min-width: 0;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.script-argument-preview code {
+  display: inline-block;
+  max-width: 100%;
+  margin: 0 0.35rem 0.35rem 0;
+  padding: 0.25rem 0.45rem;
+  border-radius: 0.5rem;
+  color: #dff6ff;
+  background: rgba(93, 198, 255, 0.1);
+  overflow-wrap: anywhere;
+}
+
 .CodeMirror {
   height: auto;
   border-radius: 0.9rem;
@@ -1503,6 +1681,16 @@ body.app-shell {
 .CodeMirror-gutters {
   background: rgba(255, 255, 255, 0.04);
   border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+@media (min-width: 1200px) {
+  .script-run-balanced-card {
+    min-height: 31rem;
+  }
+
+  .script-run-script-card .script-preview-shell {
+    max-height: 22.5rem;
+  }
 }
 
 @media (max-width: 768px) {
@@ -1659,6 +1847,20 @@ body.app-shell {
 
   .script-preview-shell {
     padding: 0.75rem;
+  }
+
+  .script-argument-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .script-argument-columns,
+  .script-argument-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .script-argument-row-flag {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   }
 }
 

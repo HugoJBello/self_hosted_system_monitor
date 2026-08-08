@@ -1,3 +1,6 @@
+import json
+import re
+
 from django import forms
 from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm, UserCreationForm
@@ -517,6 +520,8 @@ class BackupJobForm(forms.ModelForm):
 
 
 class ScriptJobForm(forms.ModelForm):
+    script_arguments = forms.CharField(required=False, widget=forms.HiddenInput(attrs={"data-script-arguments-input": "1"}))
+
     class Meta:
         model = ScriptJob
         fields = (
@@ -529,6 +534,7 @@ class ScriptJobForm(forms.ModelForm):
             "scheduled_for",
             "working_directory",
             "script_body",
+            "script_arguments",
             "run_as_sudo",
             "sudo_password",
             "run_timeout_seconds",
@@ -559,6 +565,10 @@ class ScriptJobForm(forms.ModelForm):
             "idle_timeout_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 30, "max": 86400, "step": 30}),
         }
 
+    ARGUMENT_FLAG_RE = re.compile(r"^-{1,2}[A-Za-z0-9][A-Za-z0-9_.:-]*$")
+    MAX_ARGUMENTS_PER_GROUP = 40
+    MAX_ARGUMENT_LENGTH = 500
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["scheduled_for"].required = False
@@ -577,6 +587,10 @@ class ScriptJobForm(forms.ModelForm):
             ("days", "Days"),
             ("weeks", "Weeks"),
         ]
+        if self.instance.pk:
+            self.initial.setdefault("script_arguments", json.dumps(self.instance.normalized_script_arguments, ensure_ascii=True))
+        else:
+            self.initial.setdefault("script_arguments", json.dumps({"positionals": [], "flags": []}, ensure_ascii=True))
         if self.instance.pk and self.instance.scheduled_for:
             local_value = timezone.localtime(self.instance.scheduled_for)
             self.initial.setdefault("scheduled_for", local_value.strftime("%Y-%m-%dT%H:%M"))
@@ -600,6 +614,49 @@ class ScriptJobForm(forms.ModelForm):
         if self.instance.pk:
             return self.instance.sudo_password
         return value
+
+    def clean_script_arguments(self):
+        raw_value = (self.cleaned_data.get("script_arguments") or "").strip()
+        if not raw_value:
+            return {"positionals": [], "flags": []}
+        try:
+            payload = json.loads(raw_value)
+        except json.JSONDecodeError as exc:
+            raise forms.ValidationError("Script parameters must be valid JSON.") from exc
+        if not isinstance(payload, dict):
+            raise forms.ValidationError("Script parameters must use the expected object format.")
+
+        normalized = {"positionals": [], "flags": []}
+        for group_name in ("positionals", "flags"):
+            items = payload.get(group_name, [])
+            if not isinstance(items, list):
+                raise forms.ValidationError("Script parameters must use valid positional and flag lists.")
+            if len(items) > self.MAX_ARGUMENTS_PER_GROUP:
+                raise forms.ValidationError("Too many script parameters.")
+
+        for index, item in enumerate(payload.get("positionals", []), start=1):
+            if not isinstance(item, dict):
+                raise forms.ValidationError("Every positional parameter must be an object.")
+            value = str(item.get("value", "")).strip()
+            if not value:
+                continue
+            if "\x00" in value or len(value) > self.MAX_ARGUMENT_LENGTH:
+                raise forms.ValidationError(f"Positional parameter {index} has an invalid value.")
+            normalized["positionals"].append({"value": value})
+
+        for index, item in enumerate(payload.get("flags", []), start=1):
+            if not isinstance(item, dict):
+                raise forms.ValidationError("Every flag parameter must be an object.")
+            flag = str(item.get("flag", "")).strip()
+            value = str(item.get("value", "")).strip()
+            if not flag and not value:
+                continue
+            if not self.ARGUMENT_FLAG_RE.match(flag):
+                raise forms.ValidationError(f"Flag parameter {index} must start with - or -- and use a single flag token.")
+            if "\x00" in value or len(value) > self.MAX_ARGUMENT_LENGTH:
+                raise forms.ValidationError(f"Flag parameter {index} has an invalid value.")
+            normalized["flags"].append({"flag": flag, "value": value})
+        return normalized
 
     def clean_scheduled_for(self):
         value = self.cleaned_data.get("scheduled_for")
@@ -633,3 +690,11 @@ class ScriptJobForm(forms.ModelForm):
             self.add_error("idle_timeout_seconds", "Idle timeout must be lower than the hard timeout.")
 
         return cleaned_data
+
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        instance.script_arguments = self.cleaned_data.get("script_arguments") or {"positionals": [], "flags": []}
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance

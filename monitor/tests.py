@@ -18,6 +18,7 @@ from unittest.mock import patch
 from .alerting import ensure_default_alert_rules, evaluate_alerts
 from .backups import BackupExecutionResult, StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, finalize_backup_run, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .docker_runtime import _group_containers_by_family
+from .forms import ScriptJobForm
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .reporting import generate_report_for_rule
@@ -1418,6 +1419,10 @@ class BackupHelpersTests(TestCase):
             schedule_minutes=30,
             script_body="apt-get update",
             working_directory="/root",
+            script_arguments={
+                "positionals": [{"value": "stable"}],
+                "flags": [{"flag": "--assume-yes", "value": ""}, {"flag": "-o", "value": "Debug::NoLocking=1"}],
+            },
             run_as_sudo=True,
             sudo_password="secret",
         )
@@ -1426,8 +1431,77 @@ class BackupHelpersTests(TestCase):
         self.assertIn("sudo", command)
         self.assertIn("-S", command)
         self.assertEqual(stdin_text, "secret\n")
-        self.assertEqual(command[-2], "-lc")
-        self.assertIn("cd /root && apt-get update", command[-1])
+        bash_index = command.index("/bin/bash")
+        self.assertEqual(command[bash_index:bash_index + 2], ["/bin/bash", "-lc"])
+        self.assertIn("cd /root && apt-get update", command[bash_index + 2])
+        self.assertEqual(command[bash_index + 3:], ["script-job", "stable", "--assume-yes", "-o", "Debug::NoLocking=1"])
+
+    def test_script_job_arguments_are_added_after_bash_command_name(self):
+        job = ScriptJob(
+            name="Arguments",
+            schedule_mode="manual",
+            script_body='printf "%s" "$1"',
+            script_arguments={
+                "positionals": [{"value": "first value"}],
+                "flags": [{"flag": "--mode", "value": "fast"}],
+            },
+        )
+
+        command, stdin_text = _build_script_command(job)
+
+        self.assertIsNone(stdin_text)
+        self.assertEqual(command[-5:], ['printf "%s" "$1"', "script-job", "first value", "--mode", "fast"])
+
+    def test_script_job_form_normalizes_script_arguments(self):
+        form = ScriptJobForm(
+            data={
+                "name": "Arguments",
+                "description": "",
+                "enabled": "on",
+                "schedule_mode": "manual",
+                "schedule_minutes": "5",
+                "schedule_unit": "days",
+                "scheduled_for": "",
+                "working_directory": "",
+                "script_body": 'echo "$1"',
+                "script_arguments": json.dumps(
+                    {
+                        "positionals": [{"value": "  alpha  "}, {"value": ""}],
+                        "flags": [{"flag": " --mode ", "value": " fast "}],
+                    }
+                ),
+                "run_timeout_seconds": "120",
+                "idle_timeout_seconds": "60",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        job = form.save(commit=False)
+        self.assertEqual(
+            job.script_arguments,
+            {"positionals": [{"value": "alpha"}], "flags": [{"flag": "--mode", "value": "fast"}]},
+        )
+
+    def test_script_job_form_rejects_invalid_flag_parameter(self):
+        form = ScriptJobForm(
+            data={
+                "name": "Arguments",
+                "description": "",
+                "enabled": "on",
+                "schedule_mode": "manual",
+                "schedule_minutes": "5",
+                "schedule_unit": "days",
+                "scheduled_for": "",
+                "working_directory": "",
+                "script_body": "echo ok",
+                "script_arguments": json.dumps({"positionals": [], "flags": [{"flag": "mode with space", "value": "fast"}]}),
+                "run_timeout_seconds": "120",
+                "idle_timeout_seconds": "60",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("script_arguments", form.errors)
 
     @patch("monitor.script_jobs.host_namespace_prefix", return_value=["nsenter", "--target", "1"])
     @patch("monitor.script_jobs._run_streaming_command")

@@ -278,15 +278,17 @@ def _build_script_command(job):
     if job.working_directory:
         bash_command = f"cd {shlex.quote(job.working_directory)} && {bash_command}"
     command = [*host_namespace_prefix()]
+    script_arguments = list(job.script_argument_parts)
+    bash_argument_tail = ["script-job", *script_arguments]
     if job.run_as_sudo:
         if (job.sudo_password or "").strip():
-            command.extend(["sudo", "-S", "-p", "", "/bin/bash", "-lc", bash_command])
+            command.extend(["sudo", "-S", "-p", "", "/bin/bash", "-lc", bash_command, *bash_argument_tail])
             stdin_text = f"{job.sudo_password}\n"
         else:
-            command.extend(["sudo", "-n", "/bin/bash", "-lc", bash_command])
+            command.extend(["sudo", "-n", "/bin/bash", "-lc", bash_command, *bash_argument_tail])
             stdin_text = None
     else:
-        command.extend(["/bin/bash", "-lc", bash_command])
+        command.extend(["/bin/bash", "-lc", bash_command, *bash_argument_tail])
         stdin_text = None
     return command, stdin_text
 
@@ -307,6 +309,7 @@ def run_script_job(job, *, log_callback=None, heartbeat_callback=None, should_st
         f"Run as sudo: {'yes' if job.run_as_sudo else 'no'}",
         f"Configured timeout: {job.run_timeout_seconds}s",
         f"Configured idle timeout: {job.idle_timeout_seconds}s",
+        f"Script arguments: {_format_command(job.script_argument_parts) if job.script_argument_parts else '(none)'}",
         f"Launch command: {_format_command(command_parts)}",
         "Script content:",
         job.script_body,
