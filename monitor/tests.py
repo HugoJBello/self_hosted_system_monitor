@@ -1559,6 +1559,50 @@ class BackupHelpersTests(TestCase):
             {"positionals": [{"value": "alpha"}], "flags": [{"flag": "--mode", "value": "fast"}]},
         )
 
+    def test_script_job_form_allows_recurring_schedule_under_five_days(self):
+        form = ScriptJobForm(
+            data={
+                "name": "Three day job",
+                "description": "",
+                "enabled": "on",
+                "schedule_mode": "interval",
+                "schedule_minutes": "3",
+                "schedule_unit": "days",
+                "scheduled_for": "",
+                "working_directory": "",
+                "script_body": "echo ok",
+                "script_arguments": '{"positionals":[],"flags":[]}',
+                "run_timeout_seconds": "120",
+                "idle_timeout_seconds": "60",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        job = form.save(commit=False)
+        self.assertEqual(job.schedule_minutes, 3)
+        self.assertEqual(job.schedule_unit, "days")
+
+    def test_script_job_form_rejects_recurring_schedule_under_five_minutes(self):
+        form = ScriptJobForm(
+            data={
+                "name": "Three minute job",
+                "description": "",
+                "enabled": "on",
+                "schedule_mode": "interval",
+                "schedule_minutes": "3",
+                "schedule_unit": "minutes",
+                "scheduled_for": "",
+                "working_directory": "",
+                "script_body": "echo ok",
+                "script_arguments": '{"positionals":[],"flags":[]}',
+                "run_timeout_seconds": "120",
+                "idle_timeout_seconds": "60",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("Recurring jobs need at least 5 minute.", form.errors["schedule_minutes"])
+
     def test_script_job_form_rejects_invalid_flag_parameter(self):
         form = ScriptJobForm(
             data={

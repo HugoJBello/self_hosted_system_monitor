@@ -368,7 +368,7 @@ class ScriptJob(models.Model):
     schedule_mode = models.CharField(max_length=16, choices=SCHEDULE_MODE_CHOICES, default="interval")
     schedule_minutes = models.PositiveIntegerField(
         default=60,
-        validators=[MinValueValidator(5), MaxValueValidator(60 * 24 * 30)],
+        validators=[MinValueValidator(1), MaxValueValidator(60 * 24 * 30)],
     )
     schedule_unit = models.CharField(max_length=16, choices=SCHEDULE_UNIT_CHOICES, default="minutes")
     scheduled_for = models.DateTimeField(blank=True, null=True)
