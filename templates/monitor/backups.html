@@ -59,8 +59,8 @@
             </div>
           </div>
           <div class="backup-job-next text-lg-end">
-            <div class="small text-secondary">Every</div>
-            <strong>{{ job.schedule_minutes }}m</strong>
+            <div class="small text-secondary">Schedule</div>
+            <strong>{{ job.schedule_label }}</strong>
           </div>
         </div>
 
@@ -264,7 +264,8 @@
                   <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
                 </div>
               </div>
-              <div class="col-md-3"><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
+              <div class="col-md-3"><label class="form-label" for="{{ form.schedule_mode.id_for_label }}">Schedule mode</label>{{ form.schedule_mode }}</div>
+              <div class="col-md-3" data-backup-interval-fields><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
               <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
               <div class="col-12" data-local-fields><label class="form-label" for="{{ form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button></div></div>
               <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.verify_mounted_device.id_for_label }}">Verify mounted device</label><div class="form-check form-switch mt-2">{{ form.verify_mounted_device }}</div></div>
@@ -318,7 +319,8 @@
               <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.password_file_path.id_for_label }}">Password file on host</label>{{ form.password_file_path }}</div>
               <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.public_key_path.id_for_label }}">Public key path on host</label>{{ form.public_key_path }}</div>
               <div class="col-12"><label class="form-label" for="{{ form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ form.exclude_patterns }}</div>
-              <div class="col-12"><div class="form-text">This job will not launch a second overlapping run of itself. Different backup jobs can still run in parallel.</div></div>
+              <div class="col-12" data-backup-manual-fields><div class="form-text">Manual backup jobs run only when you click <strong>Run now</strong>.</div></div>
+              <div class="col-12" data-backup-scheduled-fields><div class="form-text">This job will not launch a second overlapping run of itself. Different backup jobs can still run in parallel.</div></div>
             </div>
 
             {% if form.errors %}
@@ -362,7 +364,8 @@
                 <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.source_path.id_for_label }}">Browse</button>
               </div>
             </div>
-            <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
+            <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_mode.id_for_label }}">Schedule mode</label>{{ create_form.schedule_mode }}</div>
+            <div class="col-md-3" data-backup-interval-fields><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
             <div class="col-12"><label class="form-label" for="{{ create_form.description.id_for_label }}">Description</label>{{ create_form.description }}</div>
             <div class="col-12" data-local-fields><label class="form-label" for="{{ create_form.local_dest_path.id_for_label }}">Destination folder</label><div class="input-group flex-wrap backup-source-group">{{ create_form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.local_dest_path.id_for_label }}">Browse</button></div></div>
             <div class="col-md-3" data-local-fields><label class="form-label" for="{{ create_form.verify_mounted_device.id_for_label }}">Verify mounted device</label><div class="form-check form-switch mt-2">{{ create_form.verify_mounted_device }}</div></div>
@@ -416,7 +419,8 @@
             <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ create_form.password_file_path.id_for_label }}">Password file on host</label>{{ create_form.password_file_path }}</div>
             <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ create_form.public_key_path.id_for_label }}">Public key path on host</label>{{ create_form.public_key_path }}</div>
             <div class="col-12"><label class="form-label" for="{{ create_form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ create_form.exclude_patterns }}</div>
-            <div class="col-12"><div class="form-text">A backup job never overlaps with itself. If its schedule fires again while that same job is still running, the scheduler waits until the current run has finished before considering the next slot.</div></div>
+            <div class="col-12" data-backup-manual-fields><div class="form-text">Manual backup jobs run only when you click <strong>Run now</strong>.</div></div>
+            <div class="col-12" data-backup-scheduled-fields><div class="form-text">A backup job never overlaps with itself. If its schedule fires again while that same job is still running, the scheduler waits until the current run has finished before considering the next slot.</div></div>
           </div>
           {% if create_form.errors %}
             <div class="alert alert-danger mb-0">{{ create_form.errors }}</div>
@@ -597,9 +601,10 @@
 
   function syncBackupEditor(editor) {
     const typeSelect = editor.querySelector(".backup-type-select");
-    if (!typeSelect) return;
-    const isLocal = typeSelect.value === "local";
-    const isHttp = typeSelect.value === "http";
+    const scheduleModeSelect = editor.querySelector(".backup-schedule-mode-select");
+    const isLocal = typeSelect && typeSelect.value === "local";
+    const isHttp = typeSelect && typeSelect.value === "http";
+    const isManual = scheduleModeSelect && scheduleModeSelect.value === "manual";
     editor.querySelectorAll("[data-local-fields]").forEach((node) => {
       node.classList.toggle("d-none", !(isLocal || isHttp));
     });
@@ -609,6 +614,12 @@
     editor.querySelectorAll("[data-http-fields]").forEach((node) => {
       node.classList.toggle("d-none", !isHttp);
     });
+    editor.querySelectorAll("[data-backup-interval-fields], [data-backup-scheduled-fields]").forEach((node) => {
+      node.classList.toggle("d-none", isManual);
+    });
+    editor.querySelectorAll("[data-backup-manual-fields]").forEach((node) => {
+      node.classList.toggle("d-none", !isManual);
+    });
   }
 
   document.querySelectorAll("[data-backup-editor]").forEach((editor) => {
@@ -616,6 +627,10 @@
     const typeSelect = editor.querySelector(".backup-type-select");
     if (typeSelect) {
       typeSelect.addEventListener("change", () => syncBackupEditor(editor));
+    }
+    const scheduleModeSelect = editor.querySelector(".backup-schedule-mode-select");
+    if (scheduleModeSelect) {
+      scheduleModeSelect.addEventListener("change", () => syncBackupEditor(editor));
     }
   });
 

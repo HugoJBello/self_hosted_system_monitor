@@ -120,6 +120,7 @@ class BackupJobAdmin(admin.ModelAdmin):
         "name",
         "enabled",
         "backup_type",
+        "schedule_mode",
         "source_path",
         "remote_host",
         "remote_dir",

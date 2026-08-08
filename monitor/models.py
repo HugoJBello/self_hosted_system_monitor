@@ -488,6 +488,10 @@ class ScriptJobRun(models.Model):
 
 
 class BackupJob(models.Model):
+    SCHEDULE_MODE_CHOICES = [
+        ("interval", "Recurring schedule"),
+        ("manual", "Run only when clicking Run now"),
+    ]
     BACKUP_TYPE_CHOICES = [
         ("local", "Local memory backup"),
         ("remote", "SSH + rsync backup"),
@@ -516,6 +520,7 @@ class BackupJob(models.Model):
     verify_mounted_device = models.BooleanField(default=False)
     trigger_on_mount = models.BooleanField(default=False)
     last_mount_was_available = models.BooleanField(default=False)
+    schedule_mode = models.CharField(max_length=16, choices=SCHEDULE_MODE_CHOICES, default="interval")
     schedule_minutes = models.PositiveIntegerField(
         default=60,
         validators=[MinValueValidator(5), MaxValueValidator(60 * 24 * 30)],
@@ -563,9 +568,21 @@ class BackupJob(models.Model):
     def save(self, *args, **kwargs):
         if not self.enabled:
             self.next_run_at = None
-        if self.enabled and self.next_run_at is None:
+        elif self.is_manual:
+            self.next_run_at = None
+        elif self.next_run_at is None:
             self.next_run_at = timezone.now() + timezone.timedelta(minutes=max(self.schedule_minutes, 5))
         super().save(*args, **kwargs)
+
+    @property
+    def is_manual(self):
+        return self.schedule_mode == "manual"
+
+    @property
+    def schedule_label(self):
+        if self.is_manual:
+            return "Run only on demand"
+        return f"Every {self.schedule_minutes}m"
 
     @property
     def exclude_patterns_list(self):

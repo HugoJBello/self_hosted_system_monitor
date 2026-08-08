@@ -1099,6 +1099,10 @@ def finalize_backup_run(backup_run, result, *, finished_at=None):
 
 def _advance_job_schedule(job, finished_at):
     job.last_run_at = finished_at
+    if job.is_manual:
+        job.next_run_at = None
+        job.save(update_fields=["last_run_at", "next_run_at", "updated_at"])
+        return
     next_run_at = job.next_run_at or finished_at
     cadence = timedelta(minutes=max(job.schedule_minutes, 5))
     while next_run_at <= finished_at:
@@ -1108,6 +1112,10 @@ def _advance_job_schedule(job, finished_at):
 
 
 def _skip_job_schedule(job, skipped_at):
+    if job.is_manual:
+        job.next_run_at = None
+        job.save(update_fields=["next_run_at", "updated_at"])
+        return
     next_run_at = job.next_run_at or skipped_at
     cadence = timedelta(minutes=max(job.schedule_minutes, 5))
     while next_run_at <= skipped_at:
@@ -1313,9 +1321,9 @@ def dispatch_scheduled_backups(snapshot_time=None):
         mark_stale_running_backups(snapshot_time)
     except Exception:
         logger.exception("Failed to reconcile stale backup runs.")
-    due_jobs = BackupJob.objects.filter(enabled=True, next_run_at__isnull=False, next_run_at__lte=snapshot_time).order_by("position", "id")
+    due_jobs = BackupJob.objects.filter(enabled=True, next_run_at__isnull=False, next_run_at__lte=snapshot_time).exclude(schedule_mode="manual").order_by("position", "id")
     mounted_paths = _mounted_host_paths()
-    local_jobs = BackupJob.objects.filter(enabled=True, backup_type="local").order_by("position", "id")
+    local_jobs = BackupJob.objects.filter(enabled=True, backup_type="local").exclude(schedule_mode="manual").order_by("position", "id")
     runs = []
     for job in local_jobs:
         was_mounted = job.last_mount_was_available

@@ -609,6 +609,39 @@ class MonitorViewsTests(TestCase):
         mock_start_background.assert_called_once()
 
     @patch("monitor.views.start_background_backup")
+    def test_manual_backup_run_now_starts_background_process(self, mock_start_background):
+        job = BackupJob.objects.create(
+            name="Manual documents backup",
+            schedule_mode="manual",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            position=1,
+        )
+
+        response = self.client.post(self._path("monitor:backups"), {"run_now": str(job.id)})
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        mock_start_background.assert_called_once()
+
+    def test_manual_backup_job_is_not_scheduled_automatically(self):
+        job = BackupJob.objects.create(
+            name="Manual backup",
+            schedule_mode="manual",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            position=1,
+        )
+
+        self.assertIsNone(job.next_run_at)
+        self.assertEqual(job.schedule_label, "Run only on demand")
+
+    @patch("monitor.views.start_background_backup")
     def test_backup_run_now_does_not_duplicate_running_job(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Documents backup",
@@ -779,6 +812,54 @@ class MonitorViewsTests(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.source_path, "/home/test/NewDocuments")
         self.assertEqual(job.position, 7)
+
+    def test_backup_job_edit_can_set_manual_schedule(self):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            connection_mode="direct",
+            auth_mode="key",
+            position=7,
+        )
+
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "save_job": str(job.id),
+                f"job-{job.id}-name": job.name,
+                f"job-{job.id}-description": job.description,
+                f"job-{job.id}-enabled": "on",
+                f"job-{job.id}-backup_type": "remote",
+                f"job-{job.id}-source_path": "/home/test/Documents",
+                f"job-{job.id}-schedule_mode": "manual",
+                f"job-{job.id}-schedule_minutes": "30",
+                f"job-{job.id}-remote_host": job.remote_host,
+                f"job-{job.id}-remote_user": job.remote_user,
+                f"job-{job.id}-remote_dir": job.remote_dir,
+                f"job-{job.id}-ssh_port": "22",
+                f"job-{job.id}-connection_mode": "direct",
+                f"job-{job.id}-cloudflare_auth_home": "",
+                f"job-{job.id}-cloudflare_service_token_id": "",
+                f"job-{job.id}-cloudflare_service_token_secret": "",
+                f"job-{job.id}-auth_mode": "key",
+                f"job-{job.id}-password_file_path": "",
+                f"job-{job.id}-ssh_password": "",
+                f"job-{job.id}-public_key_path": "",
+                f"job-{job.id}-max_size": "100m",
+                f"job-{job.id}-run_timeout_seconds": "7200",
+                f"job-{job.id}-idle_timeout_seconds": "900",
+                f"job-{job.id}-exclude_patterns": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertEqual(job.schedule_mode, "manual")
+        self.assertIsNone(job.next_run_at)
 
     def test_backup_job_edit_preserves_saved_cloudflare_and_password_values(self):
         job = BackupJob.objects.create(
@@ -2381,6 +2462,34 @@ class BackupHelpersTests(TestCase):
         job.refresh_from_db()
         self.assertTrue(job.last_mount_was_available)
         mock_start_background.assert_called_once_with(job, launched_by="scheduler")
+
+    @patch("monitor.backups.start_background_backup")
+    @patch("monitor.backups._local_destination_is_available", return_value=True)
+    @patch("monitor.backups._mounted_host_paths", return_value={"/media/usb"})
+    @patch("monitor.backups.mark_stale_running_backups", return_value=[])
+    def test_dispatch_scheduled_backups_does_not_trigger_manual_local_job_when_mount_appears(
+        self,
+        mock_mark_stale,
+        mock_mounted_paths,
+        mock_destination_available,
+        mock_start_background,
+    ):
+        job = BackupJob.objects.create(
+            name="Manual USB clone",
+            backup_type="local",
+            schedule_mode="manual",
+            source_path="/home/test/Documents",
+            local_dest_path="/media/usb/docs",
+            trigger_on_mount=True,
+            last_mount_was_available=False,
+            schedule_minutes=30,
+        )
+
+        dispatch_scheduled_backups(timezone.now())
+
+        job.refresh_from_db()
+        self.assertFalse(job.last_mount_was_available)
+        mock_start_background.assert_not_called()
 
     def test_cloudflare_command_env_maps_host_home(self):
         job = BackupJob(

@@ -270,6 +270,7 @@ class BackupJobForm(forms.ModelForm):
             "local_dest_path",
             "verify_mounted_device",
             "trigger_on_mount",
+            "schedule_mode",
             "schedule_minutes",
             "remote_host",
             "remote_user",
@@ -303,6 +304,7 @@ class BackupJobForm(forms.ModelForm):
             "local_dest_path": forms.TextInput(attrs={"class": "form-control backup-destination-input", "placeholder": "/media/usb/backups/laptop"}),
             "verify_mounted_device": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "trigger_on_mount": forms.CheckboxInput(attrs={"class": "form-check-input"}),
+            "schedule_mode": forms.Select(attrs={"class": "form-select backup-schedule-mode-select"}),
             "schedule_minutes": forms.NumberInput(attrs={"class": "form-control", "min": 5, "max": 43200, "step": 5, "list": "backup-schedule-presets"}),
             "remote_host": forms.TextInput(attrs={"class": "form-control", "placeholder": "backup-host.example.com"}),
             "remote_user": forms.TextInput(attrs={"class": "form-control", "placeholder": "backupuser"}),
@@ -333,6 +335,8 @@ class BackupJobForm(forms.ModelForm):
         self.fields["backup_type"].required = False
         self.fields["source_path"].required = False
         self.fields["http_direction"].required = False
+        self.fields["schedule_mode"].required = False
+        self.fields["schedule_minutes"].required = False
         self.fields["source_path"].label = "Source folder"
         self.fields["local_dest_path"].label = "Destination folder"
         self.fields["remote_host"].label = "Hostname or IP"
@@ -348,6 +352,7 @@ class BackupJobForm(forms.ModelForm):
         self.fields["http_remote_token"].label = "Remote Bearer token"
         self.fields["http_remote_path"].label = "Remote folder"
         self.fields["http_direction"].label = "HTTP direction"
+        self.fields["schedule_mode"].label = "Schedule mode"
         self.fields["password_file_path"].label = "Password file on host"
         self.fields["public_key_path"].label = "Public key path on host"
         self.fields["run_timeout_seconds"].label = "Hard timeout (seconds)"
@@ -356,6 +361,10 @@ class BackupJobForm(forms.ModelForm):
             ("local", "Local memory backup"),
             ("remote", "SSH + rsync backup"),
             ("http", "HTTP server to server backup"),
+        ]
+        self.fields["schedule_mode"].choices = [
+            ("interval", "Recurring schedule"),
+            ("manual", "Run only when clicking Run now"),
         ]
         self.fields["connection_mode"].choices = [
             ("direct", "Standard SSH"),
@@ -444,6 +453,10 @@ class BackupJobForm(forms.ModelForm):
         http_remote_path = (cleaned_data.get("http_remote_path") or "").strip()
         http_direction = cleaned_data.get("http_direction") or "push"
         source_path = (cleaned_data.get("source_path") or "").strip()
+        schedule_mode = cleaned_data.get("schedule_mode") or "interval"
+        schedule_minutes = cleaned_data.get("schedule_minutes") or 60
+        cleaned_data["schedule_mode"] = schedule_mode
+        cleaned_data["schedule_minutes"] = schedule_minutes
 
         if backup_type == "local":
             if not source_path:
