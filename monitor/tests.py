@@ -611,6 +611,46 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "1: alpha")
         self.assertContains(response, "--mode fast")
 
+    def test_script_job_edit_preserves_day_schedule_value(self):
+        job = ScriptJob.objects.create(
+            name="Daily script",
+            description="",
+            enabled=True,
+            schedule_mode="interval",
+            schedule_minutes=7,
+            schedule_unit="days",
+            working_directory="/",
+            script_body="echo ok",
+            run_timeout_seconds=120,
+            idle_timeout_seconds=60,
+        )
+
+        response = self.client.post(
+            self._path("monitor:script-jobs"),
+            {
+                "save_job": str(job.id),
+                f"job-{job.id}-name": "Daily script",
+                f"job-{job.id}-description": "",
+                f"job-{job.id}-enabled": "on",
+                f"job-{job.id}-schedule_mode": "interval",
+                f"job-{job.id}-schedule_minutes": "7",
+                f"job-{job.id}-schedule_unit": "days",
+                f"job-{job.id}-scheduled_for": "",
+                f"job-{job.id}-working_directory": "/",
+                f"job-{job.id}-script_body": "echo ok",
+                f"job-{job.id}-script_arguments": '{"positionals":[],"flags":[]}',
+                f"job-{job.id}-run_as_sudo": "",
+                f"job-{job.id}-sudo_password": "",
+                f"job-{job.id}-run_timeout_seconds": "120",
+                f"job-{job.id}-idle_timeout_seconds": "60",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:script-jobs"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertEqual(job.schedule_minutes, 7)
+        self.assertEqual(job.schedule_unit, "days")
+
     @patch("monitor.views.start_background_backup")
     def test_backup_run_now_starts_background_process(self, mock_start_background):
         job = BackupJob.objects.create(

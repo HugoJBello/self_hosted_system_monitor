@@ -608,21 +608,23 @@
     const scheduleUnitSelect = editor.querySelector('select[name$="-schedule_unit"]');
     if (!scheduleValueInput || !scheduleUnitSelect) return;
 
-    const syncScheduleValueForUnit = (force = false) => {
+    let previousUnit = scheduleUnitSelect.value;
+    const syncScheduleValueForUnit = () => {
       const currentValue = Number(scheduleValueInput.value || 0);
       if (scheduleUnitSelect.value === "minutes") {
-        if (force && currentValue < 5) {
-          scheduleValueInput.value = 60;
+        if (currentValue < 5) {
+          scheduleValueInput.value = 5;
         }
+        previousUnit = scheduleUnitSelect.value;
         return;
       }
-      if (force || currentValue >= 5) {
+      if (previousUnit === "minutes" && currentValue >= 5) {
         scheduleValueInput.value = 1;
       }
+      previousUnit = scheduleUnitSelect.value;
     };
 
-    scheduleUnitSelect.addEventListener("change", () => syncScheduleValueForUnit(true));
-    syncScheduleValueForUnit(false);
+    scheduleUnitSelect.addEventListener("change", syncScheduleValueForUnit);
   });
 
   document.querySelectorAll("[data-script-run-card]").forEach((card) => {
