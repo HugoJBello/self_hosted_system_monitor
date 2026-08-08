@@ -22,7 +22,7 @@ from .forms import ScriptJobForm
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .reporting import generate_report_for_rule
-from .script_jobs import _build_script_command, dispatch_scheduled_script_jobs, request_script_run_stop, run_script_job
+from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
 
 
@@ -1586,6 +1586,27 @@ class BackupHelpersTests(TestCase):
         self.assertTrue(request_script_run_stop(run))
         run.refresh_from_db()
         self.assertIsNotNone(run.stop_requested_at)
+
+    def test_finalize_script_run_keeps_log_tail(self):
+        job = ScriptJob.objects.create(
+            name="Long output",
+            schedule_mode="manual",
+            script_body="echo done",
+        )
+        script_run = ScriptJobRun.objects.create(job=job, status="running", summary="Running")
+        result = ScriptExecutionResult(
+            False,
+            18,
+            "failed",
+            "Script job failed with exit code 18.",
+            "x" * (SCRIPT_LOG_LIMIT + 100) + "final zip open error",
+        )
+
+        finalize_script_run(script_run, result)
+
+        script_run.refresh_from_db()
+        self.assertLessEqual(len(script_run.log_output), SCRIPT_LOG_LIMIT)
+        self.assertTrue(script_run.log_output.endswith("final zip open error"))
 
     @patch("monitor.script_jobs.start_background_script_job")
     def test_dispatch_scheduled_script_jobs_skips_manual_jobs(self, mock_start_background):

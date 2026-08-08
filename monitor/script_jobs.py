@@ -270,7 +270,7 @@ def _run_streaming_command(
         if on_output:
             on_output(trailing)
     output = "\n".join(collected).strip()
-    return StreamingCommandResult(exit_code, output[:SCRIPT_LOG_LIMIT], termination_reason)
+    return StreamingCommandResult(exit_code, output[-SCRIPT_LOG_LIMIT:], termination_reason)
 
 
 def _build_script_command(job):
@@ -428,7 +428,7 @@ def finalize_script_run(script_run, result, *, finished_at=None):
     script_run.status = result.status
     script_run.exit_code = result.exit_code
     script_run.summary = result.summary
-    script_run.log_output = result.log_output[:SCRIPT_LOG_LIMIT]
+    script_run.log_output = result.log_output[-SCRIPT_LOG_LIMIT:]
     script_run.command_line = result.command_line
     now = finished_at or timezone.now()
     script_run.finished_at = now
@@ -630,7 +630,7 @@ def execute_script_job(job, *, script_run=None):
             status=result.status,
             exit_code=result.exit_code,
             summary=result.summary,
-            log_output=result.log_output[:SCRIPT_LOG_LIMIT],
+            log_output=result.log_output[-SCRIPT_LOG_LIMIT:],
             command_line=result.command_line,
             heartbeat_at=finished_at,
             last_output_at=finished_at,
