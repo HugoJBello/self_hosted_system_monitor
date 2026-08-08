@@ -593,6 +593,24 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:script-jobs"), fetch_redirect_response=False)
         mock_start_background.assert_called_once()
 
+    def test_script_job_run_detail_shows_script_arguments(self):
+        job = ScriptJob.objects.create(
+            name="Arguments",
+            schedule_mode="manual",
+            script_body='echo "$1"',
+            script_arguments={
+                "positionals": [{"value": "alpha"}],
+                "flags": [{"flag": "--mode", "value": "fast"}],
+            },
+        )
+        script_run = ScriptJobRun.objects.create(job=job, status="success", summary="Done")
+
+        response = self.client.get(self._path("monitor:script-job-run-detail", args=[script_run.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "1: alpha")
+        self.assertContains(response, "--mode fast")
+
     @patch("monitor.views.start_background_backup")
     def test_backup_run_now_starts_background_process(self, mock_start_background):
         job = BackupJob.objects.create(
@@ -1479,6 +1497,25 @@ class BackupHelpersTests(TestCase):
         job = form.save(commit=False)
         self.assertEqual(
             job.script_arguments,
+            {"positionals": [{"value": "alpha"}], "flags": [{"flag": "--mode", "value": "fast"}]},
+        )
+
+    def test_script_job_form_serializes_initial_arguments_for_editor(self):
+        job = ScriptJob.objects.create(
+            name="Arguments",
+            schedule_mode="manual",
+            script_body='echo "$1"',
+            script_arguments={
+                "positionals": [{"value": "alpha"}],
+                "flags": [{"flag": "--mode", "value": "fast"}],
+            },
+        )
+
+        form = ScriptJobForm(instance=job, prefix=f"job-{job.id}")
+        payload = json.loads(form["script_arguments"].value())
+
+        self.assertEqual(
+            payload,
             {"positionals": [{"value": "alpha"}], "flags": [{"flag": "--mode", "value": "fast"}]},
         )
 

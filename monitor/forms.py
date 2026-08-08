@@ -587,10 +587,11 @@ class ScriptJobForm(forms.ModelForm):
             ("days", "Days"),
             ("weeks", "Weeks"),
         ]
-        if self.instance.pk:
-            self.initial.setdefault("script_arguments", json.dumps(self.instance.normalized_script_arguments, ensure_ascii=True))
-        else:
-            self.initial.setdefault("script_arguments", json.dumps({"positionals": [], "flags": []}, ensure_ascii=True))
+        if not self.is_bound:
+            if self.instance.pk:
+                self.initial["script_arguments"] = json.dumps(self.instance.normalized_script_arguments, ensure_ascii=True)
+            else:
+                self.initial["script_arguments"] = json.dumps({"positionals": [], "flags": []}, ensure_ascii=True)
         if self.instance.pk and self.instance.scheduled_for:
             local_value = timezone.localtime(self.instance.scheduled_for)
             self.initial.setdefault("scheduled_for", local_value.strftime("%Y-%m-%dT%H:%M"))

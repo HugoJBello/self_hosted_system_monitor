@@ -85,6 +85,26 @@
         <div class="mini-stat"><span class="label">Last heartbeat</span><strong data-run-heartbeat>{% if script_run.heartbeat_at %}<span data-local-datetime="{{ script_run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ script_run.heartbeat_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong></div>
         <div class="mini-stat"><span class="label">Last output</span><strong data-run-last-output>{% if script_run.last_output_at %}<span data-local-datetime="{{ script_run.last_output_at|date:'c' }}" data-local-style="datetime-short">{{ script_run.last_output_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong></div>
       </div>
+      {% with args=script_run.job.normalized_script_arguments %}
+        <div class="script-argument-preview mt-4">
+          <div>
+            <span class="backup-job-endpoint-label">By order</span>
+            {% for item in args.positionals %}
+              <code>{{ forloop.counter }}: {{ item.value }}</code>
+            {% empty %}
+              <span class="text-secondary small">None</span>
+            {% endfor %}
+          </div>
+          <div>
+            <span class="backup-job-endpoint-label">Flags</span>
+            {% for item in args.flags %}
+              <code>{{ item.flag }}{% if item.value %} {{ item.value }}{% endif %}</code>
+            {% empty %}
+              <span class="text-secondary small">None</span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endwith %}
     </section>
   </div>
   <div class="col-12 col-xl-6">
