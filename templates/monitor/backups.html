@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load monitor_extras %}
 
 {% block title %}Backups | System Monitor{% endblock %}
 
@@ -77,8 +78,8 @@
         </div>
 
         <div class="backup-job-metrics">
-          <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds }}s hard</span>
-          <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds }}s idle</span>
+          <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds|human_uptime }} hard</span>
+          <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds|human_uptime }} idle</span>
           <span><i class="bi bi-file-earmark"></i> {{ job.max_size|default:"no max" }}</span>
           <span><i class="bi bi-trash3"></i> {% if job.delete_enabled %}delete on{% else %}delete off{% endif %}</span>
           {% if job.verify_mounted_device %}<span><i class="bi bi-hdd-stack"></i> verify mount</span>{% endif %}

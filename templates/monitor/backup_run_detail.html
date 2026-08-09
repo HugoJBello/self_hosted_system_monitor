@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load monitor_extras %}
 
 {% block title %}Backup Run Detail | System Monitor{% endblock %}
 
@@ -92,7 +93,7 @@
         </div>
         <div class="mini-stat">
           <span class="label">Timeouts</span>
-          <strong>{{ backup_run.job.run_timeout_seconds }}s hard • {{ backup_run.job.idle_timeout_seconds }}s idle</strong>
+          <strong>{{ backup_run.job.run_timeout_seconds|human_uptime }} hard • {{ backup_run.job.idle_timeout_seconds|human_uptime }} idle</strong>
         </div>
         <div class="mini-stat">
           <span class="label">Launch mode</span>

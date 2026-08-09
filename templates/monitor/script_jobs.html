@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load monitor_extras %}
 
 {% block title %}Jobs | System Monitor{% endblock %}
 
@@ -89,8 +90,8 @@
           <span><i class="bi bi-clock-history"></i> {% if job.is_manual %}manual{% elif job.is_one_off %}one-off{% else %}{{ job.schedule_label|lower }}{% endif %}</span>
           <span><i class="bi bi-shield-lock"></i> {% if job.run_as_sudo %}sudo{% else %}user{% endif %}</span>
           <span><i class="bi bi-input-cursor-text"></i> {{ job.script_arguments_count }} params</span>
-          <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds }}s hard</span>
-          <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds }}s idle</span>
+          <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds|human_uptime }} hard</span>
+          <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds|human_uptime }} idle</span>
         </div>
 
         <div class="backup-job-runs">
