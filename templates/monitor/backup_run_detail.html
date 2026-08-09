@@ -77,7 +77,7 @@
       <div class="stat-stack backup-run-config-grid">
         <div class="mini-stat">
           <span class="label">Source</span>
-          <strong>{{ backup_run.job.source_path }}</strong>
+          <strong>{{ backup_run.job.source_label }}</strong>
         </div>
         <div class="mini-stat">
           <span class="label">Type</span>
@@ -89,7 +89,7 @@
         </div>
         <div class="mini-stat">
           <span class="label">Mode</span>
-          <strong>{% if backup_run.job.is_local %}{% if backup_run.job.verify_mounted_device %}Verify mount • {% endif %}{% if backup_run.job.trigger_on_mount %}Run on mount • {% endif %}Local rsync{% elif backup_run.job.is_http %}HTTP {{ backup_run.job.http_direction|default:"push"|upper }} • Bearer token{% else %}{{ backup_run.job.get_connection_mode_display }} • {{ backup_run.job.get_auth_mode_display }}{% endif %}</strong>
+          <strong>{% if backup_run.job.is_local %}{% if backup_run.job.verify_mounted_device %}Verify mount • {% endif %}{% if backup_run.job.trigger_on_mount %}Run on mount • {% endif %}Local rsync{% elif backup_run.job.is_http %}HTTP {{ backup_run.job.http_direction|default:"push"|upper }} • Bearer token{% else %}SSH {{ backup_run.job.remote_direction|default:"push"|upper }} • {{ backup_run.job.get_connection_mode_display }} • {{ backup_run.job.get_auth_mode_display }}{% endif %}</strong>
         </div>
         <div class="mini-stat">
           <span class="label">Timeouts</span>
@@ -108,8 +108,8 @@
           <strong data-run-last-output>{% if backup_run.last_output_at %}<span data-local-datetime="{{ backup_run.last_output_at|date:'c' }}" data-local-style="datetime-short">{{ backup_run.last_output_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong>
         </div>
         <div class="mini-stat">
-          <span class="label">{% if backup_run.job.is_local %}Destination mount checks{% elif backup_run.job.is_http %}Remote path mode{% else %}Remote dir created{% endif %}</span>
-          <strong>{% if backup_run.job.is_local %}{% if backup_run.job.verify_mounted_device and backup_run.job.trigger_on_mount %}Verify + trigger{% elif backup_run.job.verify_mounted_device %}Verify only{% elif backup_run.job.trigger_on_mount %}Trigger only{% else %}Disabled{% endif %}{% elif backup_run.job.is_http %}{% if backup_run.job.http_direction == "pull" %}Remote to local pull{% else %}Local to remote push{% endif %}{% else %}{% if backup_run.created_remote_dir %}Yes{% else %}No{% endif %}{% endif %}</strong>
+          <span class="label">{% if backup_run.job.is_local %}Destination mount checks{% elif backup_run.job.is_http %}Remote path mode{% else %}SSH direction{% endif %}</span>
+          <strong>{% if backup_run.job.is_local %}{% if backup_run.job.verify_mounted_device and backup_run.job.trigger_on_mount %}Verify + trigger{% elif backup_run.job.verify_mounted_device %}Verify only{% elif backup_run.job.trigger_on_mount %}Trigger only{% else %}Disabled{% endif %}{% elif backup_run.job.is_http %}{% if backup_run.job.http_direction == "pull" %}Remote to local pull{% else %}Local to remote push{% endif %}{% else %}{% if backup_run.job.is_remote_pull %}Remote to local pull{% else %}Local to remote push{% if backup_run.created_remote_dir %} • remote dir created{% endif %}{% endif %}{% endif %}</strong>
         </div>
       </div>
     </section>

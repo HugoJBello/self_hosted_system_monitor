@@ -257,6 +257,14 @@ def _ensure_local_source(job):
     return source_path
 
 
+def _ensure_remote_pull_destination(job):
+    destination_path = _hostfs_path(job.source_path)
+    os.makedirs(destination_path, exist_ok=True)
+    if not os.path.isdir(destination_path):
+        raise FileNotFoundError(f"Local destination directory is not available inside container mapping: {job.source_path}")
+    return destination_path
+
+
 def _host_mounts_file():
     procfs_path = os.getenv("MONITOR_PROCFS_PATH", "/hostfs/proc")
     return os.path.join(procfs_path, "mounts")
@@ -591,7 +599,7 @@ def _rsync_exit_is_partial_success(exit_code):
     return int(exit_code) in RSYNC_PARTIAL_SUCCESS_EXIT_CODES
 
 
-def _ensure_remote_directory(job, password, *, heartbeat_callback=None, should_stop=None):
+def _ensure_remote_directory(job, password, *, create=True, heartbeat_callback=None, should_stop=None):
     test_command = [*_ssh_base_cmd(job), _ssh_target(job), f"test -d -- {shlex.quote(job.remote_dir)}"]
     test_parts = _command_with_sshpass(password, test_command) if password else test_command
     test_exit_code, test_output = _run_command(
@@ -603,10 +611,12 @@ def _ensure_remote_directory(job, password, *, heartbeat_callback=None, should_s
         should_stop=should_stop,
     )
     if test_exit_code == 0:
-        return False, "Remote directory already existed."
+        return False, "Remote source directory exists." if not create else "Remote directory already existed."
     error_hint = _cloudflare_error_hint(job, test_output)
     if error_hint:
         raise RuntimeError(f"{error_hint}\nRemote output: {test_output}")
+    if not create:
+        raise RuntimeError(f"Remote source directory does not exist: {job.remote_dir}")
 
     mkdir_command = [*_ssh_base_cmd(job), _ssh_target(job), f"mkdir -p -- {shlex.quote(job.remote_dir)} && echo dir_ok"]
     command_parts = _command_with_sshpass(password, mkdir_command) if password else mkdir_command
@@ -722,9 +732,11 @@ def _rsync_command(job, source_path, password, use_key_auth):
         *base_cmd,
         "-e",
         ssh_command,
-        f"{source_path.rstrip('/')}/",
-        _remote_rsync_target(job),
     ]
+    if job.is_remote_pull:
+        rsync_cmd.extend([_remote_rsync_target(job), f"{source_path.rstrip('/')}/"])
+    else:
+        rsync_cmd.extend([f"{source_path.rstrip('/')}/", _remote_rsync_target(job)])
     if not use_key_auth:
         return _command_with_sshpass(password, rsync_cmd)
     return rsync_cmd
@@ -777,18 +789,20 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
         summary = f"HTTP backup finished: {transferred}/{stats['changed']} transferred, {vanished} vanished, {stats['deleted']} deleted, {stats['skipped']} skipped."
         return BackupExecutionResult(True, 0, "success", summary, "\n".join(log_lines), command_line=command_line)
 
-    source_path = _ensure_local_source(job)
     if job.is_local:
+        source_path = _ensure_local_source(job)
         normalized_target = job.local_dest_path
         password = ""
         command_preview = _format_command(_with_low_priority(_rsync_command(job, source_path, "", use_key_auth=True)))
     else:
+        source_path = _ensure_remote_pull_destination(job) if job.is_remote_pull else _ensure_local_source(job)
         normalized_target = _normalized_remote_host(job)
         password = _resolve_password(job)
         command_preview = _format_command(_with_low_priority(_rsync_command(job, source_path, password, use_key_auth=not bool(password))))
     log_lines = [
         f"Starting backup job {job.name}",
-        f"Source: {job.source_path}",
+        f"Direction: {'remote SSH to local folder' if job.is_remote_pull else 'local folder to remote SSH directory' if not job.is_local else 'local folder to local folder'}",
+        f"Source: {job.source_label}",
         f"Target: {job.destination_label}",
         f"Runner: {_runner_label()}",
         f"Configured timeout: {job.run_timeout_seconds}s",
@@ -816,6 +830,7 @@ def run_backup_job(job, *, log_callback=None, heartbeat_callback=None, should_st
         created_remote_dir, ensure_output = _ensure_remote_directory(
             job,
             password if password else "",
+            create=not job.is_remote_pull,
             heartbeat_callback=heartbeat_callback,
             should_stop=should_stop,
         )

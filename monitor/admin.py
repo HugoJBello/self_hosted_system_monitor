@@ -124,6 +124,7 @@ class BackupJobAdmin(admin.ModelAdmin):
         "source_path",
         "remote_host",
         "remote_dir",
+        "remote_direction",
         "http_remote_url",
         "http_direction",
         "schedule_minutes",

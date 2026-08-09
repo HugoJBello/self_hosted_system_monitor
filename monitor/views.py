@@ -1116,7 +1116,7 @@ class BackupsView(LoginRequiredMixin, View):
                 "job": job,
                 "form": job_form_overrides.get(job.id) or BackupJobForm(instance=job, prefix=f"job-{job.id}"),
                 "recent_runs": runs_by_job.get(job.id, []),
-                "source_label": self._job_source_label(job),
+                "source_label": job.source_label,
                 "destination_label": job.destination_label,
             }
             for job in jobs
@@ -1137,12 +1137,6 @@ class BackupsView(LoginRequiredMixin, View):
             "edit_job_id": edit_job_id,
             "settings_obj": MonitoringSettings.load(),
         }
-
-    def _job_source_label(self, job):
-        if job.is_http and job.http_direction == "pull":
-            return job.http_remote_path or "(remote folder not set)"
-        return job.source_path or "(source not set)"
-
 
 class BackupRunsView(LoginRequiredMixin, View):
     template_name = "monitor/backup_runs.html"

@@ -537,6 +537,10 @@ class BackupJob(models.Model):
         ("push", "Copy from this server to remote server"),
         ("pull", "Copy from remote server to this server"),
     ]
+    REMOTE_DIRECTION_CHOICES = [
+        ("push", "Local folder to remote SSH directory"),
+        ("pull", "Remote SSH directory to local folder"),
+    ]
     CONNECTION_CHOICES = [
         ("direct", "Direct SSH"),
         ("cloudflare", "Cloudflare Access SSH"),
@@ -564,6 +568,7 @@ class BackupJob(models.Model):
     remote_host = models.CharField(max_length=255, blank=True, default="")
     remote_user = models.CharField(max_length=255, blank=True, default="")
     remote_dir = models.CharField(max_length=500, blank=True, default="")
+    remote_direction = models.CharField(max_length=16, choices=REMOTE_DIRECTION_CHOICES, default="push")
     ssh_port = models.PositiveIntegerField(
         default=22,
         validators=[MinValueValidator(1), MaxValueValidator(65535)],
@@ -633,6 +638,25 @@ class BackupJob(models.Model):
         return self.backup_type == "http"
 
     @property
+    def is_remote_pull(self):
+        return self.backup_type == "remote" and self.remote_direction == "pull"
+
+    @property
+    def remote_label(self):
+        host = self.remote_host or "(remote host not set)"
+        remote_dir = self.remote_dir or "/"
+        user = f"{self.remote_user}@" if self.remote_user else ""
+        return f"{user}{host}:{remote_dir}"
+
+    @property
+    def source_label(self):
+        if self.is_http and self.http_direction == "pull":
+            return self.http_remote_path or "(remote folder not set)"
+        if self.is_remote_pull:
+            return self.remote_label
+        return self.source_path or "(source not set)"
+
+    @property
     def destination_label(self):
         if self.is_local:
             return self.local_dest_path or "(local destination not set)"
@@ -642,10 +666,9 @@ class BackupJob(models.Model):
             if self.http_direction == "pull":
                 return self.local_dest_path or "(local destination not set)"
             return f"{base}:{remote_path}"
-        host = self.remote_host or "(remote host not set)"
-        remote_dir = self.remote_dir or "/"
-        user = f"{self.remote_user}@" if self.remote_user else ""
-        return f"{user}{host}:{remote_dir}"
+        if self.is_remote_pull:
+            return self.source_path or "(local destination not set)"
+        return self.remote_label
 
     def __str__(self):
         return self.name

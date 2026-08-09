@@ -54,7 +54,8 @@
             <div class="min-w-0">
               <div class="d-flex gap-2 align-items-center flex-wrap mb-1">
                 {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
-                <span class="chip compact-chip">{% if job.is_local %}Local memory{% elif job.is_http %}HTTP {{ job.http_direction }}{% else %}{% if job.connection_mode == "cloudflare" %}Cloudflare SSH{% else %}SSH + rsync{% endif %}{% endif %}</span>
+                <span class="chip compact-chip">{% if job.is_local %}Local memory{% elif job.is_http %}HTTP {{ job.http_direction }}{% else %}{% if job.connection_mode == "cloudflare" %}Cloudflare SSH{% else %}SSH + rsync{% endif %} {{ job.remote_direction|default:"push" }}{% endif %}</span>
+                {% if job.is_remote_pull %}<span class="severity-pill severity-warning">REMOTE TO LOCAL</span>{% endif %}
               </div>
               <h3 class="backup-job-title mb-0">{{ job.name }}</h3>
             </div>
@@ -81,7 +82,7 @@
           <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds|human_uptime }} hard</span>
           <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds|human_uptime }} idle</span>
           <span><i class="bi bi-file-earmark"></i> {{ job.max_size|default:"no max" }}</span>
-          <span><i class="bi bi-trash3"></i> {% if job.delete_enabled %}delete on{% else %}delete off{% endif %}</span>
+          <span><i class="bi bi-trash3"></i> {% if job.delete_enabled %}{% if job.is_remote_pull %}delete local destination{% else %}delete on{% endif %}{% else %}delete off{% endif %}</span>
           {% if job.verify_mounted_device %}<span><i class="bi bi-hdd-stack"></i> verify mount</span>{% endif %}
           {% if job.trigger_on_mount %}<span><i class="bi bi-usb-drive"></i> mount trigger</span>{% endif %}
         </div>
@@ -161,7 +162,7 @@
                   <span class="live-pill" data-run-status-pill>RUNNING</span>
                   <span class="chip compact-chip">{{ run.job.name }}</span>
                 </div>
-                <h3 class="h5 mb-2">{{ run.job.source_path }} → {{ run.job.destination_label }}</h3>
+                <h3 class="h5 mb-2">{{ run.job.source_label }} → {{ run.job.destination_label }}</h3>
                 <div class="small text-secondary mb-3" data-run-meta>
                   Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
                   {% if run.heartbeat_at %} • heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="time-short">{{ run.heartbeat_at|date:"H:i:s" }}</span>{% endif %}
@@ -259,11 +260,12 @@
               <div class="col-md-4"><label class="form-label" for="{{ form.name.id_for_label }}">Job name</label>{{ form.name }}</div>
               <div class="col-md-3"><label class="form-label" for="{{ form.backup_type.id_for_label }}">Backup type</label>{{ form.backup_type }}</div>
               <div class="col-md-5">
-                <label class="form-label" for="{{ form.source_path.id_for_label }}">Source folder</label>
+                <label class="form-label" for="{{ form.source_path.id_for_label }}">Local folder</label>
                 <div class="input-group flex-wrap backup-source-group">
                   {{ form.source_path }}
                   <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
                 </div>
+                <div class="form-text">For SSH push this is the source. For SSH pull this is the local destination.</div>
               </div>
               <div class="col-md-3"><label class="form-label" for="{{ form.schedule_mode.id_for_label }}">Schedule mode</label>{{ form.schedule_mode }}</div>
               <div class="col-md-3" data-backup-interval-fields><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
@@ -276,6 +278,7 @@
               <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ form.remote_host.id_for_label }}">Hostname or IP</label>{{ form.remote_host }}</div>
               <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.remote_user.id_for_label }}">SSH user</label>{{ form.remote_user }}</div>
               <div class="col-md-5" data-remote-fields><label class="form-label" for="{{ form.remote_dir.id_for_label }}">Remote directory</label>{{ form.remote_dir }}</div>
+              <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ form.remote_direction.id_for_label }}">SSH copy direction</label>{{ form.remote_direction }}</div>
               <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.connection_mode.id_for_label }}">Connection mode</label>{{ form.connection_mode }}</div>
               <div class="col-md-2" data-remote-fields><label class="form-label" for="{{ form.ssh_port.id_for_label }}">SSH port</label>{{ form.ssh_port }}</div>
               <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.auth_mode.id_for_label }}">Authentication</label>{{ form.auth_mode }}</div>
@@ -286,6 +289,11 @@
               <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ form.cloudflare_auth_home }}</div>
               <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ form.cloudflare_service_token_id }}</div>
               <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ form.cloudflare_service_token_secret }}</div>
+              <div class="col-12" data-remote-fields>
+                <div class="form-text">
+                  Direction controls which side is overwritten. Local -> remote is the existing default. Remote -> local makes the remote directory the source; with delete enabled, removed remote files are also deleted from the local destination.
+                </div>
+              </div>
               <div class="col-12" data-remote-fields>
                 <div class="form-text">
                   Leave all Cloudflare fields empty if this job already works without them.
@@ -371,11 +379,12 @@
             <div class="col-md-4"><label class="form-label" for="{{ create_form.name.id_for_label }}">Job name</label>{{ create_form.name }}</div>
             <div class="col-md-3"><label class="form-label" for="{{ create_form.backup_type.id_for_label }}">Backup type</label>{{ create_form.backup_type }}</div>
             <div class="col-md-5">
-              <label class="form-label" for="{{ create_form.source_path.id_for_label }}">Source folder</label>
+              <label class="form-label" for="{{ create_form.source_path.id_for_label }}">Local folder</label>
               <div class="input-group flex-wrap backup-source-group">
                 {{ create_form.source_path }}
                 <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.source_path.id_for_label }}">Browse</button>
               </div>
+              <div class="form-text">For SSH push this is the source. For SSH pull this is the local destination.</div>
             </div>
             <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_mode.id_for_label }}">Schedule mode</label>{{ create_form.schedule_mode }}</div>
             <div class="col-md-3" data-backup-interval-fields><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
@@ -388,6 +397,7 @@
             <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ create_form.remote_host.id_for_label }}">Hostname or IP</label>{{ create_form.remote_host }}</div>
             <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ create_form.remote_user.id_for_label }}">SSH user</label>{{ create_form.remote_user }}</div>
             <div class="col-md-5" data-remote-fields><label class="form-label" for="{{ create_form.remote_dir.id_for_label }}">Remote directory</label>{{ create_form.remote_dir }}</div>
+            <div class="col-md-4" data-remote-fields><label class="form-label" for="{{ create_form.remote_direction.id_for_label }}">SSH copy direction</label>{{ create_form.remote_direction }}</div>
             <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ create_form.connection_mode.id_for_label }}">Connection mode</label>{{ create_form.connection_mode }}</div>
             <div class="col-md-2" data-remote-fields><label class="form-label" for="{{ create_form.ssh_port.id_for_label }}">SSH port</label>{{ create_form.ssh_port }}</div>
             <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ create_form.auth_mode.id_for_label }}">Authentication</label>{{ create_form.auth_mode }}</div>
@@ -398,6 +408,11 @@
             <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ create_form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ create_form.cloudflare_auth_home }}</div>
             <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ create_form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ create_form.cloudflare_service_token_id }}</div>
             <div class="col-md-6" data-remote-fields><label class="form-label" for="{{ create_form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ create_form.cloudflare_service_token_secret }}</div>
+            <div class="col-12" data-remote-fields>
+              <div class="form-text">
+                Direction controls which side is overwritten. Local -> remote is the existing default. Remote -> local makes the remote directory the source; with delete enabled, removed remote files are also deleted from the local destination.
+              </div>
+            </div>
             <div class="col-12" data-remote-fields>
               <div class="form-text">
                 Leave all Cloudflare fields empty if this job already works without them.

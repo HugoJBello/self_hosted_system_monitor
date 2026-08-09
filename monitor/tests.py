@@ -16,9 +16,9 @@ from urllib.error import HTTPError
 from unittest.mock import patch
 
 from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import BackupExecutionResult, StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, finalize_backup_run, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from .backups import BackupExecutionResult, StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_command, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, finalize_backup_run, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from .docker_runtime import _group_containers_by_family
-from .forms import ScriptJobForm
+from .forms import BackupJobForm, ScriptJobForm
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .reporting import generate_report_for_rule
@@ -1392,6 +1392,67 @@ class BackupHelpersTests(TestCase):
         hint = _cloudflare_error_hint(job, "websocket: bad handshake\nConnection closed by UNKNOWN port 65535")
         self.assertIn("Cloudflare SSH handshake failed", hint)
 
+    @patch("monitor.backups.shutil_which", return_value="/usr/bin/rsync")
+    def test_remote_rsync_command_defaults_to_local_to_remote_push(self, mock_shutil_which):
+        job = BackupJob(
+            remote_host="ssh.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            source_path="/home/test/Documents",
+            delete_enabled=True,
+        )
+
+        command = _rsync_command(job, "/hostfs/home/test/Documents", "", use_key_auth=True)
+
+        self.assertIn("--delete", command)
+        self.assertEqual(command[-2:], ["/hostfs/home/test/Documents/", "backup@ssh.example.com:/srv/backups/test/"])
+
+    @patch("monitor.backups.shutil_which", return_value="/usr/bin/rsync")
+    def test_remote_rsync_pull_command_uses_remote_as_source_and_local_as_destination(self, mock_shutil_which):
+        job = BackupJob(
+            remote_host="ssh.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            remote_direction="pull",
+            source_path="/home/test/Documents",
+            delete_enabled=True,
+        )
+
+        command = _rsync_command(job, "/hostfs/home/test/Documents", "", use_key_auth=True)
+
+        self.assertIn("--delete", command)
+        self.assertEqual(command[-2:], ["backup@ssh.example.com:/srv/backups/test/", "/hostfs/home/test/Documents/"])
+
+    def test_backup_job_form_defaults_remote_direction_to_push(self):
+        form = BackupJobForm(
+            data={
+                "name": "Docs",
+                "description": "",
+                "enabled": "on",
+                "backup_type": "remote",
+                "source_path": "/home/test/Documents",
+                "local_dest_path": "",
+                "schedule_mode": "interval",
+                "schedule_minutes": "30",
+                "remote_host": "ssh.example.com",
+                "remote_user": "backup",
+                "remote_dir": "/srv/backups/test",
+                "ssh_port": "22",
+                "connection_mode": "direct",
+                "auth_mode": "key",
+                "password_file_path": "",
+                "ssh_password": "",
+                "public_key_path": "",
+                "max_size": "100m",
+                "run_timeout_seconds": "7200",
+                "idle_timeout_seconds": "900",
+                "exclude_patterns": "",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["remote_direction"], "push")
+
     def test_cloudflare_mode_allows_blank_auth_home_and_blank_service_tokens(self):
         response = self.client.post(
             self._path("monitor:backups"),
@@ -1405,6 +1466,7 @@ class BackupHelpersTests(TestCase):
                 "new-remote_host": "ssh.example.com",
                 "new-remote_user": "backup",
                 "new-remote_dir": "/srv/backups/test",
+                "new-remote_direction": "push",
                 "new-ssh_port": "22",
                 "new-connection_mode": "cloudflare",
                 "new-auth_mode": "password_value",

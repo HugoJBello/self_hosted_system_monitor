@@ -278,6 +278,7 @@ class BackupJobForm(forms.ModelForm):
             "remote_host",
             "remote_user",
             "remote_dir",
+            "remote_direction",
             "ssh_port",
             "connection_mode",
             "cloudflare_auth_home",
@@ -312,6 +313,7 @@ class BackupJobForm(forms.ModelForm):
             "remote_host": forms.TextInput(attrs={"class": "form-control", "placeholder": "backup-host.example.com"}),
             "remote_user": forms.TextInput(attrs={"class": "form-control", "placeholder": "backupuser"}),
             "remote_dir": forms.TextInput(attrs={"class": "form-control", "placeholder": "/backups/server-a"}),
+            "remote_direction": forms.Select(attrs={"class": "form-select"}),
             "ssh_port": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 65535}),
             "connection_mode": forms.Select(attrs={"class": "form-select"}),
             "cloudflare_auth_home": forms.TextInput(attrs={"class": "form-control", "placeholder": "/home/goku"}),
@@ -337,6 +339,7 @@ class BackupJobForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         self.fields["backup_type"].required = False
         self.fields["source_path"].required = False
+        self.fields["remote_direction"].required = False
         self.fields["http_direction"].required = False
         self.fields["schedule_mode"].required = False
         self.fields["schedule_minutes"].required = False
@@ -344,6 +347,7 @@ class BackupJobForm(forms.ModelForm):
         self.fields["local_dest_path"].label = "Destination folder"
         self.fields["remote_host"].label = "Hostname or IP"
         self.fields["remote_user"].label = "SSH user"
+        self.fields["remote_direction"].label = "SSH copy direction"
         self.fields["ssh_password"].label = "SSH password"
         self.fields["backup_type"].label = "Backup type"
         self.fields["connection_mode"].label = "Connection mode"
@@ -372,6 +376,10 @@ class BackupJobForm(forms.ModelForm):
         self.fields["connection_mode"].choices = [
             ("direct", "Standard SSH"),
             ("cloudflare", "This host needs Cloudflare SSH params"),
+        ]
+        self.fields["remote_direction"].choices = [
+            ("push", "Local folder -> remote SSH directory"),
+            ("pull", "Remote SSH directory -> local folder"),
         ]
         self.fields["auth_mode"].choices = [
             ("password_value", "Use the SSH password below"),
@@ -456,6 +464,8 @@ class BackupJobForm(forms.ModelForm):
         http_remote_path = (cleaned_data.get("http_remote_path") or "").strip()
         http_direction = cleaned_data.get("http_direction") or "push"
         source_path = (cleaned_data.get("source_path") or "").strip()
+        remote_direction = cleaned_data.get("remote_direction") or "push"
+        cleaned_data["remote_direction"] = remote_direction
         schedule_mode = cleaned_data.get("schedule_mode") or "interval"
         schedule_minutes = cleaned_data.get("schedule_minutes") or 60
         cleaned_data["schedule_mode"] = schedule_mode
@@ -489,7 +499,12 @@ class BackupJobForm(forms.ModelForm):
                 self.add_error("local_dest_path", "Pull backups need a local destination folder.")
         else:
             if not source_path:
-                self.add_error("source_path", "SSH backups need a source folder.")
+                message = (
+                    "SSH pull backups need the local destination folder."
+                    if remote_direction == "pull"
+                    else "SSH backups need a local source folder."
+                )
+                self.add_error("source_path", message)
             remote_host = (cleaned_data.get("remote_host") or "").strip()
             remote_user = (cleaned_data.get("remote_user") or "").strip()
             remote_dir = (cleaned_data.get("remote_dir") or "").strip()
