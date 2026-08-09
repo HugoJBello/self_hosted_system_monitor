@@ -1878,6 +1878,46 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(job.http_direction, "push")
         self.assertEqual(job.http_remote_token, "token-123")
 
+    def test_http_backup_job_accepts_pull_fields(self):
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "create_job": "1",
+                "new-name": "HTTP pull backup",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-backup_type": "http",
+                "new-source_path": "",
+                "new-local_dest_path": "/home/test/RestoredDocuments",
+                "new-trigger_on_mount": "",
+                "new-schedule_minutes": "30",
+                "new-http_remote_url": "https://remote.example.com/system_monitor",
+                "new-http_remote_token": "token-123",
+                "new-http_remote_path": "/srv/backups/test",
+                "new-http_direction": "pull",
+                "new-remote_host": "",
+                "new-remote_user": "",
+                "new-remote_dir": "",
+                "new-ssh_port": "22",
+                "new-connection_mode": "direct",
+                "new-auth_mode": "key",
+                "new-cloudflare_auth_home": "",
+                "new-cloudflare_service_token_id": "",
+                "new-cloudflare_service_token_secret": "",
+                "new-password_file_path": "",
+                "new-public_key_path": "",
+                "new-max_size": "100m",
+                "new-run_timeout_seconds": "7200",
+                "new-idle_timeout_seconds": "900",
+                "new-exclude_patterns": "",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        job = BackupJob.objects.get(name="HTTP pull backup")
+        self.assertEqual(job.backup_type, "http")
+        self.assertEqual(job.http_direction, "pull")
+        self.assertEqual(job.local_dest_path, "/home/test/RestoredDocuments")
+
     @patch("monitor.backups._run_streaming_command")
     @patch("monitor.backups._ensure_local_destination", return_value="/hostfs/media/usb/docs")
     @patch("monitor.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
@@ -2269,6 +2309,123 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(mock_head_remote_file.call_count, 2)
         mock_upload_file.assert_called_once()
         self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
+
+    @patch("monitor.http_backups._delete_local_files")
+    @patch("monitor.http_backups._write_local_file")
+    @patch("monitor.http_backups._download_file", return_value=b"remote")
+    @patch("monitor.http_backups._request_json")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
+                "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+                "old-local.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_pull_downloads_changed_files_and_deletes_local_extras(
+        self,
+        mock_build_manifest,
+        mock_request_json,
+        mock_download_file,
+        mock_write_local_file,
+        mock_delete_local_files,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP pull",
+            backup_type="http",
+            source_path="",
+            local_dest_path="/home/test/RestoredDocuments",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="pull",
+            delete_enabled=True,
+        )
+        mock_request_json.return_value = {
+            "ok": True,
+            "files": {
+                "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+                "new.txt": {"size": 4, "mtime": 2, "mtime_ns": 2_000_000_000},
+            },
+            "skipped": [],
+        }
+        mock_delete_local_files.return_value = ["old-local.txt"]
+        logs = []
+
+        stats = sync_http_backup(job, log_callback=logs.append)
+
+        self.assertEqual(stats["changed"], 1)
+        self.assertEqual(stats["transferred"], 1)
+        self.assertEqual(stats["deleted"], 1)
+        mock_request_json.assert_called_once()
+        self.assertEqual(mock_request_json.call_args.args[1], "manifest")
+        mock_download_file.assert_called_once_with(
+            "https://remote.example.com/system_monitor",
+            "token-123",
+            "/srv/backups/test",
+            "new.txt",
+            900,
+            job,
+        )
+        mock_write_local_file.assert_called_once_with(
+            "/home/test/RestoredDocuments",
+            "new.txt",
+            {"size": 4, "mtime": 2, "mtime_ns": 2_000_000_000},
+            b"remote",
+        )
+        mock_delete_local_files.assert_called_once_with("/home/test/RestoredDocuments", ["old-local.txt"])
+        self.assertTrue(any("Deleted 1 local files missing on remote." in line for line in logs))
+
+    @patch("monitor.http_backups._delete_local_files")
+    @patch("monitor.http_backups._write_local_file")
+    @patch("monitor.http_backups._download_file", return_value=b"remote")
+    @patch("monitor.http_backups._request_json")
+    @patch(
+        "monitor.http_backups.build_manifest",
+        return_value={
+            "files": {
+                "old-local.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
+            },
+            "skipped": [],
+        },
+    )
+    def test_http_pull_without_delete_keeps_local_extras(
+        self,
+        mock_build_manifest,
+        mock_request_json,
+        mock_download_file,
+        mock_write_local_file,
+        mock_delete_local_files,
+    ):
+        job = BackupJob.objects.create(
+            name="HTTP pull no delete",
+            backup_type="http",
+            local_dest_path="/home/test/RestoredDocuments",
+            schedule_minutes=30,
+            http_remote_url="https://remote.example.com/system_monitor",
+            http_remote_token="token-123",
+            http_remote_path="/srv/backups/test",
+            http_direction="pull",
+            delete_enabled=False,
+        )
+        mock_request_json.return_value = {
+            "ok": True,
+            "files": {
+                "new.txt": {"size": 4, "mtime": 2, "mtime_ns": 2_000_000_000},
+            },
+            "skipped": [],
+        }
+
+        stats = sync_http_backup(job)
+
+        self.assertEqual(stats["changed"], 1)
+        self.assertEqual(stats["deleted"], 0)
+        mock_download_file.assert_called_once()
+        mock_write_local_file.assert_called_once()
+        mock_delete_local_files.assert_not_called()
 
     @patch("monitor.http_backups._request_json")
     def test_http_stat_batches_report_progress_for_heartbeat(self, mock_request_json):

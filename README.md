@@ -134,7 +134,7 @@ Change it before using HTTP backups between servers. The value is also initializ
 HTTP_BACKUP_TOKEN=change_this_token
 ```
 
-When configuring an HTTP backup job on the sending server, set `Remote Bearer token` to the token saved on the receiving server. The token is sent as:
+When configuring an HTTP backup job, set `Remote Bearer token` to the token saved on the other server. The token is sent as:
 
 ```http
 Authorization: Bearer <token>
@@ -142,7 +142,7 @@ Authorization: Bearer <token>
 
 This token protects the HTTP backup endpoints that can list, compare, inspect, read, write, and delete files under the configured backup paths.
 
-HTTP backups compare file size and modification time in seconds, matching rsync's normal quick-check behavior. Push jobs send large batches of local metadata to the receiver's compare endpoint, where the receiver checks those paths locally and returns only the files that need upload. If a receiver is still missing the compare endpoint, push jobs fall back to bounded stat batches, and then to `HEAD` checks on the existing file endpoint. When delete is enabled, push jobs prune the receiver in bounded directory batches based on the local tree, so strict deletion does not require a single exhaustive remote listing request. Uploaded files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
+HTTP backups compare file size and modification time in seconds, matching rsync's normal quick-check behavior. Push jobs copy the local folder to the remote server: they send large batches of local metadata to the remote compare endpoint, upload changed files through the file endpoint, and when delete is enabled prune the remote destination in bounded directory batches based on the local tree. Pull jobs copy the remote folder to a local destination: they request the remote manifest, download changed files through the file endpoint, and when delete is enabled remove local destination files that no longer exist on the remote source. If a receiver is still missing the compare endpoint, push jobs fall back to bounded stat batches, and then to `HEAD` checks on the existing file endpoint. Uploaded and pulled files preserve their source modification time so subsequent runs can skip unchanged media without hashing every file in large trees.
 
 ## Alerts
 
