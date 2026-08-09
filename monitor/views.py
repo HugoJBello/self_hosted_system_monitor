@@ -806,7 +806,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
 
     def get(self, request):
         _best_effort_reconcile_script_jobs()
-        return render(request, self.template_name, self._context())
+        return render(request, self.template_name, self._context(edit_job_id=request.GET.get("edit_job")))
 
     def post(self, request):
         _best_effort_reconcile_script_jobs()
@@ -1014,7 +1014,7 @@ class BackupsView(LoginRequiredMixin, View):
 
     def get(self, request):
         _best_effort_reconcile_backups()
-        return render(request, self.template_name, self._context())
+        return render(request, self.template_name, self._context(edit_job_id=request.GET.get("edit_job")))
 
     def post(self, request):
         _best_effort_reconcile_backups()

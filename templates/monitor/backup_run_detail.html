@@ -32,6 +32,7 @@
         <button type="submit" name="rerun_run" value="{{ backup_run.id }}" class="btn btn-outline-light btn-sm">Rerun job</button>
       </form>
     {% endif %}
+    <a href="{% url 'monitor:backups' %}?edit_job={{ backup_run.job.id }}" class="btn btn-accent btn-sm"><i class="bi bi-pencil-square"></i> Edit backup</a>
     <a href="{% url 'monitor:backups' %}" class="btn btn-outline-light btn-sm">Back to backups</a>
   </div>
 </div>

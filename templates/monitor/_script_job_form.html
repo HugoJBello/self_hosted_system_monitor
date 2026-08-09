@@ -59,7 +59,18 @@
         </select>
       </div>
     </div>
-    <div class="col-md-2"><label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ form.idle_timeout_seconds }}</div>
+    <div class="col-md-2">
+      <label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout</label>
+      {{ form.idle_timeout_seconds }}
+      <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.idle_timeout_seconds.id_for_label }}">
+        <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+        <select class="form-select" data-timeout-unit>
+          <option value="minutes">minutes</option>
+          <option value="hours">hours</option>
+          <option value="seconds">seconds</option>
+        </select>
+      </div>
+    </div>
     <div class="col-12" data-manual-fields><div class="form-text">Manual jobs are never scheduled automatically. They run only when you click <strong>Run now</strong>.</div></div>
     <div class="col-12" data-scheduled-fields><div class="form-text">A job never overlaps with itself. If the schedule fires while the same job is still running, the scheduler waits.</div></div>
   </div>

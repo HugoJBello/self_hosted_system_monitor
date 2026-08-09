@@ -312,7 +312,19 @@
                 </div>
                 <div class="form-text">Maximum total runtime for one backup run.</div>
               </div>
-              <div class="col-md-3"><label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ form.idle_timeout_seconds }}</div>
+              <div class="col-md-3">
+                <label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout</label>
+                {{ form.idle_timeout_seconds }}
+                <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.idle_timeout_seconds.id_for_label }}">
+                  <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+                  <select class="form-select" data-timeout-unit>
+                    <option value="minutes">minutes</option>
+                    <option value="hours">hours</option>
+                    <option value="seconds">seconds</option>
+                  </select>
+                </div>
+                <div class="form-text">Maximum silence before the backup is considered stuck.</div>
+              </div>
               <div class="col-md-3"><label class="form-label" for="{{ form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ form.enabled }}</div></div>
               <div class="col-md-3"><label class="form-label" for="{{ form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ form.delete_enabled }}</div></div>
               <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ form.install_public_key }}</div></div>
@@ -412,7 +424,19 @@
               </div>
               <div class="form-text">This is the maximum total runtime for one backup.</div>
             </div>
-            <div class="col-md-3"><label class="form-label" for="{{ create_form.idle_timeout_seconds.id_for_label }}">Idle timeout (s)</label>{{ create_form.idle_timeout_seconds }}</div>
+            <div class="col-md-3">
+              <label class="form-label" for="{{ create_form.idle_timeout_seconds.id_for_label }}">Idle timeout</label>
+              {{ create_form.idle_timeout_seconds }}
+              <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ create_form.idle_timeout_seconds.id_for_label }}">
+                <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+                <select class="form-select" data-timeout-unit>
+                  <option value="minutes">minutes</option>
+                  <option value="hours">hours</option>
+                  <option value="seconds">seconds</option>
+                </select>
+              </div>
+              <div class="form-text">Maximum silence before the backup is considered stuck.</div>
+            </div>
             <div class="col-md-3"><label class="form-label" for="{{ create_form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ create_form.enabled }}</div></div>
             <div class="col-md-3"><label class="form-label" for="{{ create_form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ create_form.delete_enabled }}</div></div>
             <div class="col-md-3" data-remote-fields><label class="form-label" for="{{ create_form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ create_form.install_public_key }}</div></div>
@@ -725,9 +749,6 @@
 
   function secondsToEditorState(secondsValue) {
     const seconds = Number(secondsValue || 0);
-    if (seconds > 0 && seconds % 3600 === 0) {
-      return { value: seconds / 3600, unit: "hours" };
-    }
     if (seconds > 0 && seconds % 60 === 0) {
       return { value: seconds / 60, unit: "minutes" };
     }

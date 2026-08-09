@@ -572,7 +572,6 @@
 
   function secondsToEditorState(secondsValue) {
     const seconds = Number(secondsValue || 0);
-    if (seconds > 0 && seconds % 3600 === 0) return { value: seconds / 3600, unit: "hours" };
     if (seconds > 0 && seconds % 60 === 0) return { value: seconds / 60, unit: "minutes" };
     return { value: Math.max(seconds, 1), unit: "seconds" };
   }
