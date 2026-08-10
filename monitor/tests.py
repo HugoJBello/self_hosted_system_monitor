@@ -24,6 +24,7 @@ from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSetti
 from .reporting import generate_report_for_rule
 from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
+from .volumes import list_volumes
 
 
 User = get_user_model()
@@ -479,6 +480,90 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "Script jobs")
         self.assertNotContains(response, "All job runs")
         self.assertNotContains(response, "Latest finished runs")
+
+    @patch("monitor.views.list_path_browser_roots", return_value=[{"path": "/media", "name": "media"}])
+    @patch("monitor.views.list_volumes")
+    def test_volumes_page_loads(self, mock_list_volumes, _mock_browser_roots):
+        mock_list_volumes.return_value = {
+            "mounted": [
+                {
+                    "device": "/dev/sda1",
+                    "mountpoint": "/",
+                    "fstype": "ext4",
+                    "status_label": "Mounted",
+                    "percent": 50,
+                    "used_gb": 10,
+                    "free_gb": 10,
+                    "size_gb": 20,
+                    "label": "",
+                    "model": "SSD",
+                    "readonly": False,
+                }
+            ],
+            "unmounted": [
+                {
+                    "device": "/dev/sdb1",
+                    "name": "sdb1",
+                    "fstype": "ext4",
+                    "status_label": "Unmounted",
+                    "size_gb": 100,
+                    "label": "USB",
+                    "uuid": "abc",
+                    "model": "USB disk",
+                    "transport": "usb",
+                }
+            ],
+            "mounted_count": 1,
+            "unmounted_count": 1,
+        }
+
+        response = self.client.get(self._path("monitor:volumes"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Volumes")
+        self.assertContains(response, "/dev/sdb1")
+        self.assertContains(response, "Mount")
+
+    @patch("monitor.views.mount_volume")
+    def test_volumes_mount_action_uses_submitted_target(self, mock_mount_volume):
+        mock_mount_volume.return_value.message = "Mounted /dev/sdb1 on /media/usb."
+
+        response = self.client.post(
+            self._path("monitor:volumes"),
+            {
+                "volume_action": "mount",
+                "device": "/dev/sdb1",
+                "mountpoint": "/media/usb",
+                "fstype": "ext4",
+                "options": "defaults",
+                "sudo_password": "secret",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
+        mock_mount_volume.assert_called_once_with(
+            "/dev/sdb1",
+            "/media/usb",
+            fstype="ext4",
+            options="defaults",
+            sudo_password="secret",
+        )
+
+    @patch("monitor.views.unmount_volume")
+    def test_volumes_unmount_action_uses_submitted_target(self, mock_unmount_volume):
+        mock_unmount_volume.return_value.message = "Unmounted /media/usb."
+
+        response = self.client.post(
+            self._path("monitor:volumes"),
+            {
+                "volume_action": "unmount",
+                "target": "/media/usb",
+                "sudo_password": "secret",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
+        mock_unmount_volume.assert_called_once_with("/media/usb", sudo_password="secret")
 
     def test_script_jobs_compact_view_shows_last_run(self):
         job = ScriptJob.objects.create(
@@ -3033,6 +3118,29 @@ class BackupHelpersTests(TestCase):
             self.assertIsNotNone(backup_run.stop_requested_at)
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "backup_runtime", f"run_{backup_run.id}.stop")))
         mock_worker_matches.assert_called_once_with(backup_run)
+
+    @patch("monitor.volumes._lsblk_rows", return_value=[])
+    @patch("monitor.volumes._disk_device_entries")
+    def test_list_volumes_classifies_idle_automounts_as_unmounted(self, mock_disk_device_entries, _mock_lsblk_rows):
+        mock_disk_device_entries.return_value = [
+            {
+                "device": "/dev/sdb1",
+                "mountpoint": "/media/archive",
+                "fstype": "ext4",
+                "total_gb": 100,
+                "used_gb": None,
+                "free_gb": None,
+                "percent": None,
+                "free_percent": None,
+                "is_mounted": False,
+                "status_label": "Idle automount",
+            }
+        ]
+
+        volumes = list_volumes()
+
+        self.assertEqual(volumes["mounted"], [])
+        self.assertEqual(volumes["unmounted"][0]["mountpoint"], "/media/archive")
 
     @patch("monitor.backups.time.sleep", return_value=None)
     @patch("monitor.backups._remove_runtime_files")

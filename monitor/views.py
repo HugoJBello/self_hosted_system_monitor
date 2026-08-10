@@ -23,11 +23,13 @@ from .backups import _normalize_stream_output, get_runtime_state, list_browser_r
 from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, ScriptJobForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
 from .notification_client import build_test_payload, send_json_notification
+from .path_browser import list_browser_roots as list_path_browser_roots, list_directory_children as list_path_directory_children
 from .process_control import ProcessControlError, container_info_for_pid, docker_container_action, kill_process, reboot_host, restart_process, terminate_process, validate_process_identity
 from .memory import build_memory_breakdown, build_snapshot_memory_breakdown
 from .reporting import build_time_series_chart_data
 from .script_jobs import get_runtime_state as get_script_runtime_state, mark_stale_running_script_jobs, request_script_run_stop, start_background_script_job
 from .services import _process_rows
+from .volumes import list_volumes, mount_volume, unmount_volume
 
 
 User = get_user_model()
@@ -1234,6 +1236,7 @@ class BackupsView(LoginRequiredMixin, View):
             "card_view_url": f"?{card_params.urlencode()}",
             "pagination_query": pagination_params.urlencode(),
             "browser_roots": list_browser_roots(),
+            "backup_tree_url": reverse("monitor:backup-tree"),
             "create_form": create_form,
             "show_create": show_create,
             "edit_job_id": edit_job_id,
@@ -1304,6 +1307,51 @@ class BackupTreeView(LoginRequiredMixin, View):
     def get(self, request):
         host_path = request.GET.get("path", "/")
         return JsonResponse({"items": list_directory_children(host_path)})
+
+
+class VolumeTreeView(LoginRequiredMixin, View):
+    def get(self, request):
+        host_path = request.GET.get("path", "/")
+        return JsonResponse({"items": list_path_directory_children(host_path)})
+
+
+class VolumesView(LoginRequiredMixin, View):
+    template_name = "monitor/volumes.html"
+
+    def get(self, request):
+        return render(request, self.template_name, self._context())
+
+    def post(self, request):
+        action = request.POST.get("volume_action")
+        sudo_password = request.POST.get("sudo_password") or ""
+        try:
+            if action == "mount":
+                result = mount_volume(
+                    request.POST.get("device"),
+                    request.POST.get("mountpoint"),
+                    fstype=request.POST.get("fstype") or "",
+                    options=request.POST.get("options") or "",
+                    sudo_password=sudo_password,
+                )
+            elif action == "unmount":
+                result = unmount_volume(request.POST.get("target"), sudo_password=sudo_password)
+            else:
+                messages.error(request, "Unknown volume action.")
+                return redirect("monitor:volumes")
+        except ProcessControlError as exc:
+            messages.error(request, str(exc))
+            return redirect("monitor:volumes")
+        messages.success(request, result.message)
+        return redirect("monitor:volumes")
+
+    def _context(self):
+        volumes = list_volumes()
+        return {
+            **volumes,
+            "browser_roots": list_path_browser_roots(),
+            "volume_tree_url": reverse("monitor:volume-tree"),
+            "settings_obj": MonitoringSettings.load(),
+        }
 
 
 class BackupRunStatusView(LoginRequiredMixin, View):

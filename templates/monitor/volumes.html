@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Volumes | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Storage control</p>
+    <h1 class="display-6 mb-1">Volumes</h1>
+    <p class="text-secondary mb-0">Inspect host disks, mounted filesystems, and available block volumes from one place.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="badge text-bg-light border">Mounted {{ mounted_count }}</span>
+    <span class="badge text-bg-light border">Unmounted {{ unmounted_count }}</span>
+    <a href="{% url 'monitor:system-monitor' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-speedometer2"></i> Monitor</a>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-xl-7">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Mounted now</p>
+          <h2 class="h4 mb-0">Active mount points</h2>
+        </div>
+      </div>
+      <div class="mounted-device-list volume-list">
+        {% for volume in mounted %}
+          <article class="mounted-device-card volume-card">
+            <div class="mounted-device-top">
+              <div class="mounted-device-main">
+                <div class="mounted-device-path">{{ volume.mountpoint }}</div>
+                <div class="small text-secondary">{{ volume.device }}</div>
+              </div>
+              <div class="mounted-device-status-shell">
+                <span class="mounted-device-status is-mounted">{{ volume.status_label }}</span>
+                {% if volume.percent is not None %}<div class="mounted-device-percent">{{ volume.percent }}%</div>{% endif %}
+              </div>
+            </div>
+            <div class="mounted-device-chip-row">
+              <span class="mounted-device-chip">{{ volume.fstype|default:"unknown"|upper }}</span>
+              {% if volume.label %}<span class="mounted-device-chip">{{ volume.label }}</span>{% endif %}
+              {% if volume.size_gb %}<span class="mounted-device-chip">{{ volume.size_gb }} GB block</span>{% endif %}
+              {% if volume.model %}<span class="mounted-device-chip">{{ volume.model }}</span>{% endif %}
+              {% if volume.readonly %}<span class="mounted-device-chip">read-only</span>{% endif %}
+            </div>
+            {% if volume.percent is not None %}
+              <div class="mounted-device-usage-row">
+                <div class="mounted-device-usage-item">
+                  <span class="mounted-device-label">Used</span>
+                  <strong>{{ volume.used_gb }} GB</strong>
+                </div>
+                <div class="mounted-device-usage-item mounted-device-usage-item-right">
+                  <span class="mounted-device-label">Free</span>
+                  <strong>{{ volume.free_gb }} GB</strong>
+                </div>
+              </div>
+              <div class="progress dark-progress mounted-device-progress" role="progressbar" aria-valuenow="{{ volume.percent }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar mounted-device-progress-used" style="width: {{ volume.percent }}%"></div>
+              </div>
+            {% endif %}
+            {% if volume.mountpoint != "/" %}
+              <details class="volume-action-details">
+                <summary class="backup-advanced-toggle">Unmount volume</summary>
+                <form method="post" class="volume-action-form mt-3" data-confirm-submit="Unmount {{ volume.mountpoint }}? Running jobs or open files may fail.">
+                  {% csrf_token %}
+                  <input type="hidden" name="volume_action" value="unmount">
+                  <input type="hidden" name="target" value="{{ volume.mountpoint }}">
+                  <div>
+                    <label class="form-label" for="sudo-unmount-{{ forloop.counter }}">Sudo password if needed</label>
+                    <input id="sudo-unmount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                  </div>
+                  <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-eject"></i> Unmount</button>
+                </form>
+              </details>
+            {% endif %}
+          </article>
+        {% empty %}
+          <div class="text-secondary">No mounted volumes detected.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <div class="col-12 col-xl-5">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Available</p>
+          <h2 class="h4 mb-0">Unmounted volumes</h2>
+        </div>
+      </div>
+      <div class="volume-list">
+        {% for volume in unmounted %}
+          <article class="mounted-device-card volume-card">
+            <div class="mounted-device-top">
+              <div class="mounted-device-main">
+                <div class="mounted-device-path">{{ volume.device }}</div>
+                <div class="small text-secondary">{{ volume.model|default:"Block volume" }}</div>
+              </div>
+              <div class="mounted-device-status-shell">
+                <span class="mounted-device-status is-idle">{{ volume.status_label }}</span>
+              </div>
+            </div>
+            <div class="mounted-device-chip-row">
+              <span class="mounted-device-chip">{{ volume.fstype|default:"unknown"|upper }}</span>
+              {% if volume.label %}<span class="mounted-device-chip">{{ volume.label }}</span>{% endif %}
+              {% if volume.uuid %}<span class="mounted-device-chip">UUID {{ volume.uuid }}</span>{% endif %}
+              {% if volume.size_gb %}<span class="mounted-device-chip">{{ volume.size_gb }} GB</span>{% endif %}
+              {% if volume.transport %}<span class="mounted-device-chip">{{ volume.transport }}</span>{% endif %}
+            </div>
+            <form method="post" class="volume-action-form" data-confirm-submit="Mount {{ volume.device }} on the selected folder?">
+              {% csrf_token %}
+              <input type="hidden" name="volume_action" value="mount">
+              <input type="hidden" name="device" value="{{ volume.device }}">
+              <input type="hidden" name="fstype" value="{{ volume.fstype }}">
+              <div>
+                <label class="form-label" for="mountpoint-{{ forloop.counter }}">Mount path</label>
+                <div class="input-group flex-wrap backup-source-group">
+                  <input id="mountpoint-{{ forloop.counter }}" type="text" name="mountpoint" class="form-control" placeholder="/media/{{ volume.name|default:'volume' }}" required data-path-browser-input>
+                  <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="volumeFolderModal" data-input-id="mountpoint-{{ forloop.counter }}">Browse</button>
+                </div>
+              </div>
+              <div>
+                <label class="form-label" for="mount-options-{{ forloop.counter }}">Mount options</label>
+                <input id="mount-options-{{ forloop.counter }}" type="text" name="options" class="form-control" placeholder="defaults">
+              </div>
+              <div>
+                <label class="form-label" for="sudo-mount-{{ forloop.counter }}">Sudo password if needed</label>
+                <input id="sudo-mount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+              </div>
+              <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-hdd-stack"></i> Mount</button>
+            </form>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No unmounted block volumes detected.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+
+{% include "monitor/_path_browser_modal.html" with modal_id="volumeFolderModal" title="Pick mount folder" tree_url=volume_tree_url browser_roots=browser_roots %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'monitor/js/path_browser.js' %}?v=20260810-volumes"></script>
+{% endblock %}

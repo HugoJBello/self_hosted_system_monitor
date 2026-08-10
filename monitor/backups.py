@@ -21,6 +21,8 @@ from django.db import OperationalError
 
 from .models import BackupJob, BackupRun
 from .http_backups import sync_http_backup
+from .path_browser import list_browser_roots as _list_browser_roots
+from .path_browser import list_directory_children as _list_directory_children
 
 
 logger = logging.getLogger(__name__)
@@ -40,22 +42,6 @@ RSYNC_PARTIAL_SUCCESS_EXIT_CODES = {23, 24}
 BACKUP_NICE_LEVEL = 19
 BACKUP_STOP_POLL_INTERVAL_SECONDS = 2
 MOUNT_SENSITIVE_ROOTS = ("/media", "/mnt", "/run/media")
-BROWSER_ROOTS = [
-    "/home",
-    "/media",
-    "/mnt",
-    "/srv",
-    "/opt",
-    "/var/backups",
-]
-EXCLUDED_BROWSER_PATHS = {
-    "/proc",
-    "/sys",
-    "/dev",
-    "/run",
-    "/tmp",
-    "/var/lib/docker",
-}
 
 
 @dataclass
@@ -1372,49 +1358,8 @@ def dispatch_scheduled_backups(snapshot_time=None):
 
 
 def list_browser_roots():
-    roots = []
-    seen_paths = set()
-    for root_path in BROWSER_ROOTS:
-        absolute_path = _hostfs_path(root_path)
-        if os.path.isdir(absolute_path):
-            roots.append({"path": root_path, "name": root_path.strip("/") or "/"})
-            seen_paths.add(root_path)
-    for mount_path in sorted(_mounted_host_paths()):
-        if not mount_path.startswith(MOUNT_SENSITIVE_ROOTS):
-            continue
-        if mount_path in seen_paths:
-            continue
-        absolute_path = _hostfs_path(mount_path)
-        if os.path.isdir(absolute_path):
-            roots.append({"path": mount_path, "name": f"Mounted: {mount_path}"})
-            seen_paths.add(mount_path)
-    return roots
+    return _list_browser_roots()
 
 
 def list_directory_children(host_path):
-    normalized_path = os.path.normpath(host_path or "/")
-    if normalized_path == ".":
-        normalized_path = "/"
-    absolute_path = _hostfs_path(normalized_path)
-    if not os.path.isdir(absolute_path):
-        return []
-
-    children = []
-    try:
-        entries = sorted(os.scandir(absolute_path), key=lambda entry: entry.name.lower())
-    except PermissionError:
-        return []
-
-    for entry in entries:
-        if not entry.is_dir(follow_symlinks=False):
-            continue
-        relative_path = os.path.join(normalized_path, entry.name).replace("\\", "/")
-        if relative_path in EXCLUDED_BROWSER_PATHS:
-            continue
-        children.append(
-            {
-                "path": relative_path if relative_path.startswith("/") else f"/{relative_path}",
-                "name": entry.name,
-            }
-        )
-    return children
+    return _list_directory_children(host_path)

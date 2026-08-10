@@ -488,6 +488,30 @@ body.app-shell {
   font-size: 0.95rem;
 }
 
+.volume-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.volume-card {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.volume-action-details {
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  padding-top: 0.75rem;
+}
+
+.volume-action-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.volume-action-form .btn {
+  justify-self: start;
+}
+
 @media (max-width: 575.98px) {
   .mounted-device-top,
   .mounted-device-usage-row {
@@ -505,6 +529,10 @@ body.app-shell {
 
   .mounted-device-footer {
     grid-template-columns: 1fr;
+  }
+
+  .volume-action-form .btn {
+    width: 100%;
   }
 }
 

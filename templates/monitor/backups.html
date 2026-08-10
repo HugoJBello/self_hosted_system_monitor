@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load monitor_extras %}
+{% load monitor_extras static %}
 
 {% block title %}Backups | System Monitor{% endblock %}
 
@@ -330,14 +330,14 @@
                 <label class="form-label" for="{{ form.source_path.id_for_label }}">Local folder</label>
                 <div class="input-group flex-wrap backup-source-group">
                   {{ form.source_path }}
-                  <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
+                  <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
                 </div>
                 <div class="form-text">For local, SSH, and HTTP push jobs this is the local folder used by the copy.</div>
               </div>
               <div class="col-md-3"><label class="form-label" for="{{ form.schedule_mode.id_for_label }}">Schedule mode</label>{{ form.schedule_mode }}</div>
               <div class="col-md-3" data-backup-interval-fields><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
               <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
-              <div class="col-12" data-local-destination-fields><label class="form-label" for="{{ form.local_dest_path.id_for_label }}">Local destination folder</label><div class="input-group flex-wrap backup-source-group">{{ form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button></div><div class="form-text">Used by local backups and HTTP pull jobs. In HTTP pull, this folder is overwritten from the remote server.</div></div>
+              <div class="col-12" data-local-destination-fields><label class="form-label" for="{{ form.local_dest_path.id_for_label }}">Local destination folder</label><div class="input-group flex-wrap backup-source-group">{{ form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button></div><div class="form-text">Used by local backups and HTTP pull jobs. In HTTP pull, this folder is overwritten from the remote server.</div></div>
               <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.verify_mounted_device.id_for_label }}">Verify mounted device</label><div class="form-check form-switch mt-2">{{ form.verify_mounted_device }}</div></div>
               <div class="col-md-3" data-local-fields><div class="form-text pt-4">Checks that this folder, or one of its parent folders, is backed by a mounted external path under <code>/media</code>, <code>/mnt</code>, or <code>/run/media</code>. If not, the run fails before starting.</div></div>
               <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.trigger_on_mount.id_for_label }}">Run when mount appears</label><div class="form-check form-switch mt-2">{{ form.trigger_on_mount }}</div></div>
@@ -449,14 +449,14 @@
               <label class="form-label" for="{{ create_form.source_path.id_for_label }}">Local folder</label>
               <div class="input-group flex-wrap backup-source-group">
                 {{ create_form.source_path }}
-                <button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.source_path.id_for_label }}">Browse</button>
+                <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="backupFolderModal" data-input-id="{{ create_form.source_path.id_for_label }}">Browse</button>
               </div>
               <div class="form-text">For local, SSH, and HTTP push jobs this is the local folder used by the copy.</div>
             </div>
             <div class="col-md-3"><label class="form-label" for="{{ create_form.schedule_mode.id_for_label }}">Schedule mode</label>{{ create_form.schedule_mode }}</div>
             <div class="col-md-3" data-backup-interval-fields><label class="form-label" for="{{ create_form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ create_form.schedule_minutes }}</div>
             <div class="col-12"><label class="form-label" for="{{ create_form.description.id_for_label }}">Description</label>{{ create_form.description }}</div>
-            <div class="col-12" data-local-destination-fields><label class="form-label" for="{{ create_form.local_dest_path.id_for_label }}">Local destination folder</label><div class="input-group flex-wrap backup-source-group">{{ create_form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-bs-toggle="modal" data-bs-target="#backupFolderModal" data-input-id="{{ create_form.local_dest_path.id_for_label }}">Browse</button></div><div class="form-text">Used by local backups and HTTP pull jobs. In HTTP pull, this folder is overwritten from the remote server.</div></div>
+            <div class="col-12" data-local-destination-fields><label class="form-label" for="{{ create_form.local_dest_path.id_for_label }}">Local destination folder</label><div class="input-group flex-wrap backup-source-group">{{ create_form.local_dest_path }}<button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="backupFolderModal" data-input-id="{{ create_form.local_dest_path.id_for_label }}">Browse</button></div><div class="form-text">Used by local backups and HTTP pull jobs. In HTTP pull, this folder is overwritten from the remote server.</div></div>
             <div class="col-md-3" data-local-fields><label class="form-label" for="{{ create_form.verify_mounted_device.id_for_label }}">Verify mounted device</label><div class="form-check form-switch mt-2">{{ create_form.verify_mounted_device }}</div></div>
             <div class="col-md-3" data-local-fields><div class="form-text pt-4">Use this for USB or removable targets. The run only starts if the destination sits under a mounted external path or one of its parent folders does.</div></div>
             <div class="col-md-3" data-local-fields><label class="form-label" for="{{ create_form.trigger_on_mount.id_for_label }}">Run when mount appears</label><div class="form-check form-switch mt-2">{{ create_form.trigger_on_mount }}</div></div>
@@ -581,40 +581,14 @@
   </div>
 </div>
 
-<div class="modal fade" id="backupFolderModal" tabindex="-1" aria-labelledby="backupFolderModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content backup-modal-shell">
-      <div class="modal-header border-secondary-subtle">
-        <div>
-          <p class="eyebrow mb-1">Host folder browser</p>
-          <h2 class="h4 mb-0" id="backupFolderModalLabel">Pick a folder</h2>
-        </div>
-        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-      </div>
-      <div class="modal-body">
-        <div class="backup-browser" id="backupBrowser">
-          {% for root in browser_roots %}
-            <div class="backup-browser-node" data-path="{{ root.path }}">
-              <button type="button" class="btn btn-sm btn-outline-light backup-browser-toggle" data-path="{{ root.path }}">Open</button>
-              <button type="button" class="btn btn-link backup-browser-select" data-path="{{ root.path }}">{{ root.name }}</button>
-              <div class="backup-browser-children"></div>
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
+{% include "monitor/_path_browser_modal.html" with modal_id="backupFolderModal" title="Pick a folder" tree_url=backup_tree_url browser_roots=browser_roots %}
 {% endblock %}
 
 {% block scripts %}
+<script src="{% static 'monitor/js/path_browser.js' %}?v=20260810-volumes"></script>
 <script>
-  let activeBackupSourceInput = null;
-  let backupBrowserParentModalElement = null;
   const createBackupModalElement = document.getElementById("newBackupJobModal");
   const createBackupModal = createBackupModalElement ? bootstrap.Modal.getOrCreateInstance(createBackupModalElement) : null;
-  const backupModalElement = document.getElementById("backupFolderModal");
-  const backupModal = backupModalElement ? bootstrap.Modal.getOrCreateInstance(backupModalElement) : null;
 
   if (createBackupModal && {{ show_create|yesno:"true,false" }}) {
     createBackupModal.show();
@@ -627,84 +601,6 @@
       bootstrap.Modal.getOrCreateInstance(editModalElement).show();
     }
   }
-
-  document.querySelectorAll(".backup-source-input").forEach((input) => {
-    input.addEventListener("focus", () => { activeBackupSourceInput = input; });
-  });
-
-  document.querySelectorAll(".backup-source-picker").forEach((button) => {
-    button.addEventListener("click", () => {
-      activeBackupSourceInput = document.getElementById(button.dataset.inputId);
-      backupBrowserParentModalElement = button.closest(".modal");
-    });
-  });
-
-  if (backupModalElement) {
-    backupModalElement.addEventListener("hidden.bs.modal", () => {
-      if (backupBrowserParentModalElement) {
-        window.setTimeout(() => {
-          bootstrap.Modal.getOrCreateInstance(backupBrowserParentModalElement).show();
-          backupBrowserParentModalElement = null;
-        }, 0);
-      }
-    });
-    backupModalElement.addEventListener("shown.bs.modal", () => {
-      if (backupBrowserParentModalElement) {
-        const parentInstance = bootstrap.Modal.getInstance(backupBrowserParentModalElement);
-        if (parentInstance) {
-          parentInstance.hide();
-        }
-      }
-    });
-  }
-
-  function renderBackupChildren(container, items) {
-    container.innerHTML = "";
-    items.forEach((item) => {
-      const node = document.createElement("div");
-      node.className = "backup-browser-node nested";
-      node.dataset.path = item.path;
-      node.innerHTML = `
-        <button type="button" class="btn btn-sm btn-outline-light backup-browser-toggle" data-path="${item.path}">Open</button>
-        <button type="button" class="btn btn-link backup-browser-select" data-path="${item.path}">${item.name}</button>
-        <div class="backup-browser-children"></div>
-      `;
-      container.appendChild(node);
-    });
-  }
-
-  async function loadBackupChildren(path, targetNode) {
-    const childrenContainer = targetNode.querySelector(".backup-browser-children");
-    if (targetNode.dataset.loaded === "1") {
-      childrenContainer.classList.toggle("open");
-      return;
-    }
-    const response = await fetch(`{% url 'monitor:backup-tree' %}?path=${encodeURIComponent(path)}`);
-    const payload = await response.json();
-    renderBackupChildren(childrenContainer, payload.items || []);
-    childrenContainer.classList.add("open");
-    targetNode.dataset.loaded = "1";
-  }
-
-  document.addEventListener("click", async (event) => {
-    const toggle = event.target.closest(".backup-browser-toggle");
-    const select = event.target.closest(".backup-browser-select");
-    if (toggle) {
-      event.preventDefault();
-      const node = toggle.closest(".backup-browser-node");
-      await loadBackupChildren(toggle.dataset.path, node);
-    }
-    if (select) {
-      event.preventDefault();
-      if (activeBackupSourceInput) {
-        activeBackupSourceInput.value = select.dataset.path;
-        activeBackupSourceInput.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-      if (backupModal) {
-        backupModal.hide();
-      }
-    }
-  });
 
   function syncBackupEditor(editor) {
     const typeSelect = editor.querySelector(".backup-type-select");

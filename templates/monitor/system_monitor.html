@@ -165,6 +165,7 @@
           <p class="eyebrow mb-2">Storage layout</p>
           <h2 class="h4 mb-0">Mounted devices</h2>
         </div>
+        <a href="{% url 'monitor:volumes' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-device-hdd"></i> Volumes</a>
       </div>
       <div class="mounted-device-list">
         {% for disk in latest_snapshot.disk_devices %}

@@ -1,0 +1,24 @@
+<div class="modal fade" id="{{ modal_id }}" tabindex="-1" aria-labelledby="{{ modal_id }}Label" aria-hidden="true" data-path-browser-modal data-tree-url="{{ tree_url }}">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">Host folder browser</p>
+          <h2 class="h4 mb-0" id="{{ modal_id }}Label">{{ title|default:"Pick a folder" }}</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="backup-browser" data-path-browser>
+          {% for root in browser_roots %}
+            <div class="backup-browser-node" data-path="{{ root.path }}">
+              <button type="button" class="btn btn-sm btn-outline-light backup-browser-toggle" data-path="{{ root.path }}">Open</button>
+              <button type="button" class="btn btn-link backup-browser-select" data-path="{{ root.path }}">{{ root.name }}</button>
+              <div class="backup-browser-children"></div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -137,6 +137,10 @@ def _disk_devices():
     return devices
 
 
+def disk_devices():
+    return _disk_devices()
+
+
 def _fstab_automount_entries():
     fstab_path = os.path.join(HOST_ROOT_PATH, "etc", "fstab")
     entries = []
@@ -308,7 +312,7 @@ def collect_snapshot():
     disk = psutil.disk_usage(HOST_ROOT_PATH)
     load_avg = _safe_load_avg()
     network = _network_stats()
-    disks = _disk_devices()
+    disks = disk_devices()
     process_data = _process_rows(settings_obj.top_process_limit)
 
     with transaction.atomic():

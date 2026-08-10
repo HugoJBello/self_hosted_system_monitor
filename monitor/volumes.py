@@ -1,0 +1,283 @@
+import json
+import os
+import subprocess
+from dataclasses import dataclass
+
+import psutil
+
+from .path_browser import hostfs_path, normalize_host_path
+from .process_control import ProcessControlError, host_namespace_prefix
+from .services import disk_devices, _gb
+
+
+SYSTEM_DEVICE_PREFIXES = ("/dev/loop", "/dev/ram", "/dev/zram")
+PSEUDO_FS_TYPES = {"swap", "squashfs", "iso9660"}
+MOUNT_TIMEOUT_SECONDS = 30
+
+
+@dataclass
+class VolumeActionResult:
+    ok: bool
+    message: str
+
+
+def _run_host_command(command, *, sudo_password="", check=True, timeout_seconds=MOUNT_TIMEOUT_SECONDS):
+    command_parts = [*host_namespace_prefix(), *command]
+    input_text = None
+    if sudo_password:
+        command_parts = [*host_namespace_prefix(), "sudo", "-S", "-p", "", *command]
+        input_text = f"{sudo_password}\n"
+    try:
+        return subprocess.run(
+            command_parts,
+            check=check,
+            capture_output=True,
+            text=True,
+            input=input_text,
+            timeout=timeout_seconds,
+        )
+    except FileNotFoundError as exc:
+        raise ProcessControlError("Cannot enter the host namespace because nsenter is not installed.") from exc
+    except PermissionError as exc:
+        raise ProcessControlError("Permission denied while entering the host namespace.") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ProcessControlError(f"Host command timed out: {' '.join(command)}") from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        raise ProcessControlError(detail or f"Host command failed: {' '.join(command)}") from exc
+
+
+def _json_host_command(command):
+    try:
+        result = _run_host_command(command, check=True, timeout_seconds=12)
+    except ProcessControlError:
+        return None
+    try:
+        return json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return None
+
+
+def _as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [item for item in value if item]
+    if isinstance(value, str) and value:
+        return [value]
+    return []
+
+
+def _truthy(value):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _device_is_candidate(item):
+    path = item.get("path") or item.get("name") or ""
+    fstype = (item.get("fstype") or "").lower()
+    device_type = item.get("type") or ""
+    if not path.startswith("/dev/"):
+        return False
+    if path.startswith(SYSTEM_DEVICE_PREFIXES):
+        return False
+    if fstype in PSEUDO_FS_TYPES:
+        return False
+    return device_type in {"disk", "part", "crypt", "lvm", "raid0", "raid1", "raid5", "raid6", "raid10"}
+
+
+def _flatten_lsblk(items, parent=None):
+    rows = []
+    for item in items or []:
+        row = dict(item)
+        row["parent"] = parent
+        rows.append(row)
+        rows.extend(_flatten_lsblk(item.get("children") or [], parent=row.get("path") or row.get("name")))
+    return rows
+
+
+def _usage_for_mountpoint(mountpoint):
+    try:
+        usage = psutil.disk_usage(hostfs_path(mountpoint))
+    except (OSError, PermissionError, ValueError):
+        return {"total_gb": None, "used_gb": None, "free_gb": None, "percent": None, "free_percent": None}
+    return {
+        "total_gb": _gb(usage.total),
+        "used_gb": _gb(usage.used),
+        "free_gb": _gb(usage.free),
+        "percent": round(usage.percent, 2),
+        "free_percent": round(max(100 - usage.percent, 0), 2),
+    }
+
+
+def _disk_device_entries():
+    return list(disk_devices())
+
+
+def _lsblk_rows():
+    payload = _json_host_command(
+        [
+            "lsblk",
+            "--json",
+            "--paths",
+            "--bytes",
+            "--output",
+            "NAME,PATH,TYPE,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS,MODEL,SERIAL,RM,RO,HOTPLUG,TRAN,VENDOR,STATE",
+        ]
+    )
+    if not payload:
+        return []
+    return _flatten_lsblk(payload.get("blockdevices") or [])
+
+
+def list_volumes():
+    disk_device_entries = _disk_device_entries()
+    mounted_by_path = {item["mountpoint"]: item for item in disk_device_entries if item.get("is_mounted")}
+    mounted_items = []
+    unmounted_items = []
+    seen_mounts = set()
+    seen_devices = set()
+
+    for row in _lsblk_rows():
+        if not _device_is_candidate(row):
+            continue
+        device = row.get("path") or row.get("name") or ""
+        mountpoints = _as_list(row.get("mountpoints"))
+        base = {
+            "device": device,
+            "name": os.path.basename(device),
+            "type": row.get("type") or "",
+            "fstype": row.get("fstype") or "",
+            "label": row.get("label") or "",
+            "uuid": row.get("uuid") or "",
+            "size_gb": _gb(int(row.get("size") or 0)) if row.get("size") is not None else None,
+            "model": " ".join(part for part in [row.get("vendor") or "", row.get("model") or ""] if part).strip(),
+            "serial": row.get("serial") or "",
+            "transport": row.get("tran") or "",
+            "removable": _truthy(row.get("rm")),
+            "readonly": _truthy(row.get("ro")),
+            "hotplug": _truthy(row.get("hotplug")),
+            "state": row.get("state") or "",
+        }
+        seen_devices.add(device)
+        if mountpoints:
+            for mountpoint in mountpoints:
+                host_mountpoint = os.path.normpath(mountpoint)
+                usage = mounted_by_path.get(host_mountpoint) or _usage_for_mountpoint(host_mountpoint)
+                mounted_items.append(
+                    {
+                        **base,
+                        **usage,
+                        "mountpoint": host_mountpoint,
+                        "is_mounted": True,
+                        "status_label": "Mounted",
+                    }
+                )
+                seen_mounts.add(host_mountpoint)
+        elif base["type"] != "disk" or base["fstype"]:
+            unmounted_items.append(
+                {
+                    **base,
+                    "mountpoint": "",
+                    "is_mounted": False,
+                    "status_label": "Unmounted",
+                }
+            )
+
+    for mountpoint, item in mounted_by_path.items():
+        if mountpoint in seen_mounts:
+            continue
+        mounted_items.append({**item, "name": os.path.basename(item.get("device") or ""), "label": "", "uuid": "", "size_gb": item.get("total_gb"), "model": "", "serial": "", "transport": "", "removable": False, "readonly": False, "hotplug": False, "state": ""})
+
+    for item in disk_device_entries:
+        if item.get("is_mounted"):
+            continue
+        device = item.get("device") or ""
+        if device in seen_devices:
+            continue
+        unmounted_items.append(
+            {
+                **item,
+                "name": os.path.basename(device),
+                "label": "",
+                "uuid": "",
+                "size_gb": item.get("total_gb"),
+                "model": "",
+                "serial": "",
+                "transport": "",
+                "removable": False,
+                "readonly": False,
+                "hotplug": False,
+                "state": "",
+            }
+        )
+
+    mounted_items.sort(key=lambda item: (item.get("mountpoint") != "/", item.get("mountpoint") or "", item.get("device") or ""))
+    unmounted_items.sort(key=lambda item: (item.get("device") or ""))
+    return {
+        "mounted": mounted_items,
+        "unmounted": unmounted_items,
+        "mounted_count": len(mounted_items),
+        "unmounted_count": len(unmounted_items),
+        "seen_devices": seen_devices,
+    }
+
+
+def _validate_mount_source(device):
+    device = (device or "").strip()
+    if not device:
+        raise ProcessControlError("Select a volume to mount.")
+    if device.startswith("/dev/") or device.startswith("UUID=") or device.startswith("LABEL="):
+        return device
+    raise ProcessControlError("Only /dev, UUID=, or LABEL= mount sources are allowed.")
+
+
+def _validate_mount_options(options):
+    options = (options or "").strip()
+    if not options:
+        return ""
+    if any(char.isspace() for char in options):
+        raise ProcessControlError("Mount options must be comma-separated without spaces.")
+    return options
+
+
+def mount_volume(device, mountpoint, *, fstype="", options="", sudo_password=""):
+    source = _validate_mount_source(device)
+    target = normalize_host_path(mountpoint)
+    if target == "/":
+        raise ProcessControlError("Mounting directly on / is not allowed.")
+    opts = _validate_mount_options(options)
+    try:
+        _run_host_command(["mkdir", "-p", target], sudo_password=sudo_password)
+        command = ["mount"]
+        if fstype:
+            command.extend(["-t", fstype])
+        if opts:
+            command.extend(["-o", opts])
+        command.extend([source, target])
+        _run_host_command(command, sudo_password=sudo_password)
+    except ProcessControlError as exc:
+        if not sudo_password and any(needle in str(exc).lower() for needle in ["permission", "not permitted", "must be superuser", "root"]):
+            raise ProcessControlError("Mount needs sudo permissions. Enter the sudo password and try again.") from exc
+        raise
+    return VolumeActionResult(True, f"Mounted {source} on {target}.")
+
+
+def unmount_volume(target, *, sudo_password=""):
+    target = (target or "").strip()
+    if not target:
+        raise ProcessControlError("Select a mounted volume to unmount.")
+    if target == "/":
+        raise ProcessControlError("Unmounting / is not allowed.")
+    if not (target.startswith("/") or target.startswith("/dev/")):
+        raise ProcessControlError("Unmount target must be a mount path or /dev device.")
+    try:
+        _run_host_command(["umount", target], sudo_password=sudo_password)
+    except ProcessControlError as exc:
+        if not sudo_password and any(needle in str(exc).lower() for needle in ["permission", "not permitted", "must be superuser", "root"]):
+            raise ProcessControlError("Unmount needs sudo permissions. Enter the sudo password and try again.") from exc
+        raise
+    return VolumeActionResult(True, f"Unmounted {target}.")
