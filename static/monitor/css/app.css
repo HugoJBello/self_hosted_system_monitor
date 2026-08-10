@@ -512,6 +512,33 @@ body.app-shell {
   justify-self: start;
 }
 
+.volume-advanced-details {
+  border-radius: 0.8rem;
+}
+
+.volume-inline-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #c5d3e0;
+  cursor: pointer;
+  font-size: 0.84rem;
+  list-style: none;
+}
+
+.volume-inline-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.volume-inline-toggle:hover {
+  color: #ffffff;
+}
+
+.volume-advanced-grid {
+  display: grid;
+  gap: 0.75rem;
+}
+
 @media (max-width: 575.98px) {
   .mounted-device-top,
   .mounted-device-usage-row {

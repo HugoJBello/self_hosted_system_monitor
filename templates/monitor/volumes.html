@@ -68,10 +68,13 @@
                   {% csrf_token %}
                   <input type="hidden" name="volume_action" value="unmount">
                   <input type="hidden" name="target" value="{{ volume.mountpoint }}">
-                  <div>
-                    <label class="form-label" for="sudo-unmount-{{ forloop.counter }}">Sudo password if needed</label>
-                    <input id="sudo-unmount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
-                  </div>
+                  <details class="volume-advanced-details">
+                    <summary class="volume-inline-toggle"><i class="bi bi-key"></i> Use sudo password</summary>
+                    <div class="mt-2">
+                      <label class="form-label" for="sudo-unmount-{{ forloop.counter }}">Sudo password</label>
+                      <input id="sudo-unmount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                    </div>
+                  </details>
                   <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-eject"></i> Unmount</button>
                 </form>
               </details>
@@ -123,14 +126,19 @@
                   <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="volumeFolderModal" data-input-id="mountpoint-{{ forloop.counter }}">Browse</button>
                 </div>
               </div>
-              <div>
-                <label class="form-label" for="mount-options-{{ forloop.counter }}">Mount options</label>
-                <input id="mount-options-{{ forloop.counter }}" type="text" name="options" class="form-control" placeholder="defaults">
-              </div>
-              <div>
-                <label class="form-label" for="sudo-mount-{{ forloop.counter }}">Sudo password if needed</label>
-                <input id="sudo-mount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
-              </div>
+              <details class="volume-advanced-details">
+                <summary class="volume-inline-toggle"><i class="bi bi-sliders"></i> Advanced options</summary>
+                <div class="volume-advanced-grid mt-2">
+                  <div>
+                    <label class="form-label" for="mount-options-{{ forloop.counter }}">Mount options</label>
+                    <input id="mount-options-{{ forloop.counter }}" type="text" name="options" class="form-control" placeholder="defaults">
+                  </div>
+                  <div>
+                    <label class="form-label" for="sudo-mount-{{ forloop.counter }}">Sudo password</label>
+                    <input id="sudo-mount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                  </div>
+                </div>
+              </details>
               <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-hdd-stack"></i> Mount</button>
             </form>
           </article>
