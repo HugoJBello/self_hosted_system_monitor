@@ -329,6 +329,29 @@ def _dedupe_unmounted_items(items):
     return list(deduped.values())
 
 
+def _mounted_score(item):
+    return sum(
+        [
+            bool(item.get("uuid")) * 8,
+            bool(item.get("model")) * 4,
+            bool(item.get("fstype")) * 3,
+            bool(item.get("label")) * 2,
+            item.get("percent") is not None,
+            item.get("size_gb") is not None,
+        ]
+    )
+
+
+def _dedupe_mounted_items(items):
+    deduped = {}
+    for item in items:
+        key = (item.get("device") or "", item.get("mountpoint") or "")
+        existing = deduped.get(key)
+        if not existing or _mounted_score(item) > _mounted_score(existing):
+            deduped[key] = item
+    return list(deduped.values())
+
+
 def remember_mount_preference(*, device="", uuid="", label="", model="", serial="", mountpoint=""):
     target = normalize_host_path(mountpoint)
     volume_key = _volume_key_from_parts(uuid=uuid, label=label, serial=serial, model=model, device=device)
@@ -387,7 +410,7 @@ def list_volumes():
         seen_devices.add(device)
         seen_volume_keys.add(_volume_key(base))
         if mountpoints:
-            for mountpoint in mountpoints:
+            for mountpoint in dict.fromkeys(os.path.normpath(item) for item in mountpoints):
                 host_mountpoint = os.path.normpath(mountpoint)
                 usage = mounted_by_path.get(host_mountpoint) or _usage_for_mountpoint(host_mountpoint)
                 mounted_items.append(
@@ -458,6 +481,7 @@ def list_volumes():
             continue
         unmounted_items.append(fallback_item)
 
+    mounted_items = _dedupe_mounted_items(mounted_items)
     _attach_mount_preferences(mounted_items, preferences)
     unmounted_items = _attach_mount_preferences(_dedupe_unmounted_items(unmounted_items), preferences)
     mounted_items.sort(key=lambda item: (item.get("mountpoint") != "/", item.get("mountpoint") or "", item.get("device") or ""))

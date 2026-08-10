@@ -3301,6 +3301,29 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(volumes["unmounted"][0]["identity_label"], "TOSHIBA External USB")
 
     @patch("monitor.volumes._disk_device_entries", return_value=[])
+    @patch("monitor.volumes._usage_for_mountpoint", return_value={"total_gb": 100, "used_gb": 5, "free_gb": 95, "percent": 5, "free_percent": 95})
+    @patch("monitor.volumes._lsblk_rows")
+    def test_list_volumes_deduplicates_repeated_mounted_mountpoints(self, mock_lsblk_rows, _mock_usage, _mock_disk_device_entries):
+        mock_lsblk_rows.return_value = [
+            {
+                "path": "/dev/sdd1",
+                "name": "/dev/sdd1",
+                "type": "part",
+                "size": 1000,
+                "fstype": "ext4",
+                "label": "disk_usb_backups",
+                "uuid": "abc",
+                "mountpoints": ["/media/disk_usb_backups", "/media/disk_usb_backups", "/media/disk_usb_backups"],
+            }
+        ]
+
+        volumes = list_volumes()
+
+        self.assertEqual(len(volumes["mounted"]), 1)
+        self.assertEqual(volumes["mounted"][0]["device"], "/dev/sdd1")
+        self.assertEqual(volumes["mounted"][0]["mountpoint"], "/media/disk_usb_backups")
+
+    @patch("monitor.volumes._disk_device_entries", return_value=[])
     @patch("monitor.volumes._lsblk_rows")
     def test_list_volumes_suggests_saved_mountpoint_for_unmounted_volume(self, mock_lsblk_rows, _mock_disk_device_entries):
         VolumeMountPreference.objects.create(volume_key="uuid:abc", uuid="abc", mountpoint="/media/archive")
