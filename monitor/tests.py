@@ -3353,6 +3353,40 @@ class BackupHelpersTests(TestCase):
         with self.assertRaisesMessage(ProcessControlError, "Mount failed because sudo authentication failed. Check the sudo password and try again."):
             mount_volume("/dev/sdb1", "/media/usb", sudo_password="bad")
 
+    @patch("monitor.volumes._run_host_command")
+    def test_mount_volume_prefers_ntfs3_for_ntfs_filesystems(self, mock_run_host_command):
+        result = mount_volume("/dev/sdg1", "/media/usb_hd_libros_comics", fstype="ntfs", options="ro,force", sudo_password="secret")
+
+        self.assertEqual(result.message, "Mounted /dev/sdg1 on /media/usb_hd_libros_comics.")
+        self.assertEqual(
+            mock_run_host_command.call_args_list[1].args[0],
+            ["mount", "-t", "ntfs3", "-o", "ro,force", "/dev/sdg1", "/media/usb_hd_libros_comics"],
+        )
+        self.assertEqual(mock_run_host_command.call_count, 2)
+
+    @patch("monitor.volumes._run_host_command")
+    def test_mount_volume_falls_back_for_ntfs_when_ntfs3_fails(self, mock_run_host_command):
+        mock_run_host_command.side_effect = [
+            None,
+            ProcessControlError("unknown filesystem type 'ntfs3'"),
+            None,
+        ]
+
+        mount_volume("/dev/sdg1", "/media/usb_hd_libros_comics", fstype="ntfs", sudo_password="secret")
+
+        self.assertEqual(
+            mock_run_host_command.call_args_list[2].args[0],
+            ["mount", "-t", "ntfs", "/dev/sdg1", "/media/usb_hd_libros_comics"],
+        )
+
+    @patch("monitor.volumes._run_host_command")
+    def test_mount_volume_adds_ntfs_recovery_hint(self, mock_run_host_command):
+        ntfs_error = ProcessControlError("$MFTMirr does not match $MFT. NTFS is either inconsistent, or there is a hardware fault.")
+        mock_run_host_command.side_effect = [None, ntfs_error, ntfs_error, ntfs_error]
+
+        with self.assertRaisesMessage(ProcessControlError, "retry read-only with options 'ro,force'"):
+            mount_volume("/dev/sdg1", "/media/usb_hd_libros_comics", fstype="ntfs", sudo_password="secret")
+
     @patch("monitor.volumes._run_host_command", side_effect=ProcessControlError("umount: /media/usb: target is busy."))
     def test_unmount_volume_reports_command_detail(self, _mock_run_host_command):
         with self.assertRaisesMessage(ProcessControlError, "Unmount failed: umount: /media/usb: target is busy."):

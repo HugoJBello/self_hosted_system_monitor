@@ -524,6 +524,22 @@ def _validate_mount_options(options):
     return options
 
 
+def _mount_fstype_candidates(fstype):
+    fstype = _normalize_fstype(fstype)
+    if fstype == "ntfs":
+        return ["ntfs3", "ntfs", ""]
+    return [fstype] if fstype else [""]
+
+
+def _ntfs_mount_hint(error):
+    detail = _command_error_text(error).lower()
+    if "volume is dirty" in detail and "force" in detail:
+        return " NTFS is marked dirty. If you need recovery access from Linux, retry with mount options 'ro,force'."
+    if "$mftmirr does not match $mft" in detail or "ntfs is either inconsistent" in detail:
+        return " NTFS metadata is inconsistent. If Windows repair is not available, retry read-only with options 'ro,force' to copy data."
+    return ""
+
+
 def mount_volume(device, mountpoint, *, fstype="", options="", sudo_password=""):
     source = _validate_mount_source(device)
     try:
@@ -535,15 +551,24 @@ def mount_volume(device, mountpoint, *, fstype="", options="", sudo_password="")
     opts = _validate_mount_options(options)
     try:
         _run_host_command(["mkdir", "-p", target], sudo_password=sudo_password)
-        command = ["mount"]
-        if fstype:
-            command.extend(["-t", fstype])
-        if opts:
-            command.extend(["-o", opts])
-        command.extend([source, target])
-        _run_host_command(command, sudo_password=sudo_password)
+        last_error = None
+        for candidate_fstype in _mount_fstype_candidates(fstype):
+            command = ["mount"]
+            if candidate_fstype:
+                command.extend(["-t", candidate_fstype])
+            if opts:
+                command.extend(["-o", opts])
+            command.extend([source, target])
+            try:
+                _run_host_command(command, sudo_password=sudo_password)
+            except ProcessControlError as exc:
+                last_error = exc
+                continue
+            break
+        else:
+            raise last_error or ProcessControlError("Mount command failed.")
     except ProcessControlError as exc:
-        raise ProcessControlError(_format_action_error("Mount", exc, sudo_password=sudo_password)) from exc
+        raise ProcessControlError(f"{_format_action_error('Mount', exc, sudo_password=sudo_password)}{_ntfs_mount_hint(exc)}") from exc
     return VolumeActionResult(True, f"Mounted {source} on {target}.")
 
 

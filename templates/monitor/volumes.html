@@ -389,6 +389,9 @@
                 <div>
                   <label class="form-label" for="mount-options-{{ forloop.counter }}">Mount options</label>
                   <input id="mount-options-{{ forloop.counter }}" type="text" name="options" class="form-control" placeholder="defaults">
+                  {% if volume.fstype == "ntfs" %}
+                    <div class="form-text text-secondary">For dirty or inconsistent NTFS volumes, try <code>ro,force</code> to mount read-only for recovery.</div>
+                  {% endif %}
                 </div>
                 <div>
                   <label class="form-label" for="sudo-mount-{{ forloop.counter }}">Sudo password</label>
