@@ -821,6 +821,7 @@ body.app-shell {
 .job-last-run-link {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.45rem;
   color: #dfe8f1;
   text-decoration: none;
@@ -852,6 +853,11 @@ body.app-shell {
 
 .execution-actions form {
   margin: 0;
+}
+
+.job-compact-main .text-secondary,
+.execution-main .text-secondary {
+  overflow-wrap: anywhere;
 }
 
 .docker-family-grid {
@@ -1943,8 +1949,6 @@ body.app-shell {
 
   .job-list-toolbar-actions .btn,
   .job-list-toolbar-actions .btn-group,
-  .job-compact-actions .btn,
-  .job-compact-actions form,
   .execution-actions .btn,
   .execution-actions form {
     width: 100%;
@@ -1952,6 +1956,43 @@ body.app-shell {
 
   .job-list-toolbar-actions .btn-group .btn {
     width: 50%;
+  }
+
+  .job-compact-row {
+    gap: 0.7rem;
+    padding: 0.85rem;
+  }
+
+  .job-compact-actions {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+
+  .job-compact-actions form,
+  .job-compact-actions .btn {
+    width: 100%;
+  }
+
+  .job-compact-actions form:first-child {
+    flex: 1 1 6rem;
+  }
+
+  .job-compact-actions form:not(:first-child),
+  .job-compact-actions > button {
+    flex: 0 0 2.8rem;
+  }
+
+  .job-compact-actions .btn {
+    min-height: 2.4rem;
+    padding-inline: 0.55rem;
+  }
+
+  .job-compact-meta,
+  .job-compact-last,
+  .execution-times,
+  .execution-status {
+    font-size: 0.82rem;
   }
 
   .backup-source-group {

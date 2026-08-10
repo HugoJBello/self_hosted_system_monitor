@@ -470,12 +470,14 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:backups"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Configured backup jobs")
+        self.assertNotContains(response, "All backup runs")
         self.assertNotContains(response, "Latest finished runs")
 
     def test_script_jobs_page_loads(self):
         response = self.client.get(self._path("monitor:script-jobs"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Script jobs")
+        self.assertNotContains(response, "All job runs")
         self.assertNotContains(response, "Latest finished runs")
 
     def test_script_jobs_compact_view_shows_last_run(self):

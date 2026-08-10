@@ -19,7 +19,6 @@
   <div class="d-flex gap-2 flex-wrap">
     <span class="badge text-bg-light border">Jobs {{ jobs_count }}</span>
     <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
-    <a href="{% url 'monitor:script-job-runs' %}" class="btn btn-outline-light btn-sm">All job runs</a>
     <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#newScriptJobModal">New job</button>
   </div>
 </div>
