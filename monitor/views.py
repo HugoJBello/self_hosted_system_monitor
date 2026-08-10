@@ -29,7 +29,7 @@ from .memory import build_memory_breakdown, build_snapshot_memory_breakdown
 from .reporting import build_time_series_chart_data
 from .script_jobs import get_runtime_state as get_script_runtime_state, mark_stale_running_script_jobs, request_script_run_stop, start_background_script_job
 from .services import _process_rows
-from .volumes import list_volumes, mount_volume, unmount_volume
+from .volumes import list_volumes, mount_volume, remember_mount_preference, unmount_volume
 
 
 User = get_user_model()
@@ -1332,6 +1332,14 @@ class VolumesView(LoginRequiredMixin, View):
                     fstype=request.POST.get("fstype") or "",
                     options=request.POST.get("options") or "",
                     sudo_password=sudo_password,
+                )
+                remember_mount_preference(
+                    device=request.POST.get("device") or "",
+                    uuid=request.POST.get("uuid") or "",
+                    label=request.POST.get("label") or "",
+                    model=request.POST.get("model") or "",
+                    serial=request.POST.get("serial") or "",
+                    mountpoint=request.POST.get("mountpoint") or "",
                 )
             elif action == "unmount":
                 result = unmount_volume(request.POST.get("target"), sudo_password=sudo_password)

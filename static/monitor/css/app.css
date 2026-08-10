@@ -359,6 +359,14 @@ body.app-shell {
   overflow-wrap: anywhere;
 }
 
+.volume-device-title {
+  color: #fff;
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
 .mounted-device-percent {
   flex: 0 0 auto;
   padding: 0.4rem 0.6rem;
@@ -409,6 +417,7 @@ body.app-shell {
 .mounted-device-chip {
   display: inline-flex;
   align-items: center;
+  gap: 0.35rem;
   padding: 0.35rem 0.65rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.05);
@@ -417,6 +426,12 @@ body.app-shell {
   font-size: 0.78rem;
   line-height: 1.2;
   overflow-wrap: anywhere;
+}
+
+.mounted-device-chip.is-suggested {
+  color: #c9fff0;
+  background: rgba(77, 212, 172, 0.11);
+  border-color: rgba(77, 212, 172, 0.22);
 }
 
 .mounted-device-usage-row {
@@ -716,8 +731,12 @@ body.app-shell {
 }
 
 .backup-browser-node {
-  padding: 0.75rem 0.85rem;
-  border-radius: 0.9rem;
+  display: grid;
+  grid-template-columns: 2.1rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: 0.75rem;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
 }
@@ -727,11 +746,38 @@ body.app-shell {
   margin-left: 1rem;
 }
 
+.backup-browser-toggle {
+  width: 2.1rem;
+  height: 2.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.65rem;
+  background: rgba(255, 255, 255, 0.04);
+  color: #dfe8f1;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.backup-browser-toggle:hover {
+  background: rgba(93, 198, 255, 0.12);
+  border-color: rgba(93, 198, 255, 0.28);
+  color: #fff;
+}
+
+.backup-browser-node.is-open > .backup-browser-toggle i {
+  transform: rotate(90deg);
+}
+
 .backup-browser-select {
-  display: inline-block;
-  max-width: calc(100% - 5.5rem);
-  padding: 0;
-  margin-left: 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  gap: 0.55rem;
+  padding: 0.35rem 0.25rem;
+  border: 0;
+  background: transparent;
   color: #dfe8f1;
   text-decoration: none;
   white-space: normal;
@@ -739,11 +785,21 @@ body.app-shell {
   text-align: left;
 }
 
+.backup-browser-select i {
+  color: #ffd166;
+  flex: 0 0 auto;
+}
+
+.backup-browser-select span {
+  min-width: 0;
+}
+
 .backup-browser-select:hover {
   color: #5dc6ff;
 }
 
 .backup-browser-children {
+  grid-column: 1 / -1;
   display: none;
 }
 

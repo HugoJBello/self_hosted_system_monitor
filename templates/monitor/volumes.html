@@ -100,8 +100,8 @@
           <article class="mounted-device-card volume-card">
             <div class="mounted-device-top">
               <div class="mounted-device-main">
-                <div class="mounted-device-path">{{ volume.device }}</div>
-                <div class="small text-secondary">{{ volume.model|default:"Block volume" }}</div>
+                <div class="volume-device-title">{{ volume.identity_label|default:"Block volume" }}</div>
+                <div class="small text-secondary">{{ volume.device }}</div>
               </div>
               <div class="mounted-device-status-shell">
                 <span class="mounted-device-status is-idle">{{ volume.status_label }}</span>
@@ -116,7 +116,23 @@
               {% if volume.removable %}<span class="mounted-device-chip">removable</span>{% endif %}
               {% if volume.hotplug %}<span class="mounted-device-chip">hotplug</span>{% endif %}
               {% if volume.readonly %}<span class="mounted-device-chip">read-only</span>{% endif %}
+              {% if volume.suggested_mountpoint %}<span class="mounted-device-chip is-suggested"><i class="bi bi-pin-map"></i> {{ volume.suggested_mountpoint }}</span>{% endif %}
             </div>
+            {% if volume.fs_percent is not None %}
+              <div class="mounted-device-usage-row">
+                <div class="mounted-device-usage-item">
+                  <span class="mounted-device-label">Used</span>
+                  <strong>{{ volume.fs_used_gb|default:"-" }} GB</strong>
+                </div>
+                <div class="mounted-device-usage-item mounted-device-usage-item-right">
+                  <span class="mounted-device-label">Available</span>
+                  <strong>{{ volume.fs_avail_gb|default:"-" }} GB</strong>
+                </div>
+              </div>
+              <div class="progress dark-progress mounted-device-progress" role="progressbar" aria-valuenow="{{ volume.fs_percent }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar mounted-device-progress-used" style="width: {{ volume.fs_percent }}%"></div>
+              </div>
+            {% endif %}
             <div class="volume-detail-grid">
               <div class="mounted-device-stat">
                 <span class="mounted-device-label">Filesystem</span>
@@ -140,7 +156,7 @@
               </div>
               <div class="mounted-device-stat">
                 <span class="mounted-device-label">Mountpoint</span>
-                <strong>{{ volume.mountpoint|default:"not mounted" }}</strong>
+                <strong>{% if volume.suggested_mountpoint %}{{ volume.suggested_mountpoint }}{% elif volume.mountpoint %}{{ volume.mountpoint }}{% else %}not mounted{% endif %}</strong>
               </div>
             </div>
             <div class="volume-card-actions">
@@ -162,7 +178,8 @@
         <div class="modal-header border-secondary-subtle">
           <div>
             <p class="eyebrow mb-1">Mount volume</p>
-            <h2 class="h4 mb-0" id="mountVolumeModal{{ forloop.counter }}Label">{{ volume.device }}</h2>
+            <h2 class="h4 mb-0" id="mountVolumeModal{{ forloop.counter }}Label">{{ volume.identity_label|default:volume.device }}</h2>
+            <div class="small text-secondary">{{ volume.device }}</div>
           </div>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
@@ -180,12 +197,19 @@
             <input type="hidden" name="volume_action" value="mount">
             <input type="hidden" name="device" value="{{ volume.device }}">
             <input type="hidden" name="fstype" value="{{ volume.fstype }}">
+            <input type="hidden" name="uuid" value="{{ volume.uuid }}">
+            <input type="hidden" name="label" value="{{ volume.label }}">
+            <input type="hidden" name="model" value="{{ volume.model }}">
+            <input type="hidden" name="serial" value="{{ volume.serial }}">
             <div>
               <label class="form-label" for="mountpoint-{{ forloop.counter }}">Mount path</label>
               <div class="input-group flex-wrap backup-source-group">
-                <input id="mountpoint-{{ forloop.counter }}" type="text" name="mountpoint" class="form-control" placeholder="/media/{{ volume.name|default:'volume' }}" required data-path-browser-input>
-                <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="volumeFolderModal" data-input-id="mountpoint-{{ forloop.counter }}">Browse</button>
+                <input id="mountpoint-{{ forloop.counter }}" type="text" name="mountpoint" class="form-control" value="{{ volume.suggested_mountpoint }}" placeholder="/media/{{ volume.name|default:'volume' }}" required data-path-browser-input>
+                <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="volumeFolderModal" data-input-id="mountpoint-{{ forloop.counter }}"><i class="bi bi-folder2-open"></i> Browse</button>
               </div>
+              {% if volume.suggested_mountpoint %}
+                <div class="form-text text-secondary">Suggested from the last successful mount of this volume.</div>
+              {% endif %}
             </div>
             <details class="volume-advanced-details">
               <summary class="volume-inline-toggle"><i class="bi bi-sliders"></i> Advanced options</summary>
@@ -215,5 +239,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/path_browser.js' %}?v=20260810-volumes"></script>
+<script src="{% static 'monitor/js/path_browser.js' %}?v=20260810-volume-prefs"></script>
 {% endblock %}

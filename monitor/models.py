@@ -708,3 +708,22 @@ class BackupRun(models.Model):
 
     def __str__(self):
         return f"{self.job.name} @ {self.started_at:%Y-%m-%d %H:%M:%S}"
+
+
+class VolumeMountPreference(models.Model):
+    volume_key = models.CharField(max_length=255, unique=True, db_index=True)
+    device = models.CharField(max_length=255, blank=True, default="")
+    uuid = models.CharField(max_length=255, blank=True, default="")
+    label = models.CharField(max_length=255, blank=True, default="")
+    model = models.CharField(max_length=255, blank=True, default="")
+    serial = models.CharField(max_length=255, blank=True, default="")
+    mountpoint = models.CharField(max_length=500)
+    last_mounted_at = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("volume_key",)
+
+    def __str__(self):
+        return f"{self.volume_key} -> {self.mountpoint}"

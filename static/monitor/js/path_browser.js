@@ -20,8 +20,13 @@
       node.className = "backup-browser-node nested";
       node.dataset.path = item.path;
       node.innerHTML = `
-        <button type="button" class="btn btn-sm btn-outline-light backup-browser-toggle" data-path="${escapeHtml(item.path)}">Open</button>
-        <button type="button" class="btn btn-link backup-browser-select" data-path="${escapeHtml(item.path)}">${escapeHtml(item.name)}</button>
+        <button type="button" class="backup-browser-toggle" data-path="${escapeHtml(item.path)}" aria-label="Expand ${escapeHtml(item.name)}">
+          <i class="bi bi-chevron-right"></i>
+        </button>
+        <button type="button" class="backup-browser-select" data-path="${escapeHtml(item.path)}">
+          <i class="bi bi-folder2"></i>
+          <span>${escapeHtml(item.name)}</span>
+        </button>
         <div class="backup-browser-children"></div>
       `;
       container.appendChild(node);
@@ -33,6 +38,7 @@
     if (!childrenContainer) return;
     if (targetNode.dataset.loaded === "1") {
       childrenContainer.classList.toggle("open");
+      targetNode.classList.toggle("is-open", childrenContainer.classList.contains("open"));
       return;
     }
     const treeUrl = modalElement.dataset.treeUrl;
@@ -40,6 +46,7 @@
     const payload = await response.json();
     renderChildren(childrenContainer, payload.items || []);
     childrenContainer.classList.add("open");
+    targetNode.classList.add("is-open");
     targetNode.dataset.loaded = "1";
   }
 

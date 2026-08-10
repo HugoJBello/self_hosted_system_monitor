@@ -12,8 +12,13 @@
         <div class="backup-browser" data-path-browser>
           {% for root in browser_roots %}
             <div class="backup-browser-node" data-path="{{ root.path }}">
-              <button type="button" class="btn btn-sm btn-outline-light backup-browser-toggle" data-path="{{ root.path }}">Open</button>
-              <button type="button" class="btn btn-link backup-browser-select" data-path="{{ root.path }}">{{ root.name }}</button>
+              <button type="button" class="backup-browser-toggle" data-path="{{ root.path }}" aria-label="Expand {{ root.name }}">
+                <i class="bi bi-chevron-right"></i>
+              </button>
+              <button type="button" class="backup-browser-select" data-path="{{ root.path }}">
+                <i class="bi bi-folder2"></i>
+                <span>{{ root.name }}</span>
+              </button>
               <div class="backup-browser-children"></div>
             </div>
           {% endfor %}

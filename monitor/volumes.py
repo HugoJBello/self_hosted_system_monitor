@@ -4,7 +4,9 @@ import subprocess
 from dataclasses import dataclass
 
 import psutil
+from django.utils import timezone
 
+from .models import VolumeMountPreference
 from .path_browser import hostfs_path, normalize_host_path
 from .process_control import ProcessControlError, host_namespace_prefix
 from .services import disk_devices, _gb
@@ -76,6 +78,22 @@ def _truthy(value):
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _int_or_none(value):
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _percent_or_none(value):
+    if value is None:
+        return None
+    try:
+        return round(float(str(value).strip().rstrip("%")), 2)
+    except (TypeError, ValueError):
+        return None
+
+
 def _device_is_candidate(item):
     path = item.get("path") or item.get("name") or ""
     fstype = (item.get("fstype") or "").lower()
@@ -118,34 +136,129 @@ def _disk_device_entries():
 
 
 def _lsblk_rows():
-    payload = _json_host_command(
+    base_columns = "NAME,PATH,TYPE,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS,MODEL,SERIAL,RM,RO,HOTPLUG,TRAN,VENDOR,STATE"
+    extended_columns = f"{base_columns},FSUSED,FSAVAIL,FSUSE%"
+    for columns in (extended_columns, base_columns):
+        payload = _json_host_command(
+            [
+                "lsblk",
+                "--json",
+                "--paths",
+                "--bytes",
+                "--output",
+                columns,
+            ]
+        )
+        if payload:
+            return _flatten_lsblk(payload.get("blockdevices") or [])
+    return []
+
+
+def _volume_key_from_parts(*, uuid="", label="", serial="", model="", device=""):
+    uuid = (uuid or "").strip()
+    label = (label or "").strip()
+    serial = (serial or "").strip()
+    model = (model or "").strip()
+    device = (device or "").strip()
+    if uuid:
+        return f"uuid:{uuid}"
+    if serial:
+        return f"serial:{serial}"
+    if label and model:
+        return f"label-model:{label}:{model}"
+    if label:
+        return f"label:{label}"
+    return f"device:{device}"
+
+
+def _volume_key(item):
+    return _volume_key_from_parts(
+        uuid=item.get("uuid") or "",
+        label=item.get("label") or "",
+        serial=item.get("serial") or "",
+        model=item.get("model") or "",
+        device=item.get("device") or "",
+    )
+
+
+def _identity_label(item):
+    return item.get("model") or item.get("label") or item.get("device") or item.get("name") or "Block volume"
+
+
+def _preference_map():
+    return {preference.volume_key: preference for preference in VolumeMountPreference.objects.all()}
+
+
+def _attach_mount_preferences(items, preferences):
+    for item in items:
+        item["volume_key"] = _volume_key(item)
+        item["identity_label"] = _identity_label(item)
+        preference = preferences.get(item["volume_key"])
+        item["suggested_mountpoint"] = preference.mountpoint if preference else ""
+    return items
+
+
+def _unmounted_score(item):
+    return sum(
         [
-            "lsblk",
-            "--json",
-            "--paths",
-            "--bytes",
-            "--output",
-            "NAME,PATH,TYPE,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS,MODEL,SERIAL,RM,RO,HOTPLUG,TRAN,VENDOR,STATE",
+            bool(item.get("uuid")) * 8,
+            bool(item.get("serial")) * 6,
+            bool(item.get("model")) * 4,
+            bool(item.get("fstype")) * 3,
+            bool(item.get("label")) * 2,
+            item.get("size_gb") is not None,
+            item.get("fs_percent") is not None,
+            not bool(item.get("mountpoint")),
         ]
     )
-    if not payload:
-        return []
-    return _flatten_lsblk(payload.get("blockdevices") or [])
+
+
+def _dedupe_unmounted_items(items):
+    deduped = {}
+    for item in items:
+        key = _volume_key(item)
+        existing = deduped.get(key)
+        if not existing or _unmounted_score(item) > _unmounted_score(existing):
+            deduped[key] = item
+    return list(deduped.values())
+
+
+def remember_mount_preference(*, device="", uuid="", label="", model="", serial="", mountpoint=""):
+    target = normalize_host_path(mountpoint)
+    volume_key = _volume_key_from_parts(uuid=uuid, label=label, serial=serial, model=model, device=device)
+    VolumeMountPreference.objects.update_or_create(
+        volume_key=volume_key,
+        defaults={
+            "device": (device or "").strip(),
+            "uuid": (uuid or "").strip(),
+            "label": (label or "").strip(),
+            "model": (model or "").strip(),
+            "serial": (serial or "").strip(),
+            "mountpoint": target,
+            "last_mounted_at": timezone.now(),
+        },
+    )
 
 
 def list_volumes():
     disk_device_entries = _disk_device_entries()
     mounted_by_path = {item["mountpoint"]: item for item in disk_device_entries if item.get("is_mounted")}
+    preferences = _preference_map()
     mounted_items = []
     unmounted_items = []
     seen_mounts = set()
     seen_devices = set()
+    seen_volume_keys = set()
 
     for row in _lsblk_rows():
         if not _device_is_candidate(row):
             continue
         device = row.get("path") or row.get("name") or ""
         mountpoints = _as_list(row.get("mountpoints"))
+        fs_used = _int_or_none(row.get("fsused"))
+        fs_avail = _int_or_none(row.get("fsavail"))
+        fs_percent = _percent_or_none(row.get("fsuse%"))
+        size_bytes = _int_or_none(row.get("size"))
         base = {
             "device": device,
             "name": os.path.basename(device),
@@ -153,7 +266,7 @@ def list_volumes():
             "fstype": row.get("fstype") or "",
             "label": row.get("label") or "",
             "uuid": row.get("uuid") or "",
-            "size_gb": _gb(int(row.get("size") or 0)) if row.get("size") is not None else None,
+            "size_gb": _gb(size_bytes) if size_bytes is not None else None,
             "model": " ".join(part for part in [row.get("vendor") or "", row.get("model") or ""] if part).strip(),
             "serial": row.get("serial") or "",
             "transport": row.get("tran") or "",
@@ -161,8 +274,12 @@ def list_volumes():
             "readonly": _truthy(row.get("ro")),
             "hotplug": _truthy(row.get("hotplug")),
             "state": row.get("state") or "",
+            "fs_used_gb": _gb(fs_used) if fs_used is not None else None,
+            "fs_avail_gb": _gb(fs_avail) if fs_avail is not None else None,
+            "fs_percent": fs_percent,
         }
         seen_devices.add(device)
+        seen_volume_keys.add(_volume_key(base))
         if mountpoints:
             for mountpoint in mountpoints:
                 host_mountpoint = os.path.normpath(mountpoint)
@@ -190,18 +307,10 @@ def list_volumes():
     for mountpoint, item in mounted_by_path.items():
         if mountpoint in seen_mounts:
             continue
-        mounted_items.append({**item, "name": os.path.basename(item.get("device") or ""), "label": "", "uuid": "", "size_gb": item.get("total_gb"), "model": "", "serial": "", "transport": "", "removable": False, "readonly": False, "hotplug": False, "state": ""})
-
-    for item in disk_device_entries:
-        if item.get("is_mounted"):
-            continue
-        device = item.get("device") or ""
-        if device in seen_devices:
-            continue
-        unmounted_items.append(
+        mounted_items.append(
             {
                 **item,
-                "name": os.path.basename(device),
+                "name": os.path.basename(item.get("device") or ""),
                 "label": "",
                 "uuid": "",
                 "size_gb": item.get("total_gb"),
@@ -212,9 +321,39 @@ def list_volumes():
                 "readonly": False,
                 "hotplug": False,
                 "state": "",
+                "fs_used_gb": None,
+                "fs_avail_gb": None,
+                "fs_percent": None,
             }
         )
 
+    for item in disk_device_entries:
+        if item.get("is_mounted"):
+            continue
+        device = item.get("device") or ""
+        fallback_item = {
+            **item,
+            "name": os.path.basename(device),
+            "label": item.get("label") or "",
+            "uuid": item.get("uuid") or "",
+            "size_gb": item.get("total_gb"),
+            "model": item.get("model") or "",
+            "serial": item.get("serial") or "",
+            "transport": item.get("transport") or "",
+            "removable": False,
+            "readonly": False,
+            "hotplug": False,
+            "state": "",
+            "fs_used_gb": item.get("used_gb"),
+            "fs_avail_gb": item.get("free_gb"),
+            "fs_percent": item.get("percent"),
+        }
+        if device in seen_devices or _volume_key(fallback_item) in seen_volume_keys:
+            continue
+        unmounted_items.append(fallback_item)
+
+    _attach_mount_preferences(mounted_items, preferences)
+    unmounted_items = _attach_mount_preferences(_dedupe_unmounted_items(unmounted_items), preferences)
     mounted_items.sort(key=lambda item: (item.get("mountpoint") != "/", item.get("mountpoint") or "", item.get("device") or ""))
     unmounted_items.sort(key=lambda item: (item.get("device") or ""))
     return {

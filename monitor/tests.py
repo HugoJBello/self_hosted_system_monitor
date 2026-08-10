@@ -20,7 +20,7 @@ from .backups import BackupExecutionResult, StreamingCommandResult, _cloudflare_
 from .docker_runtime import _group_containers_by_family
 from .forms import BackupJobForm, ScriptJobForm
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
-from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeMountPreference
 from .reporting import generate_report_for_rule
 from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
@@ -524,8 +524,9 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "/dev/sdb1")
         self.assertContains(response, "Mount")
 
+    @patch("monitor.views.remember_mount_preference")
     @patch("monitor.views.mount_volume")
-    def test_volumes_mount_action_uses_submitted_target(self, mock_mount_volume):
+    def test_volumes_mount_action_uses_submitted_target(self, mock_mount_volume, _mock_remember_mount_preference):
         mock_mount_volume.return_value.message = "Mounted /dev/sdb1 on /media/usb."
 
         response = self.client.post(
@@ -547,6 +548,35 @@ class MonitorViewsTests(TestCase):
             fstype="ext4",
             options="defaults",
             sudo_password="secret",
+        )
+
+    @patch("monitor.views.remember_mount_preference")
+    @patch("monitor.views.mount_volume")
+    def test_volumes_mount_action_remembers_submitted_volume_identity(self, mock_mount_volume, mock_remember_mount_preference):
+        mock_mount_volume.return_value.message = "Mounted /dev/sdb1 on /media/usb."
+
+        response = self.client.post(
+            self._path("monitor:volumes"),
+            {
+                "volume_action": "mount",
+                "device": "/dev/sdb1",
+                "mountpoint": "/media/usb",
+                "fstype": "ext4",
+                "uuid": "abc",
+                "label": "ARCHIVE",
+                "model": "TOSHIBA External USB",
+                "serial": "1234",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
+        mock_remember_mount_preference.assert_called_once_with(
+            device="/dev/sdb1",
+            uuid="abc",
+            label="ARCHIVE",
+            model="TOSHIBA External USB",
+            serial="1234",
+            mountpoint="/media/usb",
         )
 
     @patch("monitor.views.unmount_volume")
@@ -3141,6 +3171,65 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(volumes["mounted"], [])
         self.assertEqual(volumes["unmounted"][0]["mountpoint"], "/media/archive")
+
+    @patch("monitor.volumes._disk_device_entries")
+    @patch("monitor.volumes._lsblk_rows")
+    def test_list_volumes_deduplicates_unmounted_entries_by_volume_identity(self, mock_lsblk_rows, mock_disk_device_entries):
+        mock_lsblk_rows.return_value = [
+            {
+                "path": "/dev/sdb1",
+                "name": "/dev/sdb1",
+                "type": "part",
+                "size": 1000,
+                "fstype": "ext4",
+                "label": "ARCHIVE",
+                "uuid": "abc",
+                "mountpoints": [],
+                "model": "External USB",
+                "serial": "1234",
+                "vendor": "TOSHIBA",
+            }
+        ]
+        mock_disk_device_entries.return_value = [
+            {
+                "device": "/dev/sdb1",
+                "mountpoint": "/media/archive",
+                "fstype": "ext4",
+                "total_gb": 1,
+                "used_gb": None,
+                "free_gb": None,
+                "percent": None,
+                "free_percent": None,
+                "is_mounted": False,
+                "status_label": "Idle automount",
+            }
+        ]
+
+        volumes = list_volumes()
+
+        self.assertEqual(len(volumes["unmounted"]), 1)
+        self.assertEqual(volumes["unmounted"][0]["uuid"], "abc")
+        self.assertEqual(volumes["unmounted"][0]["identity_label"], "TOSHIBA External USB")
+
+    @patch("monitor.volumes._disk_device_entries", return_value=[])
+    @patch("monitor.volumes._lsblk_rows")
+    def test_list_volumes_suggests_saved_mountpoint_for_unmounted_volume(self, mock_lsblk_rows, _mock_disk_device_entries):
+        VolumeMountPreference.objects.create(volume_key="uuid:abc", uuid="abc", mountpoint="/media/archive")
+        mock_lsblk_rows.return_value = [
+            {
+                "path": "/dev/sdb1",
+                "name": "/dev/sdb1",
+                "type": "part",
+                "size": 1000,
+                "fstype": "ext4",
+                "uuid": "abc",
+                "mountpoints": [],
+            }
+        ]
+
+        volumes = list_volumes()
+
+        self.assertEqual(volumes["unmounted"][0]["suggested_mountpoint"], "/media/archive")
 
     @patch("monitor.backups.time.sleep", return_value=None)
     @patch("monitor.backups._remove_runtime_files")
