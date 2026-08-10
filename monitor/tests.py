@@ -20,12 +20,12 @@ from .backups import BackupExecutionResult, StreamingCommandResult, _cloudflare_
 from .docker_runtime import _group_containers_by_family
 from .forms import BackupJobForm, ScriptJobForm
 from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
-from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeMountPreference
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeMountPreference, VolumeOperation
 from .reporting import generate_report_for_rule
 from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
 from .process_control import ProcessControlError
-from .volumes import list_volumes, mount_volume, unmount_volume
+from .volumes import execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
 
 
 User = get_user_model()
@@ -595,6 +595,78 @@ class MonitorViewsTests(TestCase):
 
         self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
         mock_unmount_volume.assert_called_once_with("/media/usb", sudo_password="secret")
+
+    @patch("monitor.views.start_background_volume_operation")
+    def test_volumes_label_action_starts_background_operation(self, mock_start_operation):
+        operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
+        mock_start_operation.return_value = operation
+
+        response = self.client.post(
+            self._path("monitor:volumes"),
+            {
+                "volume_action": "label",
+                "device": "/dev/sdb1",
+                "fstype": "ext4",
+                "label": "ARCHIVE",
+                "sudo_password": "secret",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:volume-operation-detail", args=[operation.id]), fetch_redirect_response=False)
+        mock_start_operation.assert_called_once_with(
+            action="label",
+            device="/dev/sdb1",
+            fstype="ext4",
+            label="ARCHIVE",
+            sudo_password="secret",
+        )
+
+    @patch("monitor.views.start_background_volume_operation")
+    def test_volumes_format_action_starts_background_operation(self, mock_start_operation):
+        operation = VolumeOperation.objects.create(action="format", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
+        mock_start_operation.return_value = operation
+
+        response = self.client.post(
+            self._path("monitor:volumes"),
+            {
+                "volume_action": "format",
+                "device": "/dev/sdb1",
+                "format_fstype": "ext4",
+                "format_label": "ARCHIVE",
+                "confirm_text": "FORMAT",
+                "confirm_device": "/dev/sdb1",
+                "sudo_password": "secret",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:volume-operation-detail", args=[operation.id]), fetch_redirect_response=False)
+        mock_start_operation.assert_called_once_with(
+            action="format",
+            device="/dev/sdb1",
+            fstype="ext4",
+            label="ARCHIVE",
+            confirm_text="FORMAT",
+            confirm_device="/dev/sdb1",
+            sudo_password="secret",
+        )
+
+    def test_volume_operation_detail_page_loads(self):
+        operation = VolumeOperation.objects.create(action="format", device="/dev/sdb1", fstype="ext4", summary="Formatting /dev/sdb1.")
+
+        response = self.client.get(reverse("monitor:volume-operation-detail", args=[operation.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Volume operation")
+        self.assertContains(response, "/dev/sdb1")
+
+    def test_volume_operation_status_returns_json(self):
+        operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE", summary="Updating label.")
+
+        response = self.client.get(reverse("monitor:volume-operation-status", args=[operation.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["device"], "/dev/sdb1")
+        self.assertEqual(response.json()["status"], "running")
 
     @patch("monitor.views.list_path_directory_children", side_effect=ValueError("This host path is not selectable."))
     def test_volume_tree_returns_json_error_for_invalid_path(self, _mock_children):
@@ -3262,6 +3334,58 @@ class BackupHelpersTests(TestCase):
     def test_unmount_volume_reports_command_detail(self, _mock_run_host_command):
         with self.assertRaisesMessage(ProcessControlError, "Unmount failed: umount: /media/usb: target is busy."):
             unmount_volume("/media/usb", sudo_password="secret")
+
+    @patch("monitor.volumes._run_host_command")
+    def test_update_volume_label_uses_filesystem_label_command(self, mock_run_host_command):
+        result = update_volume_label("/dev/sdb1", "ARCHIVE", fstype="ext4", sudo_password="secret")
+
+        self.assertEqual(result.message, "Updated label for /dev/sdb1.")
+        mock_run_host_command.assert_called_once_with(["e2label", "/dev/sdb1", "ARCHIVE"], sudo_password="secret")
+
+    @patch("monitor.volumes._device_is_mounted", return_value=False)
+    @patch("monitor.volumes._run_host_command")
+    def test_format_volume_requires_confirmation_and_uses_mkfs(self, mock_run_host_command, _mock_device_is_mounted):
+        result = format_volume("/dev/sdb1", "ext4", label="ARCHIVE", confirm_text="FORMAT", confirm_device="/dev/sdb1", sudo_password="secret")
+
+        self.assertEqual(result.message, "Formatted /dev/sdb1 as ext4.")
+        mock_run_host_command.assert_called_once_with(["mkfs.ext4", "-F", "-L", "ARCHIVE", "/dev/sdb1"], sudo_password="secret", timeout_seconds=120)
+
+    def test_format_volume_rejects_missing_confirmation(self):
+        with self.assertRaisesMessage(ProcessControlError, "Formatting was not confirmed."):
+            format_volume("/dev/sdb1", "ext4", confirm_text="", confirm_device="/dev/sdb1")
+
+    @patch("monitor.volumes._device_is_mounted", return_value=True)
+    def test_start_background_volume_operation_rejects_mounted_format_target(self, _mock_device_is_mounted):
+        with self.assertRaisesMessage(ProcessControlError, "/dev/sdb1 is mounted. Unmount it before formatting."):
+            start_background_volume_operation(
+                action="format",
+                device="/dev/sdb1",
+                fstype="ext4",
+                confirm_text="FORMAT",
+                confirm_device="/dev/sdb1",
+            )
+
+    @patch("monitor.volumes.update_volume_label")
+    def test_execute_volume_operation_records_success(self, mock_update_label):
+        mock_update_label.return_value.message = "Updated label for /dev/sdb1."
+        operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
+
+        execute_volume_operation(operation)
+        operation.refresh_from_db()
+
+        self.assertEqual(operation.status, "success")
+        self.assertEqual(operation.summary, "Updated label for /dev/sdb1.")
+        self.assertIn("Started update label", operation.log_output)
+
+    @patch("monitor.volumes.update_volume_label", side_effect=ProcessControlError("Update label needs sudo permissions."))
+    def test_execute_volume_operation_records_failure(self, _mock_update_label):
+        operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
+
+        execute_volume_operation(operation)
+        operation.refresh_from_db()
+
+        self.assertEqual(operation.status, "failed")
+        self.assertEqual(operation.summary, "Update label needs sudo permissions.")
 
     @patch("monitor.backups.time.sleep", return_value=None)
     @patch("monitor.backups._remove_runtime_files")

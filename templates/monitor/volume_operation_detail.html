@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Volume Operation | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4" data-volume-operation-detail data-status-url="{% url 'monitor:volume-operation-status' operation.id %}">
+  <div>
+    <p class="eyebrow mb-2">Volume operation</p>
+    <h1 class="display-6 mb-1">{{ operation.get_action_display }} {{ operation.device }}</h1>
+    <p class="text-secondary mb-0" data-volume-operation-summary>{{ operation.summary }}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if operation.status == "success" %}
+      <span class="live-pill" data-volume-operation-status-pill>SUCCESS</span>
+    {% elif operation.status == "running" %}
+      <span class="live-pill" data-volume-operation-status-pill>RUNNING</span>
+    {% else %}
+      <span class="severity-pill severity-critical" data-volume-operation-status-pill>FAILED</span>
+    {% endif %}
+    <a href="{% url 'monitor:volumes' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-device-hdd"></i> Back to volumes</a>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Status</p>
+      <h2 class="h4 mb-1" data-volume-operation-status-label>{{ operation.get_status_display }}</h2>
+      <p class="text-secondary mb-0">{{ operation.get_action_display }}</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Device</p>
+      <h2 class="h6 mb-1">{{ operation.device }}</h2>
+      <p class="text-secondary mb-0">{% if operation.fstype %}{{ operation.fstype }}{% else %}Filesystem unchanged{% endif %}</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Started</p>
+      <h2 class="h6 mb-1"><span data-local-datetime="{{ operation.started_at|date:'c' }}" data-local-style="datetime-short">{{ operation.started_at|date:"Y-m-d H:i:s" }}</span></h2>
+      <p class="text-secondary mb-0">Browser locale</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Finished</p>
+      <h2 class="h6 mb-1" data-volume-operation-finished>{% if operation.finished_at %}<span data-local-datetime="{{ operation.finished_at|date:'c' }}" data-local-style="datetime-short">{{ operation.finished_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</h2>
+      <p class="text-secondary mb-0">PID <span data-volume-operation-pid>{{ operation.process_pid|default:"-" }}</span></p>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Execution</p>
+      <h2 class="h4 mb-4">Operation log</h2>
+      {% if operation.command_line %}
+        <div class="script-run-command-strip mb-3">
+          <span>Command</span>
+          <code data-volume-operation-command>{{ operation.command_line }}</code>
+        </div>
+      {% endif %}
+      <pre class="command-modal-block backup-run-output-log mb-0" data-volume-operation-log>{{ operation.log_output|default:"Operation is starting." }}</pre>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function updateVolumeOperationPill(pill, status) {
+    if (!pill) return;
+    pill.className = "live-pill";
+    if (status === "running") {
+      pill.textContent = "RUNNING";
+      return;
+    }
+    if (status === "success") {
+      pill.textContent = "SUCCESS";
+      return;
+    }
+    pill.className = "severity-pill severity-critical";
+    pill.textContent = "FAILED";
+  }
+
+  const volumeOperationRoot = document.querySelector("[data-volume-operation-detail]");
+  if (volumeOperationRoot) {
+    const pollVolumeOperation = async () => {
+      try {
+        const response = await fetch(volumeOperationRoot.dataset.statusUrl, { headers: { "X-Requested-With": "fetch" } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const summaryNode = document.querySelector("[data-volume-operation-summary]");
+        if (summaryNode) summaryNode.textContent = payload.summary || "";
+        const statusNode = document.querySelector("[data-volume-operation-status-label]");
+        if (statusNode) statusNode.textContent = payload.status_label || payload.status;
+        const finishedNode = document.querySelector("[data-volume-operation-finished]");
+        if (finishedNode) {
+          finishedNode.textContent = payload.finished_at ? (formatLocalDateTime(payload.finished_at, "datetime-short") || payload.finished_at) : "-";
+        }
+        const pidNode = document.querySelector("[data-volume-operation-pid]");
+        if (pidNode) pidNode.textContent = payload.process_pid || "-";
+        const commandNode = document.querySelector("[data-volume-operation-command]");
+        if (commandNode && payload.command_line) commandNode.textContent = payload.command_line;
+        const logNode = document.querySelector("[data-volume-operation-log]");
+        if (logNode) {
+          logNode.textContent = payload.log_output || "Operation is running.";
+          logNode.scrollTop = logNode.scrollHeight;
+        }
+        updateVolumeOperationPill(document.querySelector("[data-volume-operation-status-pill]"), payload.status);
+        if (payload.status !== "running") {
+          volumeOperationRoot.dataset.pollingDone = "1";
+        }
+      } catch (_) {
+      }
+    };
+    pollVolumeOperation();
+    const timer = window.setInterval(() => {
+      if (volumeOperationRoot.dataset.pollingDone === "1") {
+        window.clearInterval(timer);
+        return;
+      }
+      pollVolumeOperation();
+    }, 2000);
+  }
+</script>
+{% endblock %}

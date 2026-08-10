@@ -21,7 +21,7 @@ from django.views.decorators.csrf import csrf_exempt
 from .alerting import ensure_default_alert_rules, top_processes_for_alert_window
 from .backups import _normalize_stream_output, get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
 from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, ScriptJobForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
-from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot
+from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeOperation
 from .notification_client import build_test_payload, send_json_notification
 from .path_browser import list_browser_roots as list_path_browser_roots, list_directory_children as list_path_directory_children
 from .process_control import ProcessControlError, container_info_for_pid, docker_container_action, kill_process, reboot_host, restart_process, terminate_process, validate_process_identity
@@ -29,7 +29,7 @@ from .memory import build_memory_breakdown, build_snapshot_memory_breakdown
 from .reporting import build_time_series_chart_data
 from .script_jobs import get_runtime_state as get_script_runtime_state, mark_stale_running_script_jobs, request_script_run_stop, start_background_script_job
 from .services import _process_rows
-from .volumes import list_volumes, mount_volume, remember_mount_preference, unmount_volume
+from .volumes import list_volumes, mount_volume, remember_mount_preference, start_background_volume_operation, unmount_volume
 
 
 User = get_user_model()
@@ -1351,6 +1351,28 @@ class VolumesView(LoginRequiredMixin, View):
                 )
             elif action == "unmount":
                 result = unmount_volume(request.POST.get("target"), sudo_password=sudo_password)
+            elif action == "label":
+                operation = start_background_volume_operation(
+                    action="label",
+                    device=request.POST.get("device"),
+                    fstype=request.POST.get("fstype") or "",
+                    label=request.POST.get("label") or "",
+                    sudo_password=sudo_password,
+                )
+                messages.info(request, f"Volume label operation started for {operation.device}.")
+                return redirect("monitor:volume-operation-detail", operation_id=operation.id)
+            elif action == "format":
+                operation = start_background_volume_operation(
+                    action="format",
+                    device=request.POST.get("device"),
+                    fstype=request.POST.get("format_fstype") or "",
+                    label=request.POST.get("format_label") or "",
+                    confirm_text=request.POST.get("confirm_text") or "",
+                    confirm_device=request.POST.get("confirm_device") or "",
+                    sudo_password=sudo_password,
+                )
+                messages.warning(request, f"Format operation started for {operation.device}.")
+                return redirect("monitor:volume-operation-detail", operation_id=operation.id)
             else:
                 messages.error(request, "Unknown volume action.")
                 return redirect("monitor:volumes")
@@ -1364,10 +1386,43 @@ class VolumesView(LoginRequiredMixin, View):
         volumes = list_volumes()
         return {
             **volumes,
+            "running_volume_operations": VolumeOperation.objects.filter(status="running").order_by("-started_at")[:8],
             "browser_roots": list_path_browser_roots(),
             "volume_tree_url": reverse("monitor:volume-tree"),
             "settings_obj": MonitoringSettings.load(),
         }
+
+
+class VolumeOperationDetailView(LoginRequiredMixin, View):
+    template_name = "monitor/volume_operation_detail.html"
+
+    def get(self, request, operation_id):
+        operation = get_object_or_404(VolumeOperation, pk=operation_id)
+        return render(request, self.template_name, {"operation": operation, "settings_obj": MonitoringSettings.load()})
+
+
+class VolumeOperationStatusView(LoginRequiredMixin, View):
+    def get(self, request, operation_id):
+        operation = get_object_or_404(VolumeOperation, pk=operation_id)
+        return JsonResponse(
+            {
+                "id": operation.id,
+                "action": operation.action,
+                "action_label": operation.get_action_display(),
+                "device": operation.device,
+                "fstype": operation.fstype,
+                "label": operation.label,
+                "status": operation.status,
+                "status_label": operation.get_status_display(),
+                "summary": operation.summary,
+                "log_output": operation.log_output,
+                "command_line": operation.command_line,
+                "process_pid": operation.process_pid,
+                "runner_label": operation.runner_label,
+                "started_at": operation.started_at.isoformat() if operation.started_at else None,
+                "finished_at": operation.finished_at.isoformat() if operation.finished_at else None,
+            }
+        )
 
 
 class BackupRunStatusView(LoginRequiredMixin, View):
