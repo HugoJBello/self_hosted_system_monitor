@@ -30,6 +30,17 @@ SUPPORTED_FORMATS = {
     "exfat": {"label_flag": "-n", "command": "mkfs.exfat", "force_args": []},
     "ntfs": {"label_flag": "-L", "command": "mkfs.ntfs", "force_args": []},
 }
+FILESYSTEM_LABEL_LIMITS = {
+    "ext2": 16,
+    "ext3": 16,
+    "ext4": 16,
+    "xfs": 12,
+    "vfat": 11,
+    "fat": 11,
+    "msdos": 11,
+    "exfat": 15,
+    "ntfs": 32,
+}
 LABEL_COMMANDS = {
     "ext2": ["e2label"],
     "ext3": ["e2label"],
@@ -134,6 +145,17 @@ def _clean_volume_label(label):
         raise ProcessControlError("Volume label must be 64 characters or less.")
     if any(char in label for char in ["/", "\0", "\n", "\r"]):
         raise ProcessControlError("Volume label cannot contain slashes or line breaks.")
+    return label
+
+
+def _validate_label_for_fstype(label, fstype):
+    label = _clean_volume_label(label)
+    if not label:
+        return ""
+    fstype = _normalize_fstype(fstype)
+    limit = FILESYSTEM_LABEL_LIMITS.get(fstype)
+    if limit and len(label) > limit:
+        raise ProcessControlError(f"Volume label is too long for {fstype}. Use {limit} characters or fewer.")
     return label
 
 
@@ -256,6 +278,12 @@ def _row_for_device(device):
 
 
 def _device_is_mounted(device):
+    try:
+        result = _run_host_command(["findmnt", "--noheadings", "--source", device, "--output", "TARGET"], check=False, timeout_seconds=8)
+    except ProcessControlError:
+        result = None
+    if result and result.returncode == 0 and (result.stdout or "").strip():
+        return True
     row = _row_for_device(device)
     return bool(row and _as_list(row.get("mountpoints")))
 
@@ -596,11 +624,11 @@ def unmount_volume(target, *, sudo_password=""):
 
 def update_volume_label(device, label, *, fstype="", sudo_password=""):
     device = _validate_block_device(device)
-    label = _clean_volume_label(label)
     fstype = _normalize_fstype(fstype)
     if not fstype:
         row = _row_for_device(device)
         fstype = _normalize_fstype((row or {}).get("fstype"))
+    label = _validate_label_for_fstype(label, fstype)
     command_prefix = LABEL_COMMANDS.get(fstype)
     if not command_prefix:
         supported = ", ".join(sorted(LABEL_COMMANDS))
@@ -619,7 +647,7 @@ def update_volume_label(device, label, *, fstype="", sudo_password=""):
 def format_volume(device, fstype, *, label="", confirm_text="", confirm_device="", sudo_password=""):
     device = _validate_block_device(device)
     fstype = _normalize_fstype(fstype)
-    label = _clean_volume_label(label)
+    label = _validate_label_for_fstype(label, fstype)
     if confirm_text != "FORMAT" or confirm_device != device:
         raise ProcessControlError("Formatting was not confirmed. Type FORMAT and the exact device path before trying again.")
     if _device_is_mounted(device):
@@ -635,6 +663,9 @@ def format_volume(device, fstype, *, label="", confirm_text="", confirm_device="
     try:
         _run_host_command(command, sudo_password=sudo_password, timeout_seconds=FORMAT_TIMEOUT_SECONDS)
     except ProcessControlError as exc:
+        detail = _command_error_text(exc).lower()
+        if "apparently in use" in detail or "is mounted" in detail or "contains a mounted filesystem" in detail:
+            raise ProcessControlError(f"Format failed: {device} is in use or mounted. Unmount it first and close any terminal or file browser using it.") from exc
         raise ProcessControlError(_format_action_error("Format", exc, sudo_password=sudo_password)) from exc
     return VolumeActionResult(True, f"Formatted {device} as {fstype}.")
 
@@ -650,13 +681,15 @@ def _operation_initial_summary(action, device):
 def create_volume_operation(*, action, device, fstype="", label=""):
     device = _validate_block_device(device)
     action = (action or "").strip()
+    fstype = _normalize_fstype(fstype)
+    label = _validate_label_for_fstype(label, fstype)
     if action not in dict(VolumeOperation.ACTION_CHOICES):
         raise ProcessControlError("Unknown volume operation.")
     return VolumeOperation.objects.create(
         action=action,
         device=device,
-        fstype=_normalize_fstype(fstype),
-        label=_clean_volume_label(label),
+        fstype=fstype,
+        label=label,
         status="running",
         summary=_operation_initial_summary(action, device),
     )
@@ -671,6 +704,7 @@ def start_background_volume_operation(*, action, device, fstype="", label="", su
         if _normalize_fstype(fstype) not in SUPPORTED_FORMATS:
             supported = ", ".join(sorted(SUPPORTED_FORMATS))
             raise ProcessControlError(f"Formatting as '{fstype or 'unknown'}' is not supported. Supported filesystems: {supported}.")
+        _validate_label_for_fstype(label, fstype)
     operation = create_volume_operation(action=action, device=device, fstype=fstype, label=label)
     command = [sys.executable, "manage.py", "run_volume_operation", str(operation.id)]
     env = os.environ.copy()

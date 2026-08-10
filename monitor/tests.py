@@ -25,7 +25,7 @@ from .reporting import generate_report_for_rule
 from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
 from .process_control import ProcessControlError
-from .volumes import execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
+from .volumes import _device_is_mounted, execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
 
 
 User = get_user_model()
@@ -3407,6 +3407,11 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(result.message, "Formatted /dev/sdb1 as ext4.")
         mock_run_host_command.assert_called_once_with(["mkfs.ext4", "-F", "-L", "ARCHIVE", "/dev/sdb1"], sudo_password="secret", timeout_seconds=120)
 
+    @patch("monitor.volumes._device_is_mounted", return_value=False)
+    def test_format_volume_rejects_labels_too_long_for_filesystem(self, _mock_device_is_mounted):
+        with self.assertRaisesMessage(ProcessControlError, "Volume label is too long for ext4. Use 16 characters or fewer."):
+            format_volume("/dev/sdb1", "ext4", label="disk books comics", confirm_text="FORMAT", confirm_device="/dev/sdb1")
+
     def test_format_volume_rejects_missing_confirmation(self):
         with self.assertRaisesMessage(ProcessControlError, "Formatting was not confirmed."):
             format_volume("/dev/sdb1", "ext4", confirm_text="", confirm_device="/dev/sdb1")
@@ -3421,6 +3426,17 @@ class BackupHelpersTests(TestCase):
                 confirm_text="FORMAT",
                 confirm_device="/dev/sdb1",
             )
+
+    @patch("monitor.volumes._run_host_command")
+    def test_device_is_mounted_checks_findmnt_source(self, mock_run_host_command):
+        class Result:
+            returncode = 0
+            stdout = "/media/usb\n"
+
+        mock_run_host_command.return_value = Result()
+
+        self.assertTrue(_device_is_mounted("/dev/sdb1"))
+        mock_run_host_command.assert_called_once_with(["findmnt", "--noheadings", "--source", "/dev/sdb1", "--output", "TARGET"], check=False, timeout_seconds=8)
 
     @patch("monitor.volumes.update_volume_label")
     def test_execute_volume_operation_records_success(self, mock_update_label):

@@ -314,14 +314,17 @@
                 <div>
                   <label class="form-label" for="format-label-{{ forloop.counter }}">New label</label>
                   <input id="format-label-{{ forloop.counter }}" type="text" name="format_label" class="form-control" maxlength="64" placeholder="Optional label">
+                  <div class="form-text text-secondary">Filesystem labels have format-specific limits. For ext4 use 16 characters or fewer.</div>
                 </div>
                 <div>
-                  <label class="form-label" for="format-confirm-{{ forloop.counter }}">Type FORMAT</label>
-                  <input id="format-confirm-{{ forloop.counter }}" type="text" name="confirm_text" class="form-control" autocomplete="off" required>
+                  <label class="form-label" for="format-confirm-{{ forloop.counter }}">Confirmation word</label>
+                  <input id="format-confirm-{{ forloop.counter }}" type="text" name="confirm_text" class="form-control" autocomplete="off" placeholder="Type FORMAT exactly" required>
+                  <div class="form-text text-secondary">Type <code>FORMAT</code> in uppercase to confirm erasing this volume.</div>
                 </div>
                 <div>
-                  <label class="form-label" for="format-device-{{ forloop.counter }}">Repeat device path</label>
+                  <label class="form-label" for="format-device-{{ forloop.counter }}">Device path confirmation</label>
                   <input id="format-device-{{ forloop.counter }}" type="text" name="confirm_device" class="form-control" autocomplete="off" placeholder="{{ volume.device }}" required>
+                  <div class="form-text text-secondary">Repeat <code>{{ volume.device }}</code> exactly so the selected disk is explicit.</div>
                 </div>
               </div>
               <details class="volume-advanced-details">
