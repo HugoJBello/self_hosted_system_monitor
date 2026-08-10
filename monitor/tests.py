@@ -470,11 +470,56 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:backups"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Configured backup jobs")
+        self.assertNotContains(response, "Latest finished runs")
 
     def test_script_jobs_page_loads(self):
         response = self.client.get(self._path("monitor:script-jobs"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Script jobs")
+        self.assertNotContains(response, "Latest finished runs")
+
+    def test_script_jobs_compact_view_shows_last_run(self):
+        job = ScriptJob.objects.create(
+            name="Compact script",
+            schedule_mode="manual",
+            script_body="echo compact",
+        )
+        ScriptJobRun.objects.create(job=job, status="success", summary="Compact finished")
+
+        response = self.client.get(self._path("monitor:script-jobs"), {"view": "compact", "q": "Compact"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Compact script")
+        self.assertContains(response, "Last run")
+        self.assertContains(response, "Success")
+
+    def test_backups_compact_view_filters_and_shows_last_run_direction(self):
+        push_job = BackupJob.objects.create(
+            name="Push backup",
+            source_path="/srv/source",
+            remote_host="backup.example.com",
+            remote_user="root",
+            remote_dir="/srv/dest",
+            remote_direction="push",
+        )
+        pull_job = BackupJob.objects.create(
+            name="Pull backup",
+            source_path="/srv/local-dest",
+            remote_host="source.example.com",
+            remote_user="root",
+            remote_dir="/srv/source",
+            remote_direction="pull",
+        )
+        BackupRun.objects.create(job=push_job, status="success", summary="Push finished")
+        BackupRun.objects.create(job=pull_job, status="timed_out", summary="Pull timed out")
+
+        response = self.client.get(self._path("monitor:backups"), {"view": "compact", "direction": "pull"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Pull backup")
+        self.assertContains(response, "REMOTE TO LOCAL")
+        self.assertContains(response, "Timed out")
+        self.assertNotContains(response, "Push backup")
 
     @patch("monitor.docker_views.get_docker_overview")
     def test_docker_overview_page_loads(self, mock_get_docker_overview):
@@ -578,6 +623,36 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:backup-runs"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "All backup runs")
+
+    def test_backup_runs_page_filters_by_status_type_and_direction(self):
+        local_job = BackupJob.objects.create(
+            name="Local archive",
+            backup_type="local",
+            source_path="/srv/local",
+            local_dest_path="/mnt/local",
+        )
+        http_pull_job = BackupJob.objects.create(
+            name="HTTP pull archive",
+            backup_type="http",
+            source_path="/srv/local-dest",
+            local_dest_path="/srv/local-dest",
+            http_remote_url="https://remote.example.com",
+            http_remote_path="/srv/remote",
+            http_remote_token="token",
+            http_direction="pull",
+        )
+        BackupRun.objects.create(job=local_job, status="success", summary="Local finished")
+        BackupRun.objects.create(job=http_pull_job, status="failed", summary="HTTP pull failed")
+
+        response = self.client.get(
+            self._path("monitor:backup-runs"),
+            {"status": "failed", "type": "http", "direction": "pull"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "HTTP pull archive")
+        self.assertContains(response, "REMOTE TO LOCAL")
+        self.assertNotContains(response, "Local finished")
 
     @patch("monitor.views.start_background_script_job")
     def test_script_job_run_now_starts_background_process(self, mock_start_background):
@@ -2939,7 +3014,8 @@ class BackupHelpersTests(TestCase):
             env = _command_env(job)
         self.assertEqual(env["HOME"], "/hostfs/home/goku")
 
-    def test_request_backup_run_stop_marks_stop_requested(self):
+    @patch("monitor.backups._backup_worker_matches_run", return_value=True)
+    def test_request_backup_run_stop_marks_stop_requested(self, mock_worker_matches):
         job = BackupJob.objects.create(
             name="Docs",
             source_path="/home/test/Documents",
@@ -2954,6 +3030,7 @@ class BackupHelpersTests(TestCase):
             backup_run.refresh_from_db()
             self.assertIsNotNone(backup_run.stop_requested_at)
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "backup_runtime", f"run_{backup_run.id}.stop")))
+        mock_worker_matches.assert_called_once_with(backup_run)
 
     @patch("monitor.backups.time.sleep", return_value=None)
     @patch("monitor.backups._remove_runtime_files")

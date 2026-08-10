@@ -13,58 +13,88 @@
 </div>
 
 <section class="panel-card p-4">
-  <form method="get" class="row g-3 align-items-end mb-4">
-    <div class="col-md-8">
-      <label class="form-label" for="scriptRunSearch">Search by job name</label>
-      <input id="scriptRunSearch" name="q" value="{{ query }}" class="form-control" placeholder="script job name">
+  <form method="get" class="job-run-filter-bar mb-4">
+    <div class="job-list-search">
+      <label class="form-label" for="scriptRunSearch">Search runs</label>
+      <input id="scriptRunSearch" name="q" value="{{ query }}" class="form-control" placeholder="job, summary, or command">
     </div>
-    <div class="col-md-4">
-      <button type="submit" class="btn btn-accent">Search</button>
+    <div>
+      <label class="form-label" for="scriptRunJob">Job</label>
+      <select id="scriptRunJob" name="job" class="form-select">
+        <option value="">All jobs</option>
+        {% for job in job_choices %}
+          <option value="{{ job.id }}"{% if job_filter == job.id|stringformat:"s" %} selected{% endif %}>{{ job.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="scriptRunStatus">Status</label>
+      <select id="scriptRunStatus" name="status" class="form-select">
+        <option value="all"{% if status_filter == "all" %} selected{% endif %}>All statuses</option>
+        {% for value,label in status_choices %}
+          <option value="{{ value }}"{% if status_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="scriptRunLaunch">Started by</label>
+      <select id="scriptRunLaunch" name="launched_by" class="form-select">
+        <option value="all"{% if launched_by_filter == "all" %} selected{% endif %}>Any source</option>
+        {% for value,label in launch_choices %}
+          <option value="{{ value }}"{% if launched_by_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="job-list-toolbar-actions">
+      <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{% url 'monitor:script-job-runs' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-x-lg"></i> Clear</a>
     </div>
   </form>
 
-  <div class="alerts-feed">
+  <div class="execution-list execution-list-scripts">
     {% for run in page_obj.object_list %}
-      <article class="alert-card report-card backup-run-card">
-        <div class="d-flex justify-content-between align-items-start gap-3">
-          <div class="flex-grow-1">
-            <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-              {% if run.status == "success" %}
-                <span class="live-pill">SUCCESS</span>
-              {% elif run.status == "cancelled" %}
-                <span class="resolved-pill">CANCELLED</span>
-              {% elif run.status == "timed_out" %}
-                <span class="severity-pill severity-warning">TIMED OUT</span>
-              {% elif run.status == "running" %}
-                <span class="live-pill">RUNNING</span>
-              {% else %}
-                <span class="severity-pill severity-critical">FAILED</span>
-              {% endif %}
-              <span class="chip compact-chip">{{ run.job.name }}</span>
-            </div>
-            <h3 class="h6 mb-1">{{ run.summary }}</h3>
-            <div class="small text-secondary">
-              Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
-              {% if run.finished_at %} • Finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="datetime-short">{{ run.finished_at|date:"Y-m-d H:i:s" }}</span>{% endif %}
-              {% if run.heartbeat_at %} • Heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ run.heartbeat_at|date:"Y-m-d H:i:s" }}</span>{% endif %}
-              {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
-            </div>
+      <article class="execution-row">
+        <div class="execution-status">
+          {% if run.status == "success" %}
+            <span class="live-pill">SUCCESS</span>
+          {% elif run.status == "cancelled" %}
+            <span class="resolved-pill">CANCELLED</span>
+          {% elif run.status == "timed_out" %}
+            <span class="severity-pill severity-warning">TIMED OUT</span>
+          {% elif run.status == "running" %}
+            <span class="live-pill">RUNNING</span>
+          {% else %}
+            <span class="severity-pill severity-critical">FAILED</span>
+          {% endif %}
+          <span class="execution-exit">exit {{ run.exit_code }}</span>
+        </div>
+        <div class="execution-main">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span class="chip compact-chip">{{ run.job.name }}</span>
+            <span class="chip compact-chip">{{ run.get_launched_by_display }}</span>
+            {% if run.runner_label %}<span class="chip compact-chip">{{ run.runner_label }}</span>{% endif %}
           </div>
-          <div class="text-end backup-run-side">
-            <div class="event-value">{{ run.exit_code }}</div>
-            {% if run.status == "running" %}
-              <form method="post" action="{% url 'monitor:script-jobs' %}" class="mt-2">
-                {% csrf_token %}
-                <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm">Stop</button>
-              </form>
-            {% else %}
-              <form method="post" action="{% url 'monitor:script-jobs' %}" class="mt-2">
-                {% csrf_token %}
-                <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
-              </form>
-            {% endif %}
-            <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="btn btn-outline-light btn-sm mt-2">Detail</a>
-          </div>
+          <h3 class="h6 mb-1">{{ run.summary|default:"Script run" }}</h3>
+          <div class="small text-secondary command-inline">{{ run.command_line|default:run.job.script_preview }}</div>
+        </div>
+        <div class="execution-times">
+          <span>Started <strong data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</strong></span>
+          {% if run.finished_at %}<span>Finished <strong data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="datetime-short">{{ run.finished_at|date:"Y-m-d H:i:s" }}</strong></span>{% endif %}
+          {% if run.heartbeat_at %}<span>Heartbeat <strong data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ run.heartbeat_at|date:"Y-m-d H:i:s" }}</strong></span>{% endif %}
+        </div>
+        <div class="execution-actions">
+          {% if run.status == "running" %}
+            <form method="post" action="{% url 'monitor:script-jobs' %}">
+              {% csrf_token %}
+              <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm">Stop</button>
+            </form>
+          {% else %}
+            <form method="post" action="{% url 'monitor:script-jobs' %}">
+              {% csrf_token %}
+              <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
+            </form>
+          {% endif %}
+          <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="btn btn-accent btn-sm">Detail</a>
         </div>
       </article>
     {% empty %}
@@ -77,10 +107,10 @@
       <div class="small text-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
       <div class="d-flex gap-2">
         {% if page_obj.has_previous %}
-          <a class="btn btn-outline-light btn-sm" href="?q={{ query|urlencode }}&page={{ page_obj.previous_page_number }}">Previous</a>
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
         {% endif %}
         {% if page_obj.has_next %}
-          <a class="btn btn-outline-light btn-sm" href="?q={{ query|urlencode }}&page={{ page_obj.next_page_number }}">Next</a>
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
         {% endif %}
       </div>
     </div>

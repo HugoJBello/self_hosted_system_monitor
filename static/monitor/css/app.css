@@ -743,6 +743,117 @@ body.app-shell {
   gap: 1rem;
 }
 
+.job-list-toolbar,
+.job-run-filter-bar {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+  padding: 0.85rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(156, 177, 198, 0.16);
+  background: rgba(5, 10, 17, 0.24);
+}
+
+.job-list-search {
+  min-width: 0;
+}
+
+@media (min-width: 992px) {
+  .job-list-search {
+    grid-column: span 2;
+  }
+}
+
+.job-list-toolbar .form-label,
+.job-run-filter-bar .form-label {
+  margin-bottom: 0.3rem;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.job-list-toolbar-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.job-compact-list,
+.execution-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.job-compact-row,
+.execution-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(10rem, 0.65fr) minmax(12rem, 0.85fr) auto;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.95rem 1rem;
+  border: 1px solid rgba(156, 177, 198, 0.16);
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.032);
+}
+
+.job-compact-main,
+.job-compact-meta,
+.job-compact-last,
+.execution-main,
+.execution-times,
+.execution-status {
+  min-width: 0;
+}
+
+.job-compact-meta,
+.execution-times,
+.execution-status {
+  display: grid;
+  gap: 0.25rem;
+  color: #c5d3e0;
+  font-size: 0.84rem;
+}
+
+.job-last-run-link {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #dfe8f1;
+  text-decoration: none;
+  font-size: 0.86rem;
+  overflow-wrap: anywhere;
+}
+
+.job-last-run-link:hover {
+  color: #ffffff;
+}
+
+.job-compact-actions,
+.execution-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.execution-row {
+  grid-template-columns: minmax(7rem, 0.38fr) minmax(0, 1.35fr) minmax(13rem, 0.75fr) auto;
+  align-items: start;
+}
+
+.execution-exit {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.execution-actions form {
+  margin: 0;
+}
+
 .docker-family-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 34rem), 1fr));
@@ -1815,6 +1926,32 @@ body.app-shell {
   .backup-job-actions .btn,
   .backup-job-actions form {
     width: 100%;
+  }
+
+  .job-list-toolbar,
+  .job-run-filter-bar,
+  .job-compact-row,
+  .execution-row {
+    grid-template-columns: 1fr;
+  }
+
+  .job-list-toolbar-actions,
+  .job-compact-actions,
+  .execution-actions {
+    justify-content: stretch;
+  }
+
+  .job-list-toolbar-actions .btn,
+  .job-list-toolbar-actions .btn-group,
+  .job-compact-actions .btn,
+  .job-compact-actions form,
+  .execution-actions .btn,
+  .execution-actions form {
+    width: 100%;
+  }
+
+  .job-list-toolbar-actions .btn-group .btn {
+    width: 50%;
   }
 
   .backup-source-group {

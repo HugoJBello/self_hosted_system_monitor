@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.db import OperationalError
 from django.http import JsonResponse
 from django.forms import modelformset_factory
-from django.db.models import Avg, Max
+from django.db.models import Avg, Max, Q
 from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -806,7 +806,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
 
     def get(self, request):
         _best_effort_reconcile_script_jobs()
-        return render(request, self.template_name, self._context(edit_job_id=request.GET.get("edit_job")))
+        return render(request, self.template_name, self._context(request, edit_job_id=request.GET.get("edit_job")))
 
     def post(self, request):
         _best_effort_reconcile_script_jobs()
@@ -868,7 +868,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Script job '{instance.name}' updated.")
                 return redirect("monitor:script-jobs")
-            return render(request, self.template_name, self._context(job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
+            return render(request, self.template_name, self._context(request, job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
 
         if "delete_job" in request.POST:
             job = get_object_or_404(ScriptJob, pk=request.POST.get("delete_job"))
@@ -884,15 +884,36 @@ class ScriptJobsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Script job '{instance.name}' created.")
                 return redirect("monitor:script-jobs")
-            return render(request, self.template_name, self._context(create_form=create_form, show_create=True))
+            return render(request, self.template_name, self._context(request, create_form=create_form, show_create=True))
 
-        return render(request, self.template_name, self._context())
+        return render(request, self.template_name, self._context(request))
 
-    def _context(self, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
+    def _context(self, request, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
         job_form_overrides = job_form_overrides or {}
+        query = (request.GET.get("q") or "").strip()
+        state = request.GET.get("state") or "all"
+        schedule = request.GET.get("schedule") or "all"
+        view_mode = request.GET.get("view") if request.GET.get("view") in {"cards", "compact"} else "cards"
         running_runs = list(ScriptJobRun.objects.select_related("job").filter(status="running").order_by("-started_at")[:20])
-        recent_runs = list(ScriptJobRun.objects.select_related("job").exclude(status="running").order_by("-started_at")[:8])
-        jobs = list(ScriptJob.objects.all())
+        jobs_qs = ScriptJob.objects.all()
+        if query:
+            jobs_qs = jobs_qs.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(working_directory__icontains=query)
+                | Q(script_body__icontains=query)
+            )
+        if state == "enabled":
+            jobs_qs = jobs_qs.filter(enabled=True)
+        elif state == "disabled":
+            jobs_qs = jobs_qs.filter(enabled=False)
+        if schedule in {"manual", "interval", "one_off"}:
+            jobs_qs = jobs_qs.filter(schedule_mode=schedule)
+        total_jobs_count = ScriptJob.objects.count()
+        filtered_jobs_count = jobs_qs.count()
+        paginator = Paginator(jobs_qs, 12)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        jobs = list(page_obj.object_list)
         runs_by_job = {
             job.id: list(ScriptJobRun.objects.filter(job=job).order_by("-started_at")[:3])
             for job in jobs
@@ -902,17 +923,33 @@ class ScriptJobsView(LoginRequiredMixin, View):
                 "job": job,
                 "form": job_form_overrides.get(job.id) or ScriptJobForm(instance=job, prefix=f"job-{job.id}"),
                 "recent_runs": runs_by_job.get(job.id, []),
+                "last_run": (runs_by_job.get(job.id, []) or [None])[0],
             }
             for job in jobs
         ]
+        compact_params = request.GET.copy()
+        compact_params["view"] = "compact"
+        compact_params.pop("page", None)
+        card_params = request.GET.copy()
+        card_params["view"] = "cards"
+        card_params.pop("page", None)
+        pagination_params = request.GET.copy()
+        pagination_params.pop("page", None)
         return {
             "running_runs": running_runs,
             "running_runs_count": len(running_runs),
-            "recent_runs": recent_runs,
-            "recent_runs_count": len(recent_runs),
             "job_forms": job_forms,
             "jobs": jobs,
-            "jobs_count": len(jobs),
+            "jobs_count": total_jobs_count,
+            "filtered_jobs_count": filtered_jobs_count,
+            "page_obj": page_obj,
+            "query": query,
+            "state_filter": state,
+            "schedule_filter": schedule,
+            "view_mode": view_mode,
+            "compact_view_url": f"?{compact_params.urlencode()}",
+            "card_view_url": f"?{card_params.urlencode()}",
+            "pagination_query": pagination_params.urlencode(),
             "create_form": create_form or ScriptJobForm(prefix="new"),
             "show_create": show_create,
             "edit_job_id": edit_job_id,
@@ -926,9 +963,20 @@ class ScriptJobRunsView(LoginRequiredMixin, View):
     def get(self, request):
         _best_effort_reconcile_script_jobs()
         query = (request.GET.get("q") or "").strip()
+        status = request.GET.get("status") or "all"
+        launched_by = request.GET.get("launched_by") or "all"
+        job_id = request.GET.get("job") or ""
         runs_qs = ScriptJobRun.objects.select_related("job").order_by("-started_at")
         if query:
-            runs_qs = runs_qs.filter(job__name__icontains=query)
+            runs_qs = runs_qs.filter(Q(job__name__icontains=query) | Q(summary__icontains=query) | Q(command_line__icontains=query))
+        if status in {choice[0] for choice in ScriptJobRun.STATUS_CHOICES}:
+            runs_qs = runs_qs.filter(status=status)
+        if launched_by in {choice[0] for choice in ScriptJobRun.LAUNCH_CHOICES}:
+            runs_qs = runs_qs.filter(launched_by=launched_by)
+        if job_id.isdigit():
+            runs_qs = runs_qs.filter(job_id=job_id)
+        pagination_params = request.GET.copy()
+        pagination_params.pop("page", None)
         paginator = Paginator(runs_qs, 20)
         page_obj = paginator.get_page(request.GET.get("page"))
         return render(
@@ -937,6 +985,13 @@ class ScriptJobRunsView(LoginRequiredMixin, View):
             {
                 "page_obj": page_obj,
                 "query": query,
+                "status_filter": status,
+                "launched_by_filter": launched_by,
+                "job_filter": job_id,
+                "status_choices": ScriptJobRun.STATUS_CHOICES,
+                "launch_choices": ScriptJobRun.LAUNCH_CHOICES,
+                "job_choices": ScriptJob.objects.order_by("name", "id"),
+                "pagination_query": pagination_params.urlencode(),
                 "settings_obj": MonitoringSettings.load(),
             },
         )
@@ -1014,7 +1069,7 @@ class BackupsView(LoginRequiredMixin, View):
 
     def get(self, request):
         _best_effort_reconcile_backups()
-        return render(request, self.template_name, self._context(edit_job_id=request.GET.get("edit_job")))
+        return render(request, self.template_name, self._context(request, edit_job_id=request.GET.get("edit_job")))
 
     def post(self, request):
         _best_effort_reconcile_backups()
@@ -1077,7 +1132,7 @@ class BackupsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' updated.")
                 return redirect("monitor:backups")
-            return render(request, self.template_name, self._context(job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
+            return render(request, self.template_name, self._context(request, job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
 
         if "delete_job" in request.POST:
             job = get_object_or_404(BackupJob, pk=request.POST.get("delete_job"))
@@ -1093,20 +1148,50 @@ class BackupsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' created.")
                 return redirect("monitor:backups")
-            return render(request, self.template_name, self._context(create_form=create_form, show_create=True))
+            return render(request, self.template_name, self._context(request, create_form=create_form, show_create=True))
 
-        return render(request, self.template_name, self._context())
+        return render(request, self.template_name, self._context(request))
 
-    def _context(self, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
+    def _context(self, request, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
         job_form_overrides = job_form_overrides or {}
+        query = (request.GET.get("q") or "").strip()
+        state = request.GET.get("state") or "all"
+        backup_type = request.GET.get("type") or "all"
+        direction = request.GET.get("direction") or "all"
+        view_mode = request.GET.get("view") if request.GET.get("view") in {"cards", "compact"} else "cards"
         latest_snapshot = SystemSnapshot.objects.order_by("-captured_at").first()
         running_runs = list(BackupRun.objects.select_related("job").filter(status="running").order_by("-started_at")[:20])
         for run in running_runs:
             runtime_state = get_runtime_state(run.id)
             if runtime_state:
                 run.log_output = _normalize_stream_output(runtime_state.get("log_output") or run.log_output or "")
-        recent_runs = list(BackupRun.objects.select_related("job").exclude(status="running").order_by("-started_at")[:8])
-        jobs = list(BackupJob.objects.all())
+        jobs_qs = BackupJob.objects.all()
+        if query:
+            jobs_qs = jobs_qs.filter(
+                Q(name__icontains=query)
+                | Q(description__icontains=query)
+                | Q(source_path__icontains=query)
+                | Q(local_dest_path__icontains=query)
+                | Q(remote_host__icontains=query)
+                | Q(remote_dir__icontains=query)
+                | Q(http_remote_url__icontains=query)
+                | Q(http_remote_path__icontains=query)
+            )
+        if state == "enabled":
+            jobs_qs = jobs_qs.filter(enabled=True)
+        elif state == "disabled":
+            jobs_qs = jobs_qs.filter(enabled=False)
+        if backup_type in {"local", "remote", "http"}:
+            jobs_qs = jobs_qs.filter(backup_type=backup_type)
+        if direction == "push":
+            jobs_qs = jobs_qs.filter(Q(backup_type="remote", remote_direction="push") | Q(backup_type="http", http_direction="push"))
+        elif direction == "pull":
+            jobs_qs = jobs_qs.filter(Q(backup_type="remote", remote_direction="pull") | Q(backup_type="http", http_direction="pull"))
+        total_jobs_count = BackupJob.objects.count()
+        filtered_jobs_count = jobs_qs.count()
+        paginator = Paginator(jobs_qs, 12)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        jobs = list(page_obj.object_list)
         runs_by_job = {
             job.id: list(BackupRun.objects.filter(job=job).order_by("-started_at")[:3])
             for job in jobs
@@ -1116,21 +1201,38 @@ class BackupsView(LoginRequiredMixin, View):
                 "job": job,
                 "form": job_form_overrides.get(job.id) or BackupJobForm(instance=job, prefix=f"job-{job.id}"),
                 "recent_runs": runs_by_job.get(job.id, []),
+                "last_run": (runs_by_job.get(job.id, []) or [None])[0],
                 "source_label": job.source_label,
                 "destination_label": job.destination_label,
             }
             for job in jobs
         ]
         create_form = create_form or BackupJobForm(prefix="new")
+        compact_params = request.GET.copy()
+        compact_params["view"] = "compact"
+        compact_params.pop("page", None)
+        card_params = request.GET.copy()
+        card_params["view"] = "cards"
+        card_params.pop("page", None)
+        pagination_params = request.GET.copy()
+        pagination_params.pop("page", None)
         return {
             "latest_snapshot": latest_snapshot,
             "running_runs": running_runs,
             "running_runs_count": len(running_runs),
-            "recent_runs": recent_runs,
             "job_forms": job_forms,
             "jobs": jobs,
-            "jobs_count": len(jobs),
-            "recent_runs_count": len(recent_runs),
+            "jobs_count": total_jobs_count,
+            "filtered_jobs_count": filtered_jobs_count,
+            "page_obj": page_obj,
+            "query": query,
+            "state_filter": state,
+            "type_filter": backup_type,
+            "direction_filter": direction,
+            "view_mode": view_mode,
+            "compact_view_url": f"?{compact_params.urlencode()}",
+            "card_view_url": f"?{card_params.urlencode()}",
+            "pagination_query": pagination_params.urlencode(),
             "browser_roots": list_browser_roots(),
             "create_form": create_form,
             "show_create": show_create,
@@ -1144,9 +1246,38 @@ class BackupRunsView(LoginRequiredMixin, View):
     def get(self, request):
         _best_effort_reconcile_backups()
         query = (request.GET.get("q") or "").strip()
+        status = request.GET.get("status") or "all"
+        backup_type = request.GET.get("type") or "all"
+        direction = request.GET.get("direction") or "all"
+        launched_by = request.GET.get("launched_by") or "all"
+        job_id = request.GET.get("job") or ""
         runs_qs = BackupRun.objects.select_related("job").order_by("-started_at")
         if query:
-            runs_qs = runs_qs.filter(job__name__icontains=query)
+            runs_qs = runs_qs.filter(
+                Q(job__name__icontains=query)
+                | Q(summary__icontains=query)
+                | Q(command_line__icontains=query)
+                | Q(job__source_path__icontains=query)
+                | Q(job__local_dest_path__icontains=query)
+                | Q(job__remote_host__icontains=query)
+                | Q(job__remote_dir__icontains=query)
+                | Q(job__http_remote_url__icontains=query)
+                | Q(job__http_remote_path__icontains=query)
+            )
+        if status in {choice[0] for choice in BackupRun.STATUS_CHOICES}:
+            runs_qs = runs_qs.filter(status=status)
+        if backup_type in {"local", "remote", "http"}:
+            runs_qs = runs_qs.filter(job__backup_type=backup_type)
+        if direction == "push":
+            runs_qs = runs_qs.filter(Q(job__backup_type="remote", job__remote_direction="push") | Q(job__backup_type="http", job__http_direction="push"))
+        elif direction == "pull":
+            runs_qs = runs_qs.filter(Q(job__backup_type="remote", job__remote_direction="pull") | Q(job__backup_type="http", job__http_direction="pull"))
+        if launched_by in {choice[0] for choice in BackupRun.LAUNCH_CHOICES}:
+            runs_qs = runs_qs.filter(launched_by=launched_by)
+        if job_id.isdigit():
+            runs_qs = runs_qs.filter(job_id=job_id)
+        pagination_params = request.GET.copy()
+        pagination_params.pop("page", None)
         paginator = Paginator(runs_qs, 20)
         page_obj = paginator.get_page(request.GET.get("page"))
         return render(
@@ -1155,6 +1286,15 @@ class BackupRunsView(LoginRequiredMixin, View):
             {
                 "page_obj": page_obj,
                 "query": query,
+                "status_filter": status,
+                "type_filter": backup_type,
+                "direction_filter": direction,
+                "launched_by_filter": launched_by,
+                "job_filter": job_id,
+                "status_choices": BackupRun.STATUS_CHOICES,
+                "launch_choices": BackupRun.LAUNCH_CHOICES,
+                "job_choices": BackupJob.objects.order_by("name", "id"),
+                "pagination_query": pagination_params.urlencode(),
                 "settings_obj": MonitoringSettings.load(),
             },
         )

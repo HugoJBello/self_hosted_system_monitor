@@ -8,7 +8,7 @@
   <div>
     <p class="eyebrow mb-2">Backup center</p>
     <h1 class="display-6 mb-1">Backup configuration</h1>
-    <p class="text-secondary mb-0">Configure backup jobs here. This page keeps only the current transfers and a short recent list visible; the full history lives in a dedicated runs view.</p>
+    <p class="text-secondary mb-0">Configure backup jobs here. Current transfers stay visible here; the full execution history has its own dedicated view.</p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
     <span class="badge text-bg-light border">Jobs {{ jobs_count }}</span>
@@ -20,13 +20,58 @@
 </div>
 
 <section class="panel-card p-4 mb-4">
-  <div class="d-flex justify-content-between align-items-center mb-4">
+  <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end gap-3 mb-4">
     <div>
       <p class="eyebrow mb-2">Scheduler</p>
       <h2 class="h4 mb-0">Configured backup jobs</h2>
     </div>
-    <span class="badge text-bg-light border">{{ jobs_count }} configured</span>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+      <span class="badge text-bg-light border">{{ filtered_jobs_count }} shown</span>
+      <span class="badge text-bg-light border">{{ jobs_count }} total</span>
+      <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-clock-history"></i> Execution history</a>
+    </div>
   </div>
+
+  <form method="get" class="job-list-toolbar mb-4">
+    <div class="job-list-search">
+      <label class="form-label" for="backupJobSearch">Filter backups</label>
+      <input id="backupJobSearch" name="q" value="{{ query }}" class="form-control" placeholder="name, source, destination, host, or URL">
+    </div>
+    <div>
+      <label class="form-label" for="backupJobState">State</label>
+      <select id="backupJobState" name="state" class="form-select">
+        <option value="all"{% if state_filter == "all" %} selected{% endif %}>All states</option>
+        <option value="enabled"{% if state_filter == "enabled" %} selected{% endif %}>Enabled</option>
+        <option value="disabled"{% if state_filter == "disabled" %} selected{% endif %}>Disabled</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="backupJobType">Type</label>
+      <select id="backupJobType" name="type" class="form-select">
+        <option value="all"{% if type_filter == "all" %} selected{% endif %}>All types</option>
+        <option value="local"{% if type_filter == "local" %} selected{% endif %}>Local</option>
+        <option value="remote"{% if type_filter == "remote" %} selected{% endif %}>SSH</option>
+        <option value="http"{% if type_filter == "http" %} selected{% endif %}>HTTP</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="backupJobDirection">Direction</label>
+      <select id="backupJobDirection" name="direction" class="form-select">
+        <option value="all"{% if direction_filter == "all" %} selected{% endif %}>All directions</option>
+        <option value="push"{% if direction_filter == "push" %} selected{% endif %}>Local to remote</option>
+        <option value="pull"{% if direction_filter == "pull" %} selected{% endif %}>Remote to local</option>
+      </select>
+    </div>
+    <input type="hidden" name="view" value="{{ view_mode }}">
+    <div class="job-list-toolbar-actions">
+      <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{% url 'monitor:backups' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-x-lg"></i> Clear</a>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Backup view">
+        <a href="{{ card_view_url }}" class="btn {% if view_mode == 'cards' %}btn-accent{% else %}btn-outline-light{% endif %}" title="Card view"><i class="bi bi-grid-3x3-gap"></i></a>
+        <a href="{{ compact_view_url }}" class="btn {% if view_mode == 'compact' %}btn-accent{% else %}btn-outline-light{% endif %}" title="Compact list"><i class="bi bi-list-ul"></i></a>
+      </div>
+    </div>
+  </form>
 
   <datalist id="backup-schedule-presets">
     <option value="15"></option>
@@ -36,6 +81,62 @@
     <option value="1440"></option>
   </datalist>
 
+  {% if view_mode == "compact" %}
+  <div class="job-compact-list">
+    {% for item in job_forms %}
+      {% with form=item.form job=item.job run=item.last_run %}
+      <article class="job-compact-row{% if not job.enabled %} backup-job-summary-disabled{% endif %}">
+        <div class="job-compact-main">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
+            <span class="chip compact-chip">{% if job.is_local %}Local{% elif job.is_http %}HTTP {{ job.http_direction }}{% else %}{% if job.connection_mode == "cloudflare" %}Cloudflare SSH{% else %}SSH{% endif %} {{ job.remote_direction|default:"push" }}{% endif %}</span>
+            {% if job.is_remote_pull or job.is_http and job.http_direction == "pull" %}<span class="severity-pill severity-warning">REMOTE TO LOCAL</span>{% endif %}
+          </div>
+          <h3 class="backup-job-title mb-1">{{ job.name }}</h3>
+          <div class="small text-secondary">{{ item.source_label }} → {{ item.destination_label }}</div>
+        </div>
+        <div class="job-compact-meta">
+          <span>{{ job.schedule_label }}</span>
+          <span>{% if job.delete_enabled %}{% if job.is_remote_pull or job.is_http and job.http_direction == "pull" %}delete local destination{% elif job.is_http or not job.is_local %}delete remote destination{% else %}delete destination{% endif %}{% else %}delete off{% endif %}</span>
+        </div>
+        <div class="job-compact-last">
+          <span class="backup-job-endpoint-label">Last run</span>
+          {% if run %}
+            <a href="{% url 'monitor:backup-run-detail' run.id %}" class="job-last-run-link">
+              {% if run.status == "success" %}
+                <span class="run-dot success"></span>
+              {% elif run.status == "running" %}
+                <span class="run-dot running"></span>
+              {% elif run.status == "cancelled" %}
+                <span class="run-dot muted"></span>
+              {% else %}
+                <span class="run-dot failed"></span>
+              {% endif %}
+              <strong>{{ run.get_status_display }}</strong>
+              <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i" }}</span>
+            </a>
+          {% else %}
+            <span class="text-secondary small">No runs yet.</span>
+          {% endif %}
+        </div>
+        <div class="backup-job-actions job-compact-actions">
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light btn-sm" {% if not job.enabled %}disabled aria-disabled="true" title="Activate this job before running it"{% endif %}><i class="bi bi-play-fill"></i> Run</button>
+          </form>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="toggle_job" value="{{ job.id }}" class="btn {% if job.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-sm" title="{% if job.enabled %}Disable{% else %}Activate{% endif %}"><i class="bi {% if job.enabled %}bi-pause-circle{% else %}bi-check-circle{% endif %}"></i></button>
+          </form>
+          <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#editBackupJobModal{{ job.id }}" title="Edit"><i class="bi bi-pencil-square"></i></button>
+        </div>
+      </article>
+      {% endwith %}
+    {% empty %}
+      <div class="text-secondary">No backup jobs match these filters.</div>
+    {% endfor %}
+  </div>
+  {% else %}
   <div class="backup-job-grid">
     {% for item in job_forms %}
       {% with form=item.form job=item.job %}
@@ -88,7 +189,7 @@
         </div>
 
         <div class="backup-job-runs">
-          <div class="backup-job-runs-title">Recent runs</div>
+          <div class="backup-job-runs-title">Last runs</div>
           <div class="backup-job-run-list">
             {% for run in item.recent_runs %}
               <a href="{% url 'monitor:backup-run-detail' run.id %}" class="backup-job-run-link">
@@ -138,9 +239,24 @@
       </article>
       {% endwith %}
     {% empty %}
-      <div class="text-secondary">No backup jobs configured yet.</div>
+      <div class="text-secondary">No backup jobs match these filters.</div>
     {% endfor %}
   </div>
+  {% endif %}
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-4">
+      <div class="small text-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      <div class="d-flex gap-2">
+        {% if page_obj.has_previous %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
 </section>
 
 <div class="row g-4 mb-4">
@@ -186,54 +302,6 @@
           </article>
         {% empty %}
           <div class="text-secondary">No backups are running right now.</div>
-        {% endfor %}
-      </div>
-    </section>
-
-    <section class="panel-card p-4">
-      <div class="d-flex justify-content-between align-items-center mb-4">
-        <div>
-          <p class="eyebrow mb-2">Recent executions</p>
-          <h2 class="h4 mb-0">Latest finished runs</h2>
-        </div>
-        <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm">See all runs</a>
-      </div>
-      <div class="alerts-feed">
-        {% for run in recent_runs %}
-          <article class="alert-card report-card backup-run-card compact-history-card">
-            <div class="d-flex justify-content-between align-items-start gap-3">
-              <div class="flex-grow-1">
-                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
-                  {% if run.status == "success" %}
-                    <span class="live-pill">SUCCESS</span>
-                  {% elif run.status == "cancelled" %}
-                    <span class="resolved-pill">CANCELLED</span>
-                  {% elif run.status == "timed_out" %}
-                    <span class="severity-pill severity-warning">TIMED OUT</span>
-                  {% else %}
-                    <span class="severity-pill severity-critical">FAILED</span>
-                  {% endif %}
-                  <span class="chip compact-chip">{{ run.job.name }}</span>
-                </div>
-                <h3 class="h6 mb-1">{{ run.summary }}</h3>
-                <div class="small text-secondary">
-                  <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
-                  {% if run.finished_at %} • finished <span data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="time-short">{{ run.finished_at|date:"H:i:s" }}</span>{% endif %}
-                  {% if run.runner_label %} • {{ run.runner_label }}{% endif %}
-                </div>
-              </div>
-              <div class="text-end backup-run-side">
-                <div class="event-value">{{ run.exit_code }}</div>
-                <form method="post" class="mt-2">
-                  {% csrf_token %}
-                  <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
-                </form>
-                <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-outline-light btn-sm mt-2">Detail</a>
-              </div>
-            </div>
-          </article>
-        {% empty %}
-          <div class="text-secondary">No finished backup runs yet.</div>
         {% endfor %}
       </div>
     </section>
