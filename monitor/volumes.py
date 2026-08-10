@@ -49,6 +49,50 @@ def _run_host_command(command, *, sudo_password="", check=True, timeout_seconds=
         raise ProcessControlError(detail or f"Host command failed: {' '.join(command)}") from exc
 
 
+def _command_error_text(error):
+    return str(error or "").strip()
+
+
+def _needs_sudo(error):
+    detail = _command_error_text(error).lower()
+    return any(
+        needle in detail
+        for needle in [
+            "permission denied",
+            "not permitted",
+            "must be superuser",
+            "only root",
+            "operation not permitted",
+            "requires superuser",
+            "requires root",
+        ]
+    )
+
+
+def _sudo_auth_failed(error):
+    detail = _command_error_text(error).lower()
+    return any(
+        needle in detail
+        for needle in [
+            "sorry, try again",
+            "incorrect password",
+            "authentication failure",
+            "password is required",
+            "no password was provided",
+            "a terminal is required",
+        ]
+    )
+
+
+def _format_action_error(action, error, *, sudo_password=""):
+    detail = _command_error_text(error)
+    if sudo_password and _sudo_auth_failed(error):
+        return f"{action} failed because sudo authentication failed. Check the sudo password and try again."
+    if not sudo_password and (_needs_sudo(error) or _sudo_auth_failed(error)):
+        return f"{action} needs sudo permissions. Open advanced options, enter the sudo password, and try again."
+    return f"{action} failed: {detail}" if detail else f"{action} failed."
+
+
 def _json_host_command(command):
     try:
         result = _run_host_command(command, check=True, timeout_seconds=12)
@@ -385,7 +429,10 @@ def _validate_mount_options(options):
 
 def mount_volume(device, mountpoint, *, fstype="", options="", sudo_password=""):
     source = _validate_mount_source(device)
-    target = normalize_host_path(mountpoint)
+    try:
+        target = normalize_host_path(mountpoint)
+    except ValueError as exc:
+        raise ProcessControlError(str(exc)) from exc
     if target == "/":
         raise ProcessControlError("Mounting directly on / is not allowed.")
     opts = _validate_mount_options(options)
@@ -399,24 +446,27 @@ def mount_volume(device, mountpoint, *, fstype="", options="", sudo_password="")
         command.extend([source, target])
         _run_host_command(command, sudo_password=sudo_password)
     except ProcessControlError as exc:
-        if not sudo_password and any(needle in str(exc).lower() for needle in ["permission", "not permitted", "must be superuser", "root"]):
-            raise ProcessControlError("Mount needs sudo permissions. Enter the sudo password and try again.") from exc
-        raise
+        raise ProcessControlError(_format_action_error("Mount", exc, sudo_password=sudo_password)) from exc
     return VolumeActionResult(True, f"Mounted {source} on {target}.")
 
 
 def unmount_volume(target, *, sudo_password=""):
-    target = (target or "").strip()
-    if not target:
+    raw_target = (target or "").strip()
+    if not raw_target:
         raise ProcessControlError("Select a mounted volume to unmount.")
-    if target == "/":
+    if raw_target == "/":
         raise ProcessControlError("Unmounting / is not allowed.")
-    if not (target.startswith("/") or target.startswith("/dev/")):
+    if not (raw_target.startswith("/") or raw_target.startswith("/dev/")):
         raise ProcessControlError("Unmount target must be a mount path or /dev device.")
+    if raw_target.startswith("/dev/"):
+        target = raw_target
+    else:
+        try:
+            target = normalize_host_path(raw_target)
+        except ValueError as exc:
+            raise ProcessControlError(str(exc)) from exc
     try:
         _run_host_command(["umount", target], sudo_password=sudo_password)
     except ProcessControlError as exc:
-        if not sudo_password and any(needle in str(exc).lower() for needle in ["permission", "not permitted", "must be superuser", "root"]):
-            raise ProcessControlError("Unmount needs sudo permissions. Enter the sudo password and try again.") from exc
-        raise
+        raise ProcessControlError(_format_action_error("Unmount", exc, sudo_password=sudo_password)) from exc
     return VolumeActionResult(True, f"Unmounted {target}.")

@@ -24,7 +24,8 @@ from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSetti
 from .reporting import generate_report_for_rule
 from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
-from .volumes import list_volumes
+from .process_control import ProcessControlError
+from .volumes import list_volumes, mount_volume, unmount_volume
 
 
 User = get_user_model()
@@ -594,6 +595,22 @@ class MonitorViewsTests(TestCase):
 
         self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
         mock_unmount_volume.assert_called_once_with("/media/usb", sudo_password="secret")
+
+    @patch("monitor.views.list_path_directory_children", side_effect=ValueError("This host path is not selectable."))
+    def test_volume_tree_returns_json_error_for_invalid_path(self, _mock_children):
+        response = self.client.get(self._path("monitor:volume-tree"), {"path": "/proc"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["items"], [])
+        self.assertEqual(response.json()["error"], "This host path is not selectable.")
+
+    @patch("monitor.views.list_directory_children", side_effect=ValueError("Host paths must be absolute."))
+    def test_backup_tree_returns_json_error_for_invalid_path(self, _mock_children):
+        response = self.client.get(self._path("monitor:backup-tree"), {"path": "relative"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["items"], [])
+        self.assertEqual(response.json()["error"], "Host paths must be absolute.")
 
     def test_script_jobs_compact_view_shows_last_run(self):
         job = ScriptJob.objects.create(
@@ -3230,6 +3247,21 @@ class BackupHelpersTests(TestCase):
         volumes = list_volumes()
 
         self.assertEqual(volumes["unmounted"][0]["suggested_mountpoint"], "/media/archive")
+
+    @patch("monitor.volumes._run_host_command", side_effect=ProcessControlError("mount: only root can do that"))
+    def test_mount_volume_reports_sudo_retry_when_password_is_missing(self, _mock_run_host_command):
+        with self.assertRaisesMessage(ProcessControlError, "Mount needs sudo permissions. Open advanced options, enter the sudo password, and try again."):
+            mount_volume("/dev/sdb1", "/media/usb")
+
+    @patch("monitor.volumes._run_host_command", side_effect=ProcessControlError("Sorry, try again."))
+    def test_mount_volume_reports_bad_sudo_password(self, _mock_run_host_command):
+        with self.assertRaisesMessage(ProcessControlError, "Mount failed because sudo authentication failed. Check the sudo password and try again."):
+            mount_volume("/dev/sdb1", "/media/usb", sudo_password="bad")
+
+    @patch("monitor.volumes._run_host_command", side_effect=ProcessControlError("umount: /media/usb: target is busy."))
+    def test_unmount_volume_reports_command_detail(self, _mock_run_host_command):
+        with self.assertRaisesMessage(ProcessControlError, "Unmount failed: umount: /media/usb: target is busy."):
+            unmount_volume("/media/usb", sudo_password="secret")
 
     @patch("monitor.backups.time.sleep", return_value=None)
     @patch("monitor.backups._remove_runtime_files")

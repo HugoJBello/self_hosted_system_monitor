@@ -807,6 +807,25 @@ body.app-shell {
   display: block;
 }
 
+.backup-browser-message {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.7rem;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #c5d3e0;
+  font-size: 0.84rem;
+}
+
+.backup-browser-message.is-error {
+  color: #ffd8d2;
+  background: rgba(255, 122, 89, 0.1);
+  border-color: rgba(255, 122, 89, 0.22);
+}
+
 .backup-advanced-toggle {
   cursor: pointer;
   list-style: none;

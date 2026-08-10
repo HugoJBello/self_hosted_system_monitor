@@ -1306,13 +1306,21 @@ class BackupRunsView(LoginRequiredMixin, View):
 class BackupTreeView(LoginRequiredMixin, View):
     def get(self, request):
         host_path = request.GET.get("path", "/")
-        return JsonResponse({"items": list_directory_children(host_path)})
+        try:
+            items = list_directory_children(host_path)
+        except ValueError as exc:
+            return JsonResponse({"items": [], "error": str(exc)}, status=400)
+        return JsonResponse({"items": items})
 
 
 class VolumeTreeView(LoginRequiredMixin, View):
     def get(self, request):
         host_path = request.GET.get("path", "/")
-        return JsonResponse({"items": list_path_directory_children(host_path)})
+        try:
+            items = list_path_directory_children(host_path)
+        except ValueError as exc:
+            return JsonResponse({"items": [], "error": str(exc)}, status=400)
+        return JsonResponse({"items": items})
 
 
 class VolumesView(LoginRequiredMixin, View):

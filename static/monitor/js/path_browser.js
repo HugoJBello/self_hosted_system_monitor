@@ -15,6 +15,15 @@
 
   function renderChildren(container, items) {
     container.innerHTML = "";
+    if (!items.length) {
+      container.innerHTML = `
+        <div class="backup-browser-message">
+          <i class="bi bi-folder-x"></i>
+          <span>No readable subfolders found.</span>
+        </div>
+      `;
+      return;
+    }
     items.forEach((item) => {
       const node = document.createElement("div");
       node.className = "backup-browser-node nested";
@@ -42,12 +51,30 @@
       return;
     }
     const treeUrl = modalElement.dataset.treeUrl;
-    const response = await fetch(`${treeUrl}?path=${encodeURIComponent(path)}`);
-    const payload = await response.json();
-    renderChildren(childrenContainer, payload.items || []);
+    childrenContainer.innerHTML = `
+      <div class="backup-browser-message">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        <span>Loading folders...</span>
+      </div>
+    `;
     childrenContainer.classList.add("open");
     targetNode.classList.add("is-open");
-    targetNode.dataset.loaded = "1";
+    try {
+      const response = await fetch(`${treeUrl}?path=${encodeURIComponent(path)}`);
+      const payload = await response.json();
+      if (!response.ok || payload.error) {
+        throw new Error(payload.error || "Could not load this folder.");
+      }
+      renderChildren(childrenContainer, payload.items || []);
+      targetNode.dataset.loaded = "1";
+    } catch (error) {
+      childrenContainer.innerHTML = `
+        <div class="backup-browser-message is-error">
+          <i class="bi bi-exclamation-triangle"></i>
+          <span>${escapeHtml(error.message || "Could not load this folder.")}</span>
+        </div>
+      `;
+    }
   }
 
   document.querySelectorAll("[data-path-browser-modal]").forEach((modalElement) => {
