@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}Volume Operations | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Storage history</p>
+    <h1 class="display-6 mb-1">Volume operations</h1>
+    <p class="text-secondary mb-0">Track format and label operations, including pending and running work.</p>
+  </div>
+  <a href="{% url 'monitor:volumes' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-hdd-stack"></i> Back to volumes</a>
+</div>
+
+<section class="panel-card p-4">
+  <form method="get" class="job-run-filter-bar mb-4">
+    <div class="job-list-search">
+      <label class="form-label" for="volumeOperationSearch">Search operations</label>
+      <input id="volumeOperationSearch" name="q" value="{{ query }}" class="form-control" placeholder="device, summary, label, filesystem, or command">
+    </div>
+    <div>
+      <label class="form-label" for="volumeOperationStatus">Status</label>
+      <select id="volumeOperationStatus" name="status" class="form-select">
+        <option value="all"{% if status_filter == "all" %} selected{% endif %}>All statuses</option>
+        {% for value,label in status_choices %}
+          <option value="{{ value }}"{% if status_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="volumeOperationAction">Action</label>
+      <select id="volumeOperationAction" name="action" class="form-select">
+        <option value="all"{% if action_filter == "all" %} selected{% endif %}>All actions</option>
+        {% for value,label in action_choices %}
+          <option value="{{ value }}"{% if action_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="job-list-toolbar-actions">
+      <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{% url 'monitor:volume-operations' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-x-lg"></i> Clear</a>
+    </div>
+  </form>
+
+  <div class="execution-list">
+    {% for operation in page_obj.object_list %}
+      <article class="execution-row">
+        <div class="execution-status">
+          {% if operation.status == "success" %}
+            <span class="live-pill">SUCCESS</span>
+          {% elif operation.status == "running" %}
+            <span class="live-pill">RUNNING</span>
+          {% else %}
+            <span class="severity-pill severity-critical">FAILED</span>
+          {% endif %}
+          <span class="execution-exit">pid {{ operation.process_pid|default:"-" }}</span>
+        </div>
+        <div class="execution-main">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span class="chip compact-chip">{{ operation.get_action_display }}</span>
+            <span class="chip compact-chip">{{ operation.device }}</span>
+            {% if operation.fstype %}<span class="chip compact-chip">{{ operation.fstype }}</span>{% endif %}
+            {% if operation.label %}<span class="chip compact-chip">{{ operation.label }}</span>{% endif %}
+          </div>
+          <h3 class="h6 mb-1">{{ operation.summary|default:"Volume operation" }}</h3>
+          {% if operation.runner_label %}<div class="small text-secondary">Runner {{ operation.runner_label }}</div>{% endif %}
+        </div>
+        <div class="execution-times">
+          <span>Started <strong data-local-datetime="{{ operation.started_at|date:'c' }}" data-local-style="datetime-short">{{ operation.started_at|date:"Y-m-d H:i:s" }}</strong></span>
+          {% if operation.finished_at %}<span>Finished <strong data-local-datetime="{{ operation.finished_at|date:'c' }}" data-local-style="datetime-short">{{ operation.finished_at|date:"Y-m-d H:i:s" }}</strong></span>{% endif %}
+        </div>
+        <div class="execution-actions">
+          <a href="{% url 'monitor:volume-operation-detail' operation.id %}" class="btn btn-accent btn-sm">Detail</a>
+        </div>
+      </article>
+    {% empty %}
+      <div class="text-secondary">No volume operations found.</div>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-4">
+      <div class="small text-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      <div class="d-flex gap-2">
+        {% if page_obj.has_previous %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

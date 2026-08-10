@@ -1406,6 +1406,46 @@ class VolumeOperationDetailView(LoginRequiredMixin, View):
         return render(request, self.template_name, {"operation": operation, "settings_obj": MonitoringSettings.load()})
 
 
+class VolumeOperationsView(LoginRequiredMixin, View):
+    template_name = "monitor/volume_operations.html"
+
+    def get(self, request):
+        query = (request.GET.get("q") or "").strip()
+        status = request.GET.get("status") or "all"
+        action = request.GET.get("action") or "all"
+        operations_qs = VolumeOperation.objects.order_by("-started_at")
+        if query:
+            operations_qs = operations_qs.filter(
+                Q(device__icontains=query)
+                | Q(summary__icontains=query)
+                | Q(label__icontains=query)
+                | Q(fstype__icontains=query)
+                | Q(command_line__icontains=query)
+            )
+        if status in {choice[0] for choice in VolumeOperation.STATUS_CHOICES}:
+            operations_qs = operations_qs.filter(status=status)
+        if action in {choice[0] for choice in VolumeOperation.ACTION_CHOICES}:
+            operations_qs = operations_qs.filter(action=action)
+        pagination_params = request.GET.copy()
+        pagination_params.pop("page", None)
+        paginator = Paginator(operations_qs, 20)
+        page_obj = paginator.get_page(request.GET.get("page"))
+        return render(
+            request,
+            self.template_name,
+            {
+                "page_obj": page_obj,
+                "query": query,
+                "status_filter": status,
+                "action_filter": action,
+                "status_choices": VolumeOperation.STATUS_CHOICES,
+                "action_choices": VolumeOperation.ACTION_CHOICES,
+                "pagination_query": pagination_params.urlencode(),
+                "settings_obj": MonitoringSettings.load(),
+            },
+        )
+
+
 class VolumeOperationStatusView(LoginRequiredMixin, View):
     def get(self, request, operation_id):
         operation = get_object_or_404(VolumeOperation, pk=operation_id)

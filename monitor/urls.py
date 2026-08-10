@@ -2,7 +2,7 @@ from django.urls import path
 
 from .docker_views import DockerActionView, DockerLogsView, DockerOverviewView
 from .http_backups import http_backup_compare_view, http_backup_delete_view, http_backup_file_view, http_backup_list_view, http_backup_manifest_view, http_backup_prune_view, http_backup_stat_view
-from .views import AlertDetailView, AlertsView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, LoginView, LogoutView, PasswordView, ProcessActionView, RedirectHomeView, ReportDetailView, ReportsView, ScriptJobRunDetailView, ScriptJobRunsView, ScriptJobRunStatusView, ScriptJobsView, SettingsView, SystemMonitorView, UsersView, VolumeOperationDetailView, VolumeOperationStatusView, VolumeTreeView, VolumesView, healthz_view
+from .views import AlertDetailView, AlertsView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, LoginView, LogoutView, PasswordView, ProcessActionView, RedirectHomeView, ReportDetailView, ReportsView, ScriptJobRunDetailView, ScriptJobRunsView, ScriptJobRunStatusView, ScriptJobsView, SettingsView, SystemMonitorView, UsersView, VolumeOperationDetailView, VolumeOperationStatusView, VolumeOperationsView, VolumeTreeView, VolumesView, healthz_view
 
 app_name = "monitor"
 
@@ -26,6 +26,7 @@ urlpatterns = [
     path("docker/logs/", DockerLogsView.as_view(), name="docker-logs"),
     path("volumes/", VolumesView.as_view(), name="volumes"),
     path("volumes/tree/", VolumeTreeView.as_view(), name="volume-tree"),
+    path("volumes/operations/", VolumeOperationsView.as_view(), name="volume-operations"),
     path("volumes/operations/<int:operation_id>/status/", VolumeOperationStatusView.as_view(), name="volume-operation-status"),
     path("volumes/operations/<int:operation_id>/", VolumeOperationDetailView.as_view(), name="volume-operation-detail"),
     path("jobs/", ScriptJobsView.as_view(), name="script-jobs"),

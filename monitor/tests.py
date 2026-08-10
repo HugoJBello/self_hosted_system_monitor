@@ -677,6 +677,17 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "Volume operation")
         self.assertContains(response, "/dev/sdb1")
 
+    def test_volume_operations_page_lists_and_filters_operations(self):
+        VolumeOperation.objects.create(action="format", device="/dev/sdb1", fstype="ext4", summary="Formatting /dev/sdb1.", status="failed")
+        VolumeOperation.objects.create(action="label", device="/dev/sdc1", fstype="ntfs", label="ARCHIVE", summary="Updating label.", status="success")
+
+        response = self.client.get(reverse("monitor:volume-operations"), {"q": "sdb", "status": "failed", "action": "format"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Volume operations")
+        self.assertContains(response, "/dev/sdb1")
+        self.assertNotContains(response, "/dev/sdc1")
+
     def test_volume_operation_status_returns_json(self):
         operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE", summary="Updating label.")
 
