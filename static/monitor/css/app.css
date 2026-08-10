@@ -498,6 +498,17 @@ body.app-shell {
   gap: 0.8rem;
 }
 
+.volume-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+  gap: 0.65rem;
+}
+
+.volume-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .volume-action-details {
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   padding-top: 0.75rem;
@@ -559,6 +570,14 @@ body.app-shell {
   }
 
   .volume-action-form .btn {
+    width: 100%;
+  }
+
+  .volume-card-actions {
+    justify-content: stretch;
+  }
+
+  .volume-card-actions .btn {
     width: 100%;
   }
 }

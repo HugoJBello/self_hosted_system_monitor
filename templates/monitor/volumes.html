@@ -109,38 +109,43 @@
             </div>
             <div class="mounted-device-chip-row">
               <span class="mounted-device-chip">{{ volume.fstype|default:"unknown"|upper }}</span>
+              {% if volume.type %}<span class="mounted-device-chip">{{ volume.type }}</span>{% endif %}
               {% if volume.label %}<span class="mounted-device-chip">{{ volume.label }}</span>{% endif %}
-              {% if volume.uuid %}<span class="mounted-device-chip">UUID {{ volume.uuid }}</span>{% endif %}
               {% if volume.size_gb %}<span class="mounted-device-chip">{{ volume.size_gb }} GB</span>{% endif %}
               {% if volume.transport %}<span class="mounted-device-chip">{{ volume.transport }}</span>{% endif %}
+              {% if volume.removable %}<span class="mounted-device-chip">removable</span>{% endif %}
+              {% if volume.hotplug %}<span class="mounted-device-chip">hotplug</span>{% endif %}
+              {% if volume.readonly %}<span class="mounted-device-chip">read-only</span>{% endif %}
             </div>
-            <form method="post" class="volume-action-form" data-confirm-submit="Mount {{ volume.device }} on the selected folder?">
-              {% csrf_token %}
-              <input type="hidden" name="volume_action" value="mount">
-              <input type="hidden" name="device" value="{{ volume.device }}">
-              <input type="hidden" name="fstype" value="{{ volume.fstype }}">
-              <div>
-                <label class="form-label" for="mountpoint-{{ forloop.counter }}">Mount path</label>
-                <div class="input-group flex-wrap backup-source-group">
-                  <input id="mountpoint-{{ forloop.counter }}" type="text" name="mountpoint" class="form-control" placeholder="/media/{{ volume.name|default:'volume' }}" required data-path-browser-input>
-                  <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="volumeFolderModal" data-input-id="mountpoint-{{ forloop.counter }}">Browse</button>
-                </div>
+            <div class="volume-detail-grid">
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">Filesystem</span>
+                <strong>{{ volume.fstype|default:"-" }}</strong>
               </div>
-              <details class="volume-advanced-details">
-                <summary class="volume-inline-toggle"><i class="bi bi-sliders"></i> Advanced options</summary>
-                <div class="volume-advanced-grid mt-2">
-                  <div>
-                    <label class="form-label" for="mount-options-{{ forloop.counter }}">Mount options</label>
-                    <input id="mount-options-{{ forloop.counter }}" type="text" name="options" class="form-control" placeholder="defaults">
-                  </div>
-                  <div>
-                    <label class="form-label" for="sudo-mount-{{ forloop.counter }}">Sudo password</label>
-                    <input id="sudo-mount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
-                  </div>
-                </div>
-              </details>
-              <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-hdd-stack"></i> Mount</button>
-            </form>
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">Size</span>
+                <strong>{% if volume.size_gb %}{{ volume.size_gb }} GB{% else %}-{% endif %}</strong>
+              </div>
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">UUID</span>
+                <strong>{{ volume.uuid|default:"-" }}</strong>
+              </div>
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">Serial</span>
+                <strong>{{ volume.serial|default:"-" }}</strong>
+              </div>
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">State</span>
+                <strong>{{ volume.state|default:"available" }}</strong>
+              </div>
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">Mountpoint</span>
+                <strong>{{ volume.mountpoint|default:"not mounted" }}</strong>
+              </div>
+            </div>
+            <div class="volume-card-actions">
+              <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#mountVolumeModal{{ forloop.counter }}"><i class="bi bi-hdd-stack"></i> Mount</button>
+            </div>
           </article>
         {% empty %}
           <div class="text-secondary">No unmounted block volumes detected.</div>
@@ -149,6 +154,62 @@
     </section>
   </div>
 </div>
+
+{% for volume in unmounted %}
+  <div class="modal fade" id="mountVolumeModal{{ forloop.counter }}" tabindex="-1" aria-labelledby="mountVolumeModal{{ forloop.counter }}Label" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content backup-modal-shell">
+        <div class="modal-header border-secondary-subtle">
+          <div>
+            <p class="eyebrow mb-1">Mount volume</p>
+            <h2 class="h4 mb-0" id="mountVolumeModal{{ forloop.counter }}Label">{{ volume.device }}</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="volume-detail-grid mb-4">
+            <div class="mounted-device-stat"><span class="mounted-device-label">Filesystem</span><strong>{{ volume.fstype|default:"-" }}</strong></div>
+            <div class="mounted-device-stat"><span class="mounted-device-label">Size</span><strong>{% if volume.size_gb %}{{ volume.size_gb }} GB{% else %}-{% endif %}</strong></div>
+            <div class="mounted-device-stat"><span class="mounted-device-label">Label</span><strong>{{ volume.label|default:"-" }}</strong></div>
+            <div class="mounted-device-stat"><span class="mounted-device-label">UUID</span><strong>{{ volume.uuid|default:"-" }}</strong></div>
+            <div class="mounted-device-stat"><span class="mounted-device-label">Model</span><strong>{{ volume.model|default:"-" }}</strong></div>
+            <div class="mounted-device-stat"><span class="mounted-device-label">Serial</span><strong>{{ volume.serial|default:"-" }}</strong></div>
+          </div>
+          <form method="post" class="volume-action-form" data-confirm-submit="Mount {{ volume.device }} on the selected folder?">
+            {% csrf_token %}
+            <input type="hidden" name="volume_action" value="mount">
+            <input type="hidden" name="device" value="{{ volume.device }}">
+            <input type="hidden" name="fstype" value="{{ volume.fstype }}">
+            <div>
+              <label class="form-label" for="mountpoint-{{ forloop.counter }}">Mount path</label>
+              <div class="input-group flex-wrap backup-source-group">
+                <input id="mountpoint-{{ forloop.counter }}" type="text" name="mountpoint" class="form-control" placeholder="/media/{{ volume.name|default:'volume' }}" required data-path-browser-input>
+                <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="volumeFolderModal" data-input-id="mountpoint-{{ forloop.counter }}">Browse</button>
+              </div>
+            </div>
+            <details class="volume-advanced-details">
+              <summary class="volume-inline-toggle"><i class="bi bi-sliders"></i> Advanced options</summary>
+              <div class="volume-advanced-grid mt-2">
+                <div>
+                  <label class="form-label" for="mount-options-{{ forloop.counter }}">Mount options</label>
+                  <input id="mount-options-{{ forloop.counter }}" type="text" name="options" class="form-control" placeholder="defaults">
+                </div>
+                <div>
+                  <label class="form-label" for="sudo-mount-{{ forloop.counter }}">Sudo password</label>
+                  <input id="sudo-mount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                </div>
+              </div>
+            </details>
+            <div class="d-flex justify-content-end gap-2 flex-wrap">
+              <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+              <button type="submit" class="btn btn-accent"><i class="bi bi-hdd-stack"></i> Mount volume</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endfor %}
 
 {% include "monitor/_path_browser_modal.html" with modal_id="volumeFolderModal" title="Pick mount folder" tree_url=volume_tree_url browser_roots=browser_roots %}
 {% endblock %}
