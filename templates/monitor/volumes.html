@@ -89,11 +89,19 @@
                   {% csrf_token %}
                   <input type="hidden" name="volume_action" value="unmount">
                   <input type="hidden" name="target" value="{{ volume.mountpoint }}">
+                  <input type="hidden" name="device" value="{{ volume.device }}">
                   <details class="volume-advanced-details">
-                    <summary class="volume-inline-toggle"><i class="bi bi-key"></i> Use sudo password</summary>
-                    <div class="mt-2">
-                      <label class="form-label" for="sudo-unmount-{{ forloop.counter }}">Sudo password</label>
-                      <input id="sudo-unmount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                    <summary class="volume-inline-toggle"><i class="bi bi-sliders"></i> Advanced unmount</summary>
+                    <div class="volume-advanced-grid mt-2">
+                      <div>
+                        <label class="form-label" for="sudo-unmount-{{ forloop.counter }}">Sudo password</label>
+                        <input id="sudo-unmount-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                      </div>
+                      <div class="form-check volume-danger-check">
+                        <input id="force-unmount-{{ forloop.counter }}" type="checkbox" name="force_unmount" class="form-check-input">
+                        <label class="form-check-label" for="force-unmount-{{ forloop.counter }}">Lazy unmount stuck namespaces</label>
+                        <div class="form-text text-secondary">Use only when a container or file browser keeps this volume busy after normal unmount.</div>
+                      </div>
                     </div>
                   </details>
                   <button type="submit" class="btn btn-outline-danger btn-sm"><i class="bi bi-eject"></i> Unmount</button>

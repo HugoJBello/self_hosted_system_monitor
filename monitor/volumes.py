@@ -284,8 +284,111 @@ def _device_is_mounted(device):
         result = None
     if result and result.returncode == 0 and (result.stdout or "").strip():
         return True
+    if _namespace_mount_references(device):
+        return True
     row = _row_for_device(device)
     return bool(row and _as_list(row.get("mountpoints")))
+
+
+def _read_proc_text(path):
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace").strip()
+    except OSError:
+        return ""
+
+
+def _device_mount_ids(device):
+    try:
+        result = _run_host_command(["stat", "-c", "%t:%T", device], check=False, timeout_seconds=8)
+    except ProcessControlError:
+        return set()
+    if not result or result.returncode != 0:
+        return set()
+    mount_ids = set()
+    for raw_value in (result.stdout or "").splitlines():
+        raw_value = raw_value.strip()
+        if ":" not in raw_value:
+            continue
+        major_hex, minor_hex = raw_value.split(":", 1)
+        try:
+            mount_ids.add(f"{int(major_hex, 16)}:{int(minor_hex, 16)}")
+        except ValueError:
+            continue
+    return mount_ids
+
+
+def _namespace_mount_references(device, *, proc_root="/proc", limit=5, mount_ids=None):
+    device = (device or "").strip()
+    if not device:
+        return []
+    if mount_ids is None:
+        mount_ids = _device_mount_ids(device)
+    mount_ids = set(mount_ids or [])
+    references = []
+    proc_path = Path(proc_root)
+    if not proc_path.exists():
+        return references
+    for pid_dir in proc_path.iterdir():
+        if not pid_dir.name.isdigit():
+            continue
+        mountinfo_path = pid_dir / "mountinfo"
+        try:
+            lines = mountinfo_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            left, separator, right = line.partition(" - ")
+            if not separator:
+                continue
+            left_parts = left.split()
+            right_parts = right.split()
+            if len(left_parts) < 5 or len(right_parts) < 2:
+                continue
+            source = right_parts[1]
+            if source != device and left_parts[2] not in mount_ids:
+                continue
+            references.append(
+                {
+                    "pid": pid_dir.name,
+                    "command": _read_proc_text(pid_dir / "comm") or "process",
+                    "mountpoint": left_parts[4].replace("\\040", " "),
+                    "fstype": right_parts[0],
+                }
+            )
+            if len(references) >= limit:
+                return references
+    return references
+
+
+def _mounted_device_error(device):
+    references = _namespace_mount_references(device)
+    if references:
+        details = ", ".join(
+            f"{item['command']} pid {item['pid']} at {item['mountpoint']}"
+            for item in references
+        )
+        return f"{device} is mounted in another process namespace ({details}). Close that app or container and try again."
+    return f"{device} is mounted. Unmount it before formatting."
+
+
+def _unmount_namespace_references(device, *, sudo_password="", lazy=False):
+    references = _namespace_mount_references(device)
+    errors = []
+    for item in references:
+        command = ["nsenter", "--target", item["pid"], "--mount", "umount"]
+        if lazy:
+            command.append("-l")
+        command.append(item["mountpoint"])
+        try:
+            _run_host_command(command, sudo_password=sudo_password)
+        except ProcessControlError as exc:
+            refreshed = _namespace_mount_references(device)
+            if not any(ref["pid"] == item["pid"] and ref["mountpoint"] == item["mountpoint"] for ref in refreshed):
+                continue
+            errors.append(f"{item['command']} pid {item['pid']} at {item['mountpoint']}: {_command_error_text(exc)}")
+    if errors:
+        raise ProcessControlError("Could not unmount every namespace reference. " + " ".join(errors))
+    return len(references)
 
 
 def _volume_key_from_parts(*, uuid="", label="", serial="", model="", device=""):
@@ -600,7 +703,7 @@ def mount_volume(device, mountpoint, *, fstype="", options="", sudo_password="")
     return VolumeActionResult(True, f"Mounted {source} on {target}.")
 
 
-def unmount_volume(target, *, sudo_password=""):
+def unmount_volume(target, *, device="", sudo_password="", force=False):
     raw_target = (target or "").strip()
     if not raw_target:
         raise ProcessControlError("Select a mounted volume to unmount.")
@@ -615,11 +718,30 @@ def unmount_volume(target, *, sudo_password=""):
             target = normalize_host_path(raw_target)
         except ValueError as exc:
             raise ProcessControlError(str(exc)) from exc
+    command = ["umount", target]
+    if force:
+        command = ["umount", "-l", target]
+    main_unmounted = False
     try:
-        _run_host_command(["umount", target], sudo_password=sudo_password)
+        _run_host_command(command, sudo_password=sudo_password)
+        main_unmounted = True
     except ProcessControlError as exc:
-        raise ProcessControlError(_format_action_error("Unmount", exc, sudo_password=sudo_password)) from exc
-    return VolumeActionResult(True, f"Unmounted {target}.")
+        if not force:
+            raise ProcessControlError(_format_action_error("Unmount", exc, sudo_password=sudo_password)) from exc
+        if "not mounted" not in _command_error_text(exc).lower():
+            raise ProcessControlError(_format_action_error("Unmount", exc, sudo_password=sudo_password)) from exc
+
+    namespace_count = 0
+    if force and device:
+        namespace_count = _unmount_namespace_references(device, sudo_password=sudo_password, lazy=True)
+    elif device and _namespace_mount_references(device):
+        raise ProcessControlError(f"Unmounted {target}, but {device} is still mounted in another process namespace. Use forced unmount before formatting.")
+
+    if namespace_count:
+        return VolumeActionResult(True, f"Unmounted {target} and {namespace_count} namespace reference(s).")
+    if main_unmounted:
+        return VolumeActionResult(True, f"Unmounted {target}.")
+    return VolumeActionResult(True, f"No active mount found for {target}.")
 
 
 def update_volume_label(device, label, *, fstype="", sudo_password=""):
@@ -651,7 +773,7 @@ def format_volume(device, fstype, *, label="", confirm_text="", confirm_device="
     if confirm_text != "FORMAT" or confirm_device != device:
         raise ProcessControlError("Formatting was not confirmed. Type FORMAT and the exact device path before trying again.")
     if _device_is_mounted(device):
-        raise ProcessControlError(f"{device} is mounted. Unmount it before formatting.")
+        raise ProcessControlError(_mounted_device_error(device))
     format_config = SUPPORTED_FORMATS.get(fstype)
     if not format_config:
         supported = ", ".join(sorted(SUPPORTED_FORMATS))
@@ -700,7 +822,7 @@ def start_background_volume_operation(*, action, device, fstype="", label="", su
         if confirm_text != "FORMAT" or confirm_device != device:
             raise ProcessControlError("Formatting was not confirmed. Type FORMAT and the exact device path before trying again.")
         if _device_is_mounted(device):
-            raise ProcessControlError(f"{device} is mounted. Unmount it before formatting.")
+            raise ProcessControlError(_mounted_device_error(device))
         if _normalize_fstype(fstype) not in SUPPORTED_FORMATS:
             supported = ", ".join(sorted(SUPPORTED_FORMATS))
             raise ProcessControlError(f"Formatting as '{fstype or 'unknown'}' is not supported. Supported filesystems: {supported}.")

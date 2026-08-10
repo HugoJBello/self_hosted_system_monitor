@@ -1350,7 +1350,12 @@ class VolumesView(LoginRequiredMixin, View):
                     mountpoint=request.POST.get("mountpoint") or "",
                 )
             elif action == "unmount":
-                result = unmount_volume(request.POST.get("target"), sudo_password=sudo_password)
+                result = unmount_volume(
+                    request.POST.get("target"),
+                    device=request.POST.get("device") or "",
+                    sudo_password=sudo_password,
+                    force=request.POST.get("force_unmount") == "on",
+                )
             elif action == "label":
                 operation = start_background_volume_operation(
                     action="label",

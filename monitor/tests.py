@@ -25,7 +25,7 @@ from .reporting import generate_report_for_rule
 from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
 from .process_control import ProcessControlError
-from .volumes import _device_is_mounted, execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
+from .volumes import _device_is_mounted, _mounted_device_error, _namespace_mount_references, execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
 
 
 User = get_user_model()
@@ -594,7 +594,25 @@ class MonitorViewsTests(TestCase):
         )
 
         self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
-        mock_unmount_volume.assert_called_once_with("/media/usb", sudo_password="secret")
+        mock_unmount_volume.assert_called_once_with("/media/usb", device="", sudo_password="secret", force=False)
+
+    @patch("monitor.views.unmount_volume")
+    def test_volumes_unmount_action_can_request_forced_unmount(self, mock_unmount_volume):
+        mock_unmount_volume.return_value.message = "Unmounted /media/usb."
+
+        response = self.client.post(
+            self._path("monitor:volumes"),
+            {
+                "volume_action": "unmount",
+                "target": "/media/usb",
+                "device": "/dev/sdb1",
+                "sudo_password": "secret",
+                "force_unmount": "on",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
+        mock_unmount_volume.assert_called_once_with("/media/usb", device="/dev/sdb1", sudo_password="secret", force=True)
 
     @patch("monitor.views.start_background_volume_operation")
     def test_volumes_label_action_starts_background_operation(self, mock_start_operation):
@@ -3392,6 +3410,23 @@ class BackupHelpersTests(TestCase):
         with self.assertRaisesMessage(ProcessControlError, "Unmount failed: umount: /media/usb: target is busy."):
             unmount_volume("/media/usb", sudo_password="secret")
 
+    @patch("monitor.volumes._namespace_mount_references")
+    @patch("monitor.volumes._run_host_command")
+    def test_unmount_volume_force_clears_namespace_references(self, mock_run_host_command, mock_namespace_mount_references):
+        mock_namespace_mount_references.side_effect = [
+            [{"pid": "123", "command": "filebrowser", "mountpoint": "/sources/media/usb", "fstype": "fuseblk"}],
+            [],
+        ]
+
+        result = unmount_volume("/media/usb", device="/dev/sdb1", sudo_password="secret", force=True)
+
+        self.assertEqual(result.message, "Unmounted /media/usb and 1 namespace reference(s).")
+        self.assertEqual(mock_run_host_command.call_args_list[0].args[0], ["umount", "-l", "/media/usb"])
+        self.assertEqual(
+            mock_run_host_command.call_args_list[1].args[0],
+            ["nsenter", "--target", "123", "--mount", "umount", "-l", "/sources/media/usb"],
+        )
+
     @patch("monitor.volumes._run_host_command")
     def test_update_volume_label_uses_filesystem_label_command(self, mock_run_host_command):
         result = update_volume_label("/dev/sdb1", "ARCHIVE", fstype="ext4", sudo_password="secret")
@@ -3437,6 +3472,46 @@ class BackupHelpersTests(TestCase):
 
         self.assertTrue(_device_is_mounted("/dev/sdb1"))
         mock_run_host_command.assert_called_once_with(["findmnt", "--noheadings", "--source", "/dev/sdb1", "--output", "TARGET"], check=False, timeout_seconds=8)
+
+    def test_namespace_mount_references_detect_mounts_in_other_process_namespaces(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pid_dir = Path(temp_dir) / "123"
+            pid_dir.mkdir()
+            (pid_dir / "comm").write_text("filebrowser\n", encoding="utf-8")
+            (pid_dir / "mountinfo").write_text(
+                "2768 2426 8:97 / /sources/media/usb_hd_libros_comics rw,nosuid,nodev,relatime - fuseblk /dev/sdg1 rw\n",
+                encoding="utf-8",
+            )
+
+            references = _namespace_mount_references("/dev/sdg1", proc_root=temp_dir)
+
+        self.assertEqual(
+            references,
+            [{"pid": "123", "command": "filebrowser", "mountpoint": "/sources/media/usb_hd_libros_comics", "fstype": "fuseblk"}],
+        )
+
+    def test_namespace_mount_references_detect_mounts_by_major_minor(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            pid_dir = Path(temp_dir) / "123"
+            pid_dir.mkdir()
+            (pid_dir / "comm").write_text("filebrowser\n", encoding="utf-8")
+            (pid_dir / "mountinfo").write_text(
+                "2768 2426 8:97 / /sources/media/usb_hd_libros_comics rw,nosuid,nodev,relatime - fuseblk /dev/fuse rw\n",
+                encoding="utf-8",
+            )
+
+            references = _namespace_mount_references("/dev/sdg1", proc_root=temp_dir, mount_ids={"8:97"})
+
+        self.assertEqual(references[0]["mountpoint"], "/sources/media/usb_hd_libros_comics")
+        self.assertEqual(references[0]["command"], "filebrowser")
+
+    @patch("monitor.volumes._namespace_mount_references")
+    def test_mounted_device_error_names_cross_namespace_owner(self, mock_namespace_mount_references):
+        mock_namespace_mount_references.return_value = [
+            {"pid": "123", "command": "filebrowser", "mountpoint": "/sources/media/usb_hd_libros_comics", "fstype": "fuseblk"}
+        ]
+
+        self.assertIn("filebrowser pid 123 at /sources/media/usb_hd_libros_comics", _mounted_device_error("/dev/sdg1"))
 
     @patch("monitor.volumes.update_volume_label")
     def test_execute_volume_operation_records_success(self, mock_update_label):
