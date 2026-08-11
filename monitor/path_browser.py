@@ -63,6 +63,7 @@ def _mounted_host_paths():
 
 
 def list_browser_roots():
+    mounted_paths = _mounted_host_paths()
     roots = []
     seen_paths = set()
     for root_path in BROWSER_ROOTS:
@@ -71,9 +72,9 @@ def list_browser_roots():
         except ValueError:
             continue
         if os.path.isdir(absolute_path):
-            roots.append({"path": root_path, "name": root_path.strip("/") or "/"})
+            roots.append({"path": root_path, "name": root_path.strip("/") or "/", "is_mounted": root_path in mounted_paths})
             seen_paths.add(root_path)
-    for mount_path in sorted(_mounted_host_paths()):
+    for mount_path in sorted(mounted_paths):
         if not mount_path.startswith(MOUNT_SENSITIVE_ROOTS):
             continue
         if mount_path in seen_paths:
@@ -83,7 +84,7 @@ def list_browser_roots():
         except ValueError:
             continue
         if os.path.isdir(absolute_path):
-            roots.append({"path": mount_path, "name": f"Mounted: {mount_path}"})
+            roots.append({"path": mount_path, "name": f"Mounted: {mount_path}", "is_mounted": True})
             seen_paths.add(mount_path)
     return roots
 
@@ -103,16 +104,45 @@ def list_directory_children(host_path):
     except PermissionError:
         return []
 
+    mounted_paths = _mounted_host_paths()
     for entry in entries:
         if not entry.is_dir(follow_symlinks=False):
             continue
         relative_path = os.path.join(normalized_path, entry.name).replace("\\", "/")
         if relative_path in EXCLUDED_BROWSER_PATHS:
             continue
+        relative_path = relative_path if relative_path.startswith("/") else f"/{relative_path}"
         children.append(
             {
-                "path": relative_path if relative_path.startswith("/") else f"/{relative_path}",
+                "path": relative_path,
                 "name": entry.name,
+                "is_mounted": relative_path in mounted_paths,
             }
         )
     return children
+
+
+def create_directory(parent_path, folder_name):
+    parent_path = normalize_host_path(parent_path)
+    folder_name = (folder_name or "").strip()
+    if not folder_name:
+        raise ValueError("Folder name is required.")
+    if folder_name in {".", ".."} or "/" in folder_name or "\\" in folder_name or "\0" in folder_name:
+        raise ValueError("Folder name cannot contain path separators.")
+    if any(char in folder_name for char in ["\n", "\r"]):
+        raise ValueError("Folder name cannot contain line breaks.")
+    target_path = normalize_host_path(os.path.join(parent_path, folder_name))
+    absolute_target = hostfs_path(target_path)
+    if os.path.exists(absolute_target):
+        raise ValueError("A file or folder with this name already exists.")
+    try:
+        os.makedirs(absolute_target, exist_ok=False)
+    except PermissionError as exc:
+        raise ValueError("Permission denied while creating the folder.") from exc
+    except OSError as exc:
+        raise ValueError(f"Could not create folder: {exc}") from exc
+    return {
+        "path": target_path,
+        "name": folder_name,
+        "is_mounted": target_path in _mounted_host_paths(),
+    }

@@ -24,6 +24,7 @@ from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSetti
 from .reporting import generate_report_for_rule
 from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
 from .services import collect_snapshot
+from .path_browser import create_directory, list_directory_children as list_path_browser_children
 from .process_control import ProcessControlError
 from .volumes import _device_is_mounted, _mounted_device_error, _namespace_mount_references, execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
 
@@ -712,6 +713,22 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertEqual(response.json()["items"], [])
         self.assertEqual(response.json()["error"], "Host paths must be absolute.")
+
+    @patch("monitor.views.create_path_directory", return_value={"path": "/media/new-folder", "name": "new-folder", "is_mounted": False})
+    def test_volume_tree_can_create_directory(self, mock_create_path_directory):
+        response = self.client.post(self._path("monitor:volume-tree"), {"parent_path": "/media", "folder_name": "new-folder"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["item"]["path"], "/media/new-folder")
+        mock_create_path_directory.assert_called_once_with("/media", "new-folder")
+
+    @patch("monitor.views.create_path_directory", side_effect=ValueError("Folder name cannot contain path separators."))
+    def test_backup_tree_returns_json_error_for_invalid_create_directory(self, _mock_create_path_directory):
+        response = self.client.post(self._path("monitor:backup-tree"), {"parent_path": "/media", "folder_name": "bad/name"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["item"], None)
+        self.assertEqual(response.json()["error"], "Folder name cannot contain path separators.")
 
     def test_script_jobs_compact_view_shows_last_run(self):
         job = ScriptJob.objects.create(
@@ -1682,6 +1699,32 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(families[0]["name"], "alpha")
         self.assertEqual(families[0]["running_count"], 1)
         self.assertEqual(families[0]["container_count"], 2)
+
+    def test_create_directory_creates_folder_under_host_root(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            Path(temp_dir, "media").mkdir()
+            with patch("monitor.path_browser.HOST_ROOT_PATH", temp_dir):
+                item = create_directory("/media", "new-folder")
+
+            self.assertTrue(Path(temp_dir, "media", "new-folder").is_dir())
+            self.assertEqual(item["path"], "/media/new-folder")
+
+    def test_create_directory_rejects_path_separators(self):
+        with self.assertRaisesMessage(ValueError, "Folder name cannot contain path separators."):
+            create_directory("/media", "bad/name")
+
+    def test_list_directory_children_marks_mounted_paths(self):
+        with tempfile.TemporaryDirectory() as temp_dir, tempfile.TemporaryDirectory() as proc_dir:
+            Path(temp_dir, "media", "mounted").mkdir(parents=True)
+            Path(temp_dir, "media", "plain").mkdir()
+            Path(proc_dir, "mounts").write_text("dev /media/mounted ext4 rw 0 0\n", encoding="utf-8")
+            with patch("monitor.path_browser.HOST_ROOT_PATH", temp_dir), patch.dict(os.environ, {"MONITOR_PROCFS_PATH": proc_dir}):
+                children = list_path_browser_children("/media")
+
+        mounted_item = next(item for item in children if item["path"] == "/media/mounted")
+        plain_item = next(item for item in children if item["path"] == "/media/plain")
+        self.assertTrue(mounted_item["is_mounted"])
+        self.assertFalse(plain_item["is_mounted"])
 
     def test_normalized_remote_host_accepts_plain_hostname(self):
         job = BackupJob(remote_host="ssh.example.com", remote_user="backup", remote_dir="/tmp", source_path="/home/test")

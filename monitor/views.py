@@ -23,7 +23,7 @@ from .backups import _normalize_stream_output, get_runtime_state, list_browser_r
 from .forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, ScriptJobForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeOperation
 from .notification_client import build_test_payload, send_json_notification
-from .path_browser import list_browser_roots as list_path_browser_roots, list_directory_children as list_path_directory_children
+from .path_browser import create_directory as create_path_directory, list_browser_roots as list_path_browser_roots, list_directory_children as list_path_directory_children
 from .process_control import ProcessControlError, container_info_for_pid, docker_container_action, kill_process, reboot_host, restart_process, terminate_process, validate_process_identity
 from .memory import build_memory_breakdown, build_snapshot_memory_breakdown
 from .reporting import build_time_series_chart_data
@@ -1312,6 +1312,13 @@ class BackupTreeView(LoginRequiredMixin, View):
             return JsonResponse({"items": [], "error": str(exc)}, status=400)
         return JsonResponse({"items": items})
 
+    def post(self, request):
+        try:
+            item = create_path_directory(request.POST.get("parent_path") or "/", request.POST.get("folder_name") or "")
+        except ValueError as exc:
+            return JsonResponse({"item": None, "error": str(exc)}, status=400)
+        return JsonResponse({"item": item})
+
 
 class VolumeTreeView(LoginRequiredMixin, View):
     def get(self, request):
@@ -1321,6 +1328,13 @@ class VolumeTreeView(LoginRequiredMixin, View):
         except ValueError as exc:
             return JsonResponse({"items": [], "error": str(exc)}, status=400)
         return JsonResponse({"items": items})
+
+    def post(self, request):
+        try:
+            item = create_path_directory(request.POST.get("parent_path") or "/", request.POST.get("folder_name") or "")
+        except ValueError as exc:
+            return JsonResponse({"item": None, "error": str(exc)}, status=400)
+        return JsonResponse({"item": item})
 
 
 class VolumesView(LoginRequiredMixin, View):
