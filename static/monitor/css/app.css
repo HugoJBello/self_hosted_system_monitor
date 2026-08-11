@@ -1467,6 +1467,26 @@ body.app-shell {
   font-size: 0.86rem;
 }
 
+.backup-form-grid {
+  display: grid;
+  gap: 1rem;
+}
+
+.backup-form-section {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.backup-form-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .backup-info-button {
   width: 2rem;
   height: 2rem;

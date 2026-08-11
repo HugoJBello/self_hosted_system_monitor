@@ -1,0 +1,41 @@
+<div class="modal fade" id="cloudflareInfoModal" tabindex="-1" aria-labelledby="cloudflareInfoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">Cloudflare SSH</p>
+          <h2 class="h4 mb-0" id="cloudflareInfoModalLabel">When these fields are needed</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="vstack gap-3">
+          <div class="command-modal-block">
+            <strong>Most common case</strong><br>
+            If the backup already works with <strong>Connection mode = Cloudflare</strong> and the Cloudflare fields empty, leave them empty. They are not mandatory.
+          </div>
+          <div class="command-modal-block">
+            <strong>Cloudflare auth home on host</strong><br>
+            Use this only when the host already has a valid <code>cloudflared</code> login session and you want the container to reuse it.
+            The value is normally the host home directory that contains <code>.cloudflared</code>, for example <code>/home/android18</code>.
+            Using <code>/</code> is not the intended value; if blank works, prefer blank.
+          </div>
+          <div class="command-modal-block">
+            <strong>How to get the auth home</strong><br>
+            On the host machine, log in with <code>cloudflared</code> as you normally would. The resulting credentials usually live under <code>~/.cloudflared</code>, so the field should be that user home, not the <code>.cloudflared</code> subdirectory itself.
+          </div>
+          <div class="command-modal-block">
+            <strong>Service token ID and secret</strong><br>
+            These are only for Cloudflare Access. They are not the SSH password.
+            Use them only if the container must authenticate to Cloudflare without reusing an existing host session.
+            They come from the Cloudflare Zero Trust dashboard where Access service tokens are created.
+          </div>
+          <div class="command-modal-block">
+            <strong>SSH user and SSH password</strong><br>
+            These are separate and are sent to the remote SSH server itself after the Cloudflare layer.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

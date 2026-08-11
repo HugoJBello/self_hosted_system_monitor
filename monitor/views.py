@@ -39,6 +39,38 @@ def healthz_view(request):
     return JsonResponse({"ok": True})
 
 
+def script_job_form_context(form, *, job=None, create=False):
+    return {
+        "form": form,
+        "job": job,
+        "page_title": "Create script job" if create else f"Edit {job.name}",
+        "page_eyebrow": "New job" if create else "Edit job",
+        "submit_label": "Create job" if create else "Save config",
+        "create_job": "1" if create else None,
+        "save_name": None if create else "save_job",
+        "save_value": None if create else job.id,
+        "cancel_url": reverse("monitor:script-jobs"),
+        "settings_obj": MonitoringSettings.load(),
+    }
+
+
+def backup_job_form_context(form, *, job=None, create=False):
+    return {
+        "form": form,
+        "job": job,
+        "page_title": "Create backup job" if create else f"Edit {job.name}",
+        "page_eyebrow": "New backup job" if create else "Edit backup job",
+        "submit_label": "Create backup job" if create else "Save config",
+        "create_job": "1" if create else None,
+        "save_name": None if create else "save_job",
+        "save_value": None if create else job.id,
+        "cancel_url": reverse("monitor:backups"),
+        "browser_roots": list_browser_roots(),
+        "backup_tree_url": reverse("monitor:backup-tree"),
+        "settings_obj": MonitoringSettings.load(),
+    }
+
+
 class AdminRequiredMixin(UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_authenticated and self.request.user.is_staff
@@ -808,7 +840,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
 
     def get(self, request):
         _best_effort_reconcile_script_jobs()
-        return render(request, self.template_name, self._context(request, edit_job_id=request.GET.get("edit_job")))
+        return render(request, self.template_name, self._context(request))
 
     def post(self, request):
         _best_effort_reconcile_script_jobs()
@@ -870,7 +902,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Script job '{instance.name}' updated.")
                 return redirect("monitor:script-jobs")
-            return render(request, self.template_name, self._context(request, job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
+            return render(request, "monitor/script_job_form_page.html", script_job_form_context(form, job=job))
 
         if "delete_job" in request.POST:
             job = get_object_or_404(ScriptJob, pk=request.POST.get("delete_job"))
@@ -886,12 +918,11 @@ class ScriptJobsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Script job '{instance.name}' created.")
                 return redirect("monitor:script-jobs")
-            return render(request, self.template_name, self._context(request, create_form=create_form, show_create=True))
+            return render(request, "monitor/script_job_form_page.html", script_job_form_context(create_form, create=True))
 
         return render(request, self.template_name, self._context(request))
 
-    def _context(self, request, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
-        job_form_overrides = job_form_overrides or {}
+    def _context(self, request):
         query = (request.GET.get("q") or "").strip()
         state = request.GET.get("state") or "all"
         schedule = request.GET.get("schedule") or "all"
@@ -923,7 +954,6 @@ class ScriptJobsView(LoginRequiredMixin, View):
         job_forms = [
             {
                 "job": job,
-                "form": job_form_overrides.get(job.id) or ScriptJobForm(instance=job, prefix=f"job-{job.id}"),
                 "recent_runs": runs_by_job.get(job.id, []),
                 "last_run": (runs_by_job.get(job.id, []) or [None])[0],
             }
@@ -952,11 +982,42 @@ class ScriptJobsView(LoginRequiredMixin, View):
             "compact_view_url": f"?{compact_params.urlencode()}",
             "card_view_url": f"?{card_params.urlencode()}",
             "pagination_query": pagination_params.urlencode(),
-            "create_form": create_form or ScriptJobForm(prefix="new"),
-            "show_create": show_create,
-            "edit_job_id": edit_job_id,
             "settings_obj": MonitoringSettings.load(),
         }
+
+
+class ScriptJobCreateView(LoginRequiredMixin, View):
+    template_name = "monitor/script_job_form_page.html"
+
+    def get(self, request):
+        return render(request, self.template_name, script_job_form_context(ScriptJobForm(prefix="new"), create=True))
+
+    def post(self, request):
+        form = ScriptJobForm(request.POST, prefix="new")
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.save()
+            messages.success(request, f"Script job '{instance.name}' created.")
+            return redirect("monitor:script-jobs")
+        return render(request, self.template_name, script_job_form_context(form, create=True))
+
+
+class ScriptJobEditView(LoginRequiredMixin, View):
+    template_name = "monitor/script_job_form_page.html"
+
+    def get(self, request, job_id):
+        job = get_object_or_404(ScriptJob, pk=job_id)
+        return render(request, self.template_name, script_job_form_context(ScriptJobForm(instance=job, prefix=f"job-{job.id}"), job=job))
+
+    def post(self, request, job_id):
+        job = get_object_or_404(ScriptJob, pk=job_id)
+        form = ScriptJobForm(request.POST, instance=job, prefix=f"job-{job.id}")
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.save()
+            messages.success(request, f"Script job '{instance.name}' updated.")
+            return redirect("monitor:script-jobs")
+        return render(request, self.template_name, script_job_form_context(form, job=job))
 
 
 class ScriptJobRunsView(LoginRequiredMixin, View):
@@ -1071,7 +1132,7 @@ class BackupsView(LoginRequiredMixin, View):
 
     def get(self, request):
         _best_effort_reconcile_backups()
-        return render(request, self.template_name, self._context(request, edit_job_id=request.GET.get("edit_job")))
+        return render(request, self.template_name, self._context(request))
 
     def post(self, request):
         _best_effort_reconcile_backups()
@@ -1134,7 +1195,7 @@ class BackupsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' updated.")
                 return redirect("monitor:backups")
-            return render(request, self.template_name, self._context(request, job_form_overrides={job.id: form}, show_create=False, edit_job_id=job.id))
+            return render(request, "monitor/backup_job_form_page.html", backup_job_form_context(form, job=job))
 
         if "delete_job" in request.POST:
             job = get_object_or_404(BackupJob, pk=request.POST.get("delete_job"))
@@ -1150,12 +1211,11 @@ class BackupsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' created.")
                 return redirect("monitor:backups")
-            return render(request, self.template_name, self._context(request, create_form=create_form, show_create=True))
+            return render(request, "monitor/backup_job_form_page.html", backup_job_form_context(create_form, create=True))
 
         return render(request, self.template_name, self._context(request))
 
-    def _context(self, request, job_form_overrides=None, create_form=None, show_create=False, edit_job_id=None):
-        job_form_overrides = job_form_overrides or {}
+    def _context(self, request):
         query = (request.GET.get("q") or "").strip()
         state = request.GET.get("state") or "all"
         backup_type = request.GET.get("type") or "all"
@@ -1201,7 +1261,6 @@ class BackupsView(LoginRequiredMixin, View):
         job_forms = [
             {
                 "job": job,
-                "form": job_form_overrides.get(job.id) or BackupJobForm(instance=job, prefix=f"job-{job.id}"),
                 "recent_runs": runs_by_job.get(job.id, []),
                 "last_run": (runs_by_job.get(job.id, []) or [None])[0],
                 "source_label": job.source_label,
@@ -1209,7 +1268,6 @@ class BackupsView(LoginRequiredMixin, View):
             }
             for job in jobs
         ]
-        create_form = create_form or BackupJobForm(prefix="new")
         compact_params = request.GET.copy()
         compact_params["view"] = "compact"
         compact_params.pop("page", None)
@@ -1237,11 +1295,42 @@ class BackupsView(LoginRequiredMixin, View):
             "pagination_query": pagination_params.urlencode(),
             "browser_roots": list_browser_roots(),
             "backup_tree_url": reverse("monitor:backup-tree"),
-            "create_form": create_form,
-            "show_create": show_create,
-            "edit_job_id": edit_job_id,
             "settings_obj": MonitoringSettings.load(),
         }
+
+
+class BackupJobCreateView(LoginRequiredMixin, View):
+    template_name = "monitor/backup_job_form_page.html"
+
+    def get(self, request):
+        return render(request, self.template_name, backup_job_form_context(BackupJobForm(prefix="new"), create=True))
+
+    def post(self, request):
+        form = BackupJobForm(request.POST, prefix="new")
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.save()
+            messages.success(request, f"Backup job '{instance.name}' created.")
+            return redirect("monitor:backups")
+        return render(request, self.template_name, backup_job_form_context(form, create=True))
+
+
+class BackupJobEditView(LoginRequiredMixin, View):
+    template_name = "monitor/backup_job_form_page.html"
+
+    def get(self, request, job_id):
+        job = get_object_or_404(BackupJob, pk=job_id)
+        return render(request, self.template_name, backup_job_form_context(BackupJobForm(instance=job, prefix=f"job-{job.id}"), job=job))
+
+    def post(self, request, job_id):
+        job = get_object_or_404(BackupJob, pk=job_id)
+        form = BackupJobForm(request.POST, instance=job, prefix=f"job-{job.id}")
+        if form.is_valid():
+            instance = form.save(commit=False)
+            instance.save()
+            messages.success(request, f"Backup job '{instance.name}' updated.")
+            return redirect("monitor:backups")
+        return render(request, self.template_name, backup_job_form_context(form, job=job))
 
 class BackupRunsView(LoginRequiredMixin, View):
     template_name = "monitor/backup_runs.html"

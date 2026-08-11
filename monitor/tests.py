@@ -106,6 +106,39 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertJSONEqual(response.content, {"ok": True})
 
+    def test_script_job_create_and_edit_routes_render_form_pages(self):
+        job = ScriptJob.objects.create(name="Nightly script", script_body="echo ok", working_directory="/tmp")
+
+        create_response = self.client.get(self._path("monitor:script-job-create"))
+        self.assertEqual(create_response.status_code, 200)
+        self.assertContains(create_response, "Create script job")
+        self.assertContains(create_response, "Back to jobs")
+
+        edit_response = self.client.get(self._path("monitor:script-job-edit", [job.id]))
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertContains(edit_response, "Edit Nightly script")
+        self.assertContains(edit_response, "echo ok")
+
+    def test_backup_job_create_and_edit_routes_render_form_pages(self):
+        job = BackupJob.objects.create(
+            name="Docs backup",
+            backup_type="remote",
+            source_path="/home/test/Documents",
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/docs",
+        )
+
+        create_response = self.client.get(self._path("monitor:backup-job-create"))
+        self.assertEqual(create_response.status_code, 200)
+        self.assertContains(create_response, "Create backup job")
+        self.assertContains(create_response, "Copy plan")
+
+        edit_response = self.client.get(self._path("monitor:backup-job-edit", [job.id]))
+        self.assertEqual(edit_response.status_code, 200)
+        self.assertContains(edit_response, "Edit Docs backup")
+        self.assertContains(edit_response, "/srv/backups/docs")
+
     def test_app_subpath_prefix_is_accepted_without_proxy_rewrite(self):
         self.client.logout()
 

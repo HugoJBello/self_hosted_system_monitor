@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ page_title }} | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">{{ page_eyebrow }}</p>
+    <h1 class="display-6 mb-1">{{ page_title }}</h1>
+    <p class="text-secondary mb-0">Review the copy direction before saving. The destination side can be changed, overwritten, or cleaned when deletion is enabled.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#cloudflareInfoModal">Cloudflare help</button>
+    <a href="{{ cancel_url }}" class="btn btn-outline-light btn-sm">Back to backups</a>
+  </div>
+</div>
+
+<section class="panel-card p-4 mb-4">
+  {% include "monitor/_backup_job_form.html" with form=form create_job=create_job save_name=save_name save_value=save_value submit_label=submit_label cancel_url=cancel_url %}
+</section>
+
+{% include "monitor/_backup_type_info_modal.html" %}
+{% include "monitor/_cloudflare_info_modal.html" %}
+{% include "monitor/_path_browser_modal.html" with modal_id="backupFolderModal" title="Pick a folder" tree_url=backup_tree_url browser_roots=browser_roots %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'monitor/js/path_browser.js' %}?v=20260811-folder-create"></script>
+<script src="{% static 'monitor/js/backup_editor.js' %}?v=20260811-form-pages"></script>
+{% endblock %}

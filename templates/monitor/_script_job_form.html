@@ -80,7 +80,8 @@
   {% endif %}
 
   <div class="d-flex gap-2 flex-wrap justify-content-end">
+    {% if cancel_url %}<a href="{{ cancel_url }}" class="btn btn-outline-light">Cancel</a>{% endif %}
     {% if save_name %}<button type="submit" name="{{ save_name }}" value="{{ save_value }}" class="btn btn-accent">{{ submit_label }}</button>{% else %}<button type="submit" class="btn btn-accent">{{ submit_label }}</button>{% endif %}
-    <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+    {% if not cancel_url %}<button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>{% endif %}
   </div>
 </form>

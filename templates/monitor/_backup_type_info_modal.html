@@ -1,0 +1,43 @@
+<div class="modal fade" id="backupTypeInfoModal" tabindex="-1" aria-labelledby="backupTypeInfoModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content backup-modal-shell">
+      <div class="modal-header border-secondary-subtle">
+        <div>
+          <p class="eyebrow mb-1">Backup type</p>
+          <h2 class="h4 mb-0" id="backupTypeInfoModalLabel" data-backup-type-info-title>How this backup works</h2>
+        </div>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="vstack gap-3">
+          <div class="command-modal-block" data-backup-type-info-summary></div>
+          <div class="backup-copy-plan">
+            <div class="backup-copy-plan-heading">
+              <span class="eyebrow mb-0">Direction</span>
+              <strong data-backup-type-info-direction></strong>
+            </div>
+            <div class="backup-job-flow">
+              <div class="backup-job-endpoint">
+                <span class="backup-job-endpoint-label">Origin</span>
+                <strong data-backup-type-info-origin></strong>
+              </div>
+              <div class="backup-job-arrow"><i class="bi bi-arrow-right"></i></div>
+              <div class="backup-job-endpoint">
+                <span class="backup-job-endpoint-label">Destination</span>
+                <strong data-backup-type-info-destination></strong>
+              </div>
+            </div>
+          </div>
+          <div class="command-modal-block">
+            <strong>Requirements</strong>
+            <ul class="mb-0" data-backup-type-info-requirements></ul>
+          </div>
+          <div class="command-modal-block">
+            <strong>Where data can change</strong>
+            <div data-backup-type-info-risk></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
