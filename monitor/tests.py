@@ -130,6 +130,15 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("monitor:login"), response["Location"])
 
+    def test_backups_page_explains_backup_type_and_copy_plan(self):
+        response = self.client.get(self._path("monitor:backups"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Copy plan")
+        self.assertContains(response, "How this backup works")
+        self.assertContains(response, "data-backup-type-summary")
+        self.assertContains(response, "Where data can change")
+
     def test_normal_user_cannot_open_settings(self):
         self.client.logout()
         normal = User.objects.create_user("normal", password="test-pass")

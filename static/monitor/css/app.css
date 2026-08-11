@@ -1436,6 +1436,46 @@ body.app-shell {
   align-items: stretch;
 }
 
+.backup-copy-plan {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border-radius: 0.9rem;
+  background: rgba(5, 10, 17, 0.32);
+  border: 1px solid rgba(93, 198, 255, 0.14);
+}
+
+.backup-copy-plan-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.backup-copy-plan-heading strong {
+  color: #dfe8f1;
+  font-size: 0.9rem;
+}
+
+.backup-copy-risk {
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 209, 102, 0.08);
+  border: 1px solid rgba(255, 209, 102, 0.18);
+  color: #ffe3a3;
+  font-size: 0.86rem;
+}
+
+.backup-info-button {
+  width: 2rem;
+  height: 2rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
 .backup-job-endpoint {
   min-width: 0;
   padding: 0.85rem;
