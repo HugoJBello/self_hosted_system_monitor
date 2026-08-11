@@ -18,6 +18,28 @@
     return match ? decodeURIComponent(match[1]) : "";
   }
 
+  async function fetchJson(url, options = {}, timeoutMs = 12000) {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      let payload;
+      try {
+        payload = await response.json();
+      } catch (_) {
+        throw new Error(response.ok ? "The server returned an unreadable response." : `The server returned HTTP ${response.status}.`);
+      }
+      return { response, payload };
+    } catch (error) {
+      if (error.name === "AbortError") {
+        throw new Error("The folder operation is taking too long. Check that the selected disk or mount is responding and try again.");
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
+  }
+
   function setCurrentPath(modalElement, path) {
     if (!path) return;
     modalElement.dataset.currentPath = path;
@@ -83,8 +105,7 @@
     childrenContainer.classList.add("open");
     targetNode.classList.add("is-open");
     try {
-      const response = await fetch(`${treeUrl}?path=${encodeURIComponent(path)}`);
-      const payload = await response.json();
+      const { response, payload } = await fetchJson(`${treeUrl}?path=${encodeURIComponent(path)}`);
       if (!response.ok || payload.error) {
         throw new Error(payload.error || "Could not load this folder.");
       }
@@ -132,15 +153,14 @@
       const body = new URLSearchParams();
       body.set("parent_path", parentPath);
       body.set("folder_name", folderName);
-      const response = await fetch(modalElement.dataset.treeUrl, {
+      const { response, payload } = await fetchJson(modalElement.dataset.treeUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
           "X-CSRFToken": csrfToken(),
         },
         body,
-      });
-      const payload = await response.json();
+      }, 15000);
       if (!response.ok || payload.error) {
         throw new Error(payload.error || "Could not create folder.");
       }
@@ -149,7 +169,7 @@
         activeInput.value = payload.item.path;
         activeInput.dispatchEvent(new Event("input", { bubbles: true }));
       }
-      await refreshChildren(parentPath, modalElement);
+      refreshChildren(parentPath, modalElement).catch(() => {});
       if (payload.item && payload.item.path) {
         setCurrentPath(modalElement, payload.item.path);
       }
