@@ -1,6 +1,7 @@
 from datetime import timedelta
 from collections import defaultdict
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -79,6 +80,10 @@ class AdminRequiredMixin(UserPassesTestMixin):
 class LoginView(auth_views.LoginView):
     template_name = "monitor/login.html"
     redirect_authenticated_user = True
+
+    def get_success_url(self):
+        url = super().get_success_url()
+        return _with_app_subpath(url)
 
 
 class LogoutView(auth_views.LogoutView):
@@ -179,8 +184,17 @@ class RedirectHomeView(LoginRequiredMixin, View):
 def _safe_next_url(request):
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("monitor:system-monitor")
     if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
-        return next_url
+        return _with_app_subpath(next_url)
     return reverse("monitor:system-monitor")
+
+
+def _with_app_subpath(url):
+    app_subpath = getattr(settings, "APP_SUBPATH", "")
+    if not app_subpath or not url.startswith("/") or url.startswith("//"):
+        return url
+    if url == app_subpath or url.startswith(f"{app_subpath}/"):
+        return url
+    return f"{app_subpath}{url}"
 
 
 def _process_action_context_from_snapshot(process_snapshot):

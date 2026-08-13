@@ -163,6 +163,15 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn(reverse("monitor:login"), response["Location"])
 
+    def test_login_next_internal_path_keeps_app_subpath(self):
+        self.client.logout()
+        response = self.client.post(
+            self._path("monitor:login") + "?next=/terminal/",
+            {"username": "admin", "password": "test-pass"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], f"{settings.APP_SUBPATH}/terminal/")
+
     def test_backups_page_explains_backup_type_and_copy_plan(self):
         response = self.client.get(self._path("monitor:backups"))
 
