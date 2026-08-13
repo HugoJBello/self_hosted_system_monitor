@@ -51,7 +51,7 @@ class WebTerminalConsumer(AsyncWebsocketConsumer):
         elif message_type == "resize":
             self._resize_pty(message.get("rows"), message.get("cols"))
         elif message_type == "ping":
-            await self.send_json({"type": "pong"})
+            await self._send_json({"type": "pong"})
 
     async def _start_terminal(self, rows, cols):
         master_fd, slave_fd = os.openpty()
@@ -104,7 +104,7 @@ class WebTerminalConsumer(AsyncWebsocketConsumer):
         if not data:
             asyncio.create_task(self.close(code=1000))
             return
-        asyncio.create_task(self.send_json({"type": "output", "data": data.decode("utf-8", errors="replace")}))
+        asyncio.create_task(self._send_json({"type": "output", "data": data.decode("utf-8", errors="replace")}))
 
     def _write_to_pty(self, data):
         if self.master_fd is None or not isinstance(data, str):
@@ -138,7 +138,10 @@ class WebTerminalConsumer(AsyncWebsocketConsumer):
                 return
 
     async def _send_status(self, message, *, level="info"):
-        await self.send_json({"type": "status", "level": level, "message": message})
+        await self._send_json({"type": "status", "level": level, "message": message})
+
+    async def _send_json(self, payload):
+        await self.send(text_data=json.dumps(payload))
 
     async def _cleanup(self):
         if self.idle_task:
