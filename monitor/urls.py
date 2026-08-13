@@ -2,6 +2,7 @@ from django.urls import path
 
 from .docker_views import DockerActionView, DockerLogsView, DockerOverviewView
 from .http_backups import http_backup_compare_view, http_backup_delete_view, http_backup_file_view, http_backup_list_view, http_backup_manifest_view, http_backup_prune_view, http_backup_stat_view
+from .terminal_views import TerminalSessionCloseView, TerminalSessionInputView, TerminalSessionPollView, TerminalSessionResizeView, TerminalSessionStartView, WebTerminalView, terminal_websocket_http_view
 from .views import AlertDetailView, AlertsView, BackupJobCreateView, BackupJobEditView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, LoginView, LogoutView, PasswordView, ProcessActionView, RedirectHomeView, ReportDetailView, ReportsView, ScriptJobCreateView, ScriptJobEditView, ScriptJobRunDetailView, ScriptJobRunsView, ScriptJobRunStatusView, ScriptJobsView, SettingsView, SystemMonitorView, UsersView, VolumeOperationDetailView, VolumeOperationStatusView, VolumeOperationsView, VolumeTreeView, VolumesView, healthz_view
 
 app_name = "monitor"
@@ -24,6 +25,13 @@ urlpatterns = [
     path("docker/", DockerOverviewView.as_view(), name="docker-overview"),
     path("docker/action/", DockerActionView.as_view(), name="docker-action"),
     path("docker/logs/", DockerLogsView.as_view(), name="docker-logs"),
+    path("terminal/", WebTerminalView.as_view(), name="web-terminal"),
+    path("ws/terminal/", terminal_websocket_http_view, name="terminal-ws"),
+    path("terminal/api/start/", TerminalSessionStartView.as_view(), name="terminal-api-start"),
+    path("terminal/api/<str:session_id>/poll/", TerminalSessionPollView.as_view(), name="terminal-api-poll"),
+    path("terminal/api/<str:session_id>/input/", TerminalSessionInputView.as_view(), name="terminal-api-input"),
+    path("terminal/api/<str:session_id>/resize/", TerminalSessionResizeView.as_view(), name="terminal-api-resize"),
+    path("terminal/api/<str:session_id>/close/", TerminalSessionCloseView.as_view(), name="terminal-api-close"),
     path("volumes/", VolumesView.as_view(), name="volumes"),
     path("volumes/tree/", VolumeTreeView.as_view(), name="volume-tree"),
     path("volumes/operations/", VolumeOperationsView.as_view(), name="volume-operations"),

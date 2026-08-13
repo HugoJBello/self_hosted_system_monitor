@@ -179,6 +179,23 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:settings"))
         self.assertEqual(response.status_code, 403)
 
+    def test_terminal_page_is_staff_only(self):
+        response = self.client.get(self._path("monitor:web-terminal"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-terminal-page")
+        self.assertContains(response, reverse("monitor:terminal-ws"))
+
+        self.client.logout()
+        normal = User.objects.create_user("normal-terminal", password="test-pass")
+        self.client.force_login(normal)
+        response = self.client.get(self._path("monitor:web-terminal"))
+        self.assertEqual(response.status_code, 403)
+
+    def test_terminal_websocket_http_route_reports_upgrade_required(self):
+        response = self.client.get(self._path("monitor:terminal-ws"))
+        self.assertEqual(response.status_code, 426)
+        self.assertJSONEqual(response.content, {"detail": "WebSocket endpoint only."})
+
     def test_admin_can_open_users_page(self):
         response = self.client.get(self._path("monitor:users"))
         self.assertEqual(response.status_code, 200)

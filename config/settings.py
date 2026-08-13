@@ -18,6 +18,7 @@ if APP_SUBPATH and not APP_SUBPATH.startswith("/"):
 FORCE_SCRIPT_NAME = APP_SUBPATH or None
 
 INSTALLED_APPS = [
+    "daphne",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -95,3 +96,4 @@ LOGOUT_REDIRECT_URL = "monitor:login"
 
 SAMPLER_DEFAULT_INTERVAL = int(os.getenv("SAMPLER_DEFAULT_INTERVAL", "60"))
 BACKUP_SCHEDULER_POLL_SECONDS = int(os.getenv("BACKUP_SCHEDULER_POLL_SECONDS", "15"))
+WEB_TERMINAL_IDLE_TIMEOUT_SECONDS = int(os.getenv("WEB_TERMINAL_IDLE_TIMEOUT_SECONDS", "600"))

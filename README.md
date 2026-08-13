@@ -256,6 +256,8 @@ location /system_monitor/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $host;
     proxy_set_header X-Forwarded-Prefix /system_monitor;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection $connection_upgrade;
 
     proxy_redirect off;
     proxy_read_timeout 300;

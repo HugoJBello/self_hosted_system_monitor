@@ -2428,8 +2428,124 @@ body.app-shell {
   color: var(--muted) !important;
 }
 
+.terminal-page {
+  min-height: calc(100vh - 8.5rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-panel {
+  min-height: 0;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.terminal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.terminal-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.terminal-dot {
+  width: 0.72rem;
+  height: 0.72rem;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.terminal-dot-red { background: #ff7a59; }
+.terminal-dot-yellow { background: #ffd166; }
+.terminal-dot-green { background: #4dd4ac; }
+
+.terminal-title {
+  color: #d6dde8;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.terminal-state-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.35rem 0.72rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.06);
+  color: #edf2f7;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.terminal-state-badge[data-level="success"] {
+  border-color: rgba(77, 212, 172, 0.35);
+  color: #9cf0d4;
+}
+
+.terminal-state-badge[data-level="warning"] {
+  border-color: rgba(255, 209, 102, 0.35);
+  color: #ffe08a;
+}
+
+.terminal-state-badge[data-level="error"] {
+  border-color: rgba(255, 122, 89, 0.45);
+  color: #ffb39d;
+}
+
+.terminal-shell {
+  min-height: 28rem;
+  height: calc(100vh - 15.5rem);
+  flex: 1 1 auto;
+  padding: 0.75rem;
+  background: #050a13;
+}
+
+.terminal-shell .xterm {
+  height: 100%;
+}
+
+.terminal-shell .xterm-viewport {
+  scrollbar-color: rgba(142, 163, 185, 0.5) transparent;
+}
+
 @media (max-width: 768px) {
   .panel-card {
     border-radius: 1rem;
+  }
+
+  .terminal-page {
+    min-height: calc(100vh - 7.5rem);
+  }
+
+  .terminal-shell {
+    min-height: 24rem;
+    height: calc(100vh - 14.5rem);
+    padding: 0.5rem;
+  }
+}
+
+@media (max-width: 575px) {
+  .terminal-toolbar {
+    padding: 0.65rem;
+  }
+
+  .terminal-toolbar-actions .btn {
+    width: 2rem;
+    height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
   }
 }
