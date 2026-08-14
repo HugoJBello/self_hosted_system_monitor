@@ -225,11 +225,7 @@ def _auth_ok(request):
 
 def _json_request(request):
     try:
-        stream = request.META.get("wsgi.input")
-        if stream is None:
-            raise ValueError("Request input stream is not available.")
-        remaining = int(request.META.get("CONTENT_LENGTH") or 0)
-        body = stream.read(remaining) if remaining else stream.read()
+        body = request.body
         if request.headers.get("Content-Encoding", "").lower() == "gzip":
             body = gzip.decompress(body)
         return json.loads(body.decode("utf-8") or "{}")
@@ -242,7 +238,7 @@ def _json_error(message, status=400):
 
 
 def _write_request_stream_to_file(request, destination_path):
-    stream = request.META.get("wsgi.input")
+    stream = request.META.get("wsgi.input") or getattr(request, "_stream", None)
     if stream is None:
         raise ValueError("Request input stream is not available.")
     remaining = int(request.META.get("CONTENT_LENGTH") or 0)
