@@ -20,6 +20,15 @@
   let fallbackInputQueue = Promise.resolve();
   let websocketGeneration = 0;
   let ctrlArmed = false;
+  let terminalSessionId = sessionStorage.getItem(storageKey("session_id")) || "";
+  let terminalCursor = 0;
+  let reconnectTimer = null;
+  let watchdogTimer = null;
+  let lastPongAt = 0;
+  let lastPingAt = 0;
+
+  const PING_INTERVAL_MS = 30000;
+  const PONG_TIMEOUT_MS = 75000;
 
   const terminal = new window.Terminal({
     cursorBlink: true,
@@ -65,7 +74,11 @@
   function websocketUrl() {
     const path = page.dataset.websocketPath || "/ws/terminal/";
     const protocol = window.location.protocol === "https:" ? "wss" : "ws";
-    return `${protocol}://${window.location.host}${path}`;
+    const url = new URL(path, window.location.origin);
+    url.protocol = protocol;
+    if (terminalSessionId) url.searchParams.set("session_id", terminalSessionId);
+    if (terminalCursor) url.searchParams.set("cursor", String(terminalCursor));
+    return url.toString();
   }
 
   function sendResize() {
@@ -127,9 +140,10 @@
     websocketGeneration += 1;
     const currentGeneration = websocketGeneration;
     if (socket) socket.close();
-    window.clearInterval(pingTimer);
-    closeFallback();
-    setState("Connecting", "info");
+    stopConnectionTimers();
+    window.clearTimeout(reconnectTimer);
+    stopFallbackPolling();
+    setState(terminalSessionId ? "Restoring" : "Connecting", "info");
     terminal.focus();
     scheduleResize();
 
@@ -138,13 +152,10 @@
 
     socket.addEventListener("open", () => {
       opened = true;
+      lastPongAt = Date.now();
       setState("Connected", "success");
       sendResize();
-      pingTimer = window.setInterval(() => {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          socket.send(JSON.stringify({ type: "ping" }));
-        }
-      }, 30000);
+      startConnectionTimers(currentGeneration);
     });
 
     socket.addEventListener("message", (event) => {
@@ -156,13 +167,20 @@
       }
       if (payload.type === "output") {
         terminal.write(payload.data || "");
+        saveCursor(payload.cursor);
+      } else if (payload.type === "session") {
+        saveSession(payload.session_id, payload.cursor);
+        setState(payload.reused ? "Restored" : "Connected", "success");
+        sendResize();
       } else if (payload.type === "status") {
         setState(payload.message || "Connected", payload.level || "info");
+      } else if (payload.type === "pong") {
+        lastPongAt = Date.now();
       }
     });
 
     socket.addEventListener("close", () => {
-      window.clearInterval(pingTimer);
+      stopConnectionTimers();
       if (currentGeneration !== websocketGeneration) {
         return;
       }
@@ -171,6 +189,7 @@
         return;
       }
       setState("Disconnected", "warning");
+      scheduleReconnect();
     });
 
     socket.addEventListener("error", () => {
@@ -191,6 +210,16 @@
   });
 
   window.addEventListener("resize", scheduleResize);
+  window.addEventListener("pageshow", restoreAfterPageResume);
+  window.addEventListener("online", () => {
+    window.setTimeout(forceRestoreIfStale, 1000);
+  });
+  window.addEventListener("offline", () => {
+    setState("Offline", "warning");
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) restoreAfterPageResume();
+  });
   if (window.ResizeObserver) {
     new ResizeObserver(scheduleResize).observe(container);
   }
@@ -242,6 +271,99 @@
     return match ? decodeURIComponent(match[1]) : "";
   }
 
+  function storageKey(name) {
+    return `system-monitor-terminal:${window.location.pathname}:${name}`;
+  }
+
+  function parseStoredInteger(value) {
+    const parsed = parseInt(value || "0", 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+  }
+
+  function saveSession(sessionId, cursor) {
+    if (!sessionId) return;
+    const previousSessionId = terminalSessionId;
+    terminalSessionId = sessionId;
+    sessionStorage.setItem(storageKey("session_id"), sessionId);
+    if (previousSessionId && previousSessionId !== sessionId) {
+      terminal.clear();
+    }
+    saveCursor(cursor);
+  }
+
+  function saveCursor(cursor) {
+    const parsed = parseStoredInteger(cursor);
+    terminalCursor = parsed;
+  }
+
+  function clearStoredSession() {
+    terminalSessionId = "";
+    terminalCursor = 0;
+    sessionStorage.removeItem(storageKey("session_id"));
+  }
+
+  function isSocketOpenOrConnecting() {
+    return socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING);
+  }
+
+  function restoreAfterPageResume() {
+    scheduleResize();
+    if (!isSocketOpenOrConnecting() && !fallbackPolling) {
+      connect();
+      return;
+    }
+    forceRestoreIfStale();
+  }
+
+  function scheduleReconnect() {
+    if (!terminalSessionId) return;
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = window.setTimeout(() => {
+      if (!document.hidden && !isSocketOpenOrConnecting()) {
+        connect();
+      }
+    }, 1500);
+  }
+
+  function startConnectionTimers(generation) {
+    sendPing();
+    pingTimer = window.setInterval(sendPing, PING_INTERVAL_MS);
+    watchdogTimer = window.setInterval(() => checkConnectionHealth(generation), 5000);
+  }
+
+  function stopConnectionTimers() {
+    window.clearInterval(pingTimer);
+    window.clearInterval(watchdogTimer);
+    pingTimer = null;
+    watchdogTimer = null;
+  }
+
+  function sendPing() {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    lastPingAt = Date.now();
+    socket.send(JSON.stringify({ type: "ping" }));
+  }
+
+  function checkConnectionHealth(generation) {
+    if (generation !== websocketGeneration || document.hidden || !terminalSessionId) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (Date.now() - lastPongAt < PONG_TIMEOUT_MS) return;
+    setState("Restoring", "warning");
+    connect();
+  }
+
+  function forceRestoreIfStale() {
+    if (!terminalSessionId || fallbackPolling) return;
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      connect();
+      return;
+    }
+    if (lastPingAt && Date.now() - lastPongAt >= PONG_TIMEOUT_MS) {
+      setState("Restoring", "warning");
+      connect();
+    }
+  }
+
   async function postJson(url, payload) {
     const response = await fetch(url, {
       method: "POST",
@@ -263,8 +385,13 @@
     setState("HTTP fallback", "warning");
     try {
       fitAddon.fit();
-      fallbackSession = await postJson(page.dataset.terminalApiStartUrl, { rows: terminal.rows, cols: terminal.cols });
-      fallbackCursor = 0;
+      fallbackSession = await postJson(page.dataset.terminalApiStartUrl, {
+        rows: terminal.rows,
+        cols: terminal.cols,
+        session_id: terminalSessionId
+      });
+      fallbackCursor = fallbackSession.reused ? terminalCursor : 0;
+      saveSession(fallbackSession.session_id, fallbackCursor);
       fallbackPolling = true;
       fallbackInputQueue = Promise.resolve();
       pollFallback();
@@ -284,26 +411,35 @@
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = await response.json();
         fallbackCursor = payload.cursor || fallbackCursor;
+        saveCursor(fallbackCursor);
         if (payload.output) terminal.write(payload.output);
         if (!payload.alive) {
           setState(payload.reason || "Disconnected", "warning");
           fallbackPolling = false;
           fallbackSession = null;
+          clearStoredSession();
         }
       } catch (error) {
         setState("Disconnected", "error");
         fallbackPolling = false;
         fallbackSession = null;
+        scheduleReconnect();
       }
     }
+  }
+
+  function stopFallbackPolling() {
+    if (!fallbackSession) return;
+    fallbackPolling = false;
+    fallbackSession = null;
+    fallbackInputQueue = Promise.resolve();
   }
 
   function closeFallback() {
     if (!fallbackSession) return;
     const closeUrl = fallbackSession.close_url;
-    fallbackPolling = false;
-    fallbackSession = null;
-    fallbackInputQueue = Promise.resolve();
+    stopFallbackPolling();
+    clearStoredSession();
     postJson(closeUrl, {}).catch(() => {});
   }
 

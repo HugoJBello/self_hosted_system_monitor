@@ -56,14 +56,19 @@ class TerminalApiMixin(StaffRequiredMixin, View):
 
 class TerminalSessionStartView(TerminalApiMixin):
     def post(self, request):
-        session = registry.create(
-            user_id=request.user.id,
-            rows=self.payload.get("rows", DEFAULT_ROWS),
-            cols=self.payload.get("cols", DEFAULT_COLS),
-        )
+        requested_session_id = str(self.payload.get("session_id", "")).strip()
+        session = registry.get(requested_session_id, user_id=request.user.id) if requested_session_id else None
+        reused = session is not None
+        if not session:
+            session = registry.create(
+                user_id=request.user.id,
+                rows=self.payload.get("rows", DEFAULT_ROWS),
+                cols=self.payload.get("cols", DEFAULT_COLS),
+            )
         return JsonResponse(
             {
                 "session_id": session.id,
+                "reused": reused,
                 "poll_url": reverse("monitor:terminal-api-poll", args=[session.id]),
                 "input_url": reverse("monitor:terminal-api-input", args=[session.id]),
                 "resize_url": reverse("monitor:terminal-api-resize", args=[session.id]),

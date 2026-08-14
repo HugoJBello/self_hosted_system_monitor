@@ -205,6 +205,26 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 426)
         self.assertJSONEqual(response.content, {"detail": "WebSocket endpoint only."})
 
+    def test_terminal_start_reuses_requested_session(self):
+        class DummyTerminalSession:
+            id = "existing-session"
+
+        with patch("monitor.terminal_views.registry") as registry_mock:
+            registry_mock.get.return_value = DummyTerminalSession()
+            response = self.client.post(
+                self._path("monitor:terminal-api-start"),
+                data=json.dumps({"session_id": "existing-session", "rows": 32, "cols": 110}),
+                content_type="application/json",
+            )
+
+        self.assertEqual(response.status_code, 200)
+        registry_mock.get.assert_called_once_with("existing-session", user_id=self.user.id)
+        registry_mock.create.assert_not_called()
+        payload = response.json()
+        self.assertEqual(payload["session_id"], "existing-session")
+        self.assertTrue(payload["reused"])
+        self.assertIn("/terminal/api/existing-session/poll/", payload["poll_url"])
+
     def test_admin_can_open_users_page(self):
         response = self.client.get(self._path("monitor:users"))
         self.assertEqual(response.status_code, 200)
