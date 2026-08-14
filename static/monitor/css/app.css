@@ -2511,12 +2511,116 @@ body.app-shell {
   background: #050a13;
 }
 
+.is-mobile-terminal .terminal-shell {
+  height: calc(100vh - 17.2rem);
+}
+
 .terminal-shell .xterm {
   height: 100%;
 }
 
 .terminal-shell .xterm-viewport {
   scrollbar-color: rgba(142, 163, 185, 0.5) transparent;
+}
+
+.terminal-mobile-keys {
+  display: none;
+  gap: 0.65rem;
+  align-items: center;
+  overflow-x: auto;
+  padding: 0.62rem 0.72rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  background:
+    linear-gradient(180deg, rgba(13, 27, 42, 0.98), rgba(5, 10, 19, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.terminal-mobile-keys::-webkit-scrollbar {
+  display: none;
+}
+
+.is-mobile-terminal .terminal-mobile-keys {
+  display: flex;
+}
+
+.terminal-key-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+  flex: 0 0 auto;
+  padding: 0.28rem;
+  border-radius: 0.72rem;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.terminal-arrow-group {
+  gap: 0.28rem;
+}
+
+.terminal-arrow-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.terminal-key {
+  appearance: none;
+  min-width: 2.55rem;
+  height: 2.15rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 0.62rem;
+  border: 1px solid rgba(142, 163, 185, 0.22);
+  border-radius: 0.55rem;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.105), rgba(255, 255, 255, 0.045));
+  color: #edf2f7;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.09),
+    0 0.35rem 0.85rem rgba(0, 0, 0, 0.16);
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.terminal-key-icon {
+  min-width: 2.18rem;
+  width: 2.18rem;
+  padding: 0;
+}
+
+.terminal-arrow-stack .terminal-key-icon {
+  height: 1.02rem;
+  font-size: 0.7rem;
+}
+
+.terminal-key:active,
+.terminal-key.is-active {
+  border-color: rgba(255, 122, 89, 0.6);
+  background:
+    linear-gradient(180deg, rgba(255, 122, 89, 0.28), rgba(255, 122, 89, 0.14));
+  color: #ffffff;
+  transform: translateY(1px);
+}
+
+.terminal-key-modifier.is-active {
+  border-color: rgba(77, 212, 172, 0.65);
+  background:
+    linear-gradient(180deg, rgba(77, 212, 172, 0.28), rgba(77, 212, 172, 0.12));
+  color: #c7ffef;
+}
+
+.terminal-key-danger {
+  color: #ffd7ce;
 }
 
 @media (max-width: 768px) {
@@ -2530,7 +2634,6 @@ body.app-shell {
 
   .terminal-shell {
     min-height: 24rem;
-    height: calc(100vh - 14.5rem);
     padding: 0.5rem;
   }
 }

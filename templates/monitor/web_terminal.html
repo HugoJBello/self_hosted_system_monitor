@@ -35,6 +35,25 @@
       </div>
     </div>
     <div class="terminal-shell" id="webTerminal" data-terminal-container></div>
+    <div class="terminal-mobile-keys" data-terminal-mobile-keys aria-label="Terminal mobile keys">
+      <div class="terminal-key-group">
+        <button type="button" class="terminal-key" data-terminal-key="escape" title="Escape">Esc</button>
+        <button type="button" class="terminal-key terminal-key-modifier" data-terminal-ctrl-toggle aria-pressed="false" title="Ctrl modifier">Ctrl</button>
+        <button type="button" class="terminal-key" data-terminal-key="tab" title="Tab">Tab</button>
+      </div>
+      <div class="terminal-key-group terminal-arrow-group" aria-label="Arrow keys">
+        <button type="button" class="terminal-key terminal-key-icon" data-terminal-key="arrow-left" title="Arrow left"><i class="bi bi-arrow-left"></i></button>
+        <div class="terminal-arrow-stack">
+          <button type="button" class="terminal-key terminal-key-icon" data-terminal-key="arrow-up" title="Arrow up"><i class="bi bi-arrow-up"></i></button>
+          <button type="button" class="terminal-key terminal-key-icon" data-terminal-key="arrow-down" title="Arrow down"><i class="bi bi-arrow-down"></i></button>
+        </div>
+        <button type="button" class="terminal-key terminal-key-icon" data-terminal-key="arrow-right" title="Arrow right"><i class="bi bi-arrow-right"></i></button>
+      </div>
+      <div class="terminal-key-group">
+        <button type="button" class="terminal-key terminal-key-danger" data-terminal-key="ctrl-c" title="Ctrl+C">^C</button>
+        <button type="button" class="terminal-key" data-terminal-key="ctrl-d" title="Ctrl+D">^D</button>
+      </div>
+    </div>
   </section>
 </div>
 {% endblock %}
@@ -43,5 +62,5 @@
 <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
-<script src="{% static 'monitor/js/web_terminal.js' %}?v=20260813-terminal-fallback-input-order"></script>
+<script src="{% static 'monitor/js/web_terminal.js' %}?v=20260814-mobile-keys-polished"></script>
 {% endblock %}

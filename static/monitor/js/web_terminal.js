@@ -7,6 +7,8 @@
   const reconnectButton = page.querySelector("[data-terminal-reconnect]");
   const fitButton = page.querySelector("[data-terminal-fit]");
   const clearButton = page.querySelector("[data-terminal-clear]");
+  const mobileKeys = page.querySelector("[data-terminal-mobile-keys]");
+  const ctrlToggleButton = page.querySelector("[data-terminal-ctrl-toggle]");
   const fitAddon = new window.FitAddon.FitAddon();
   const webLinksAddon = window.WebLinksAddon ? new window.WebLinksAddon.WebLinksAddon() : null;
   let socket = null;
@@ -17,6 +19,7 @@
   let fallbackPolling = false;
   let fallbackInputQueue = Promise.resolve();
   let websocketGeneration = 0;
+  let ctrlArmed = false;
 
   const terminal = new window.Terminal({
     cursorBlink: true,
@@ -81,6 +84,45 @@
     resizeTimer = window.setTimeout(sendResize, 80);
   }
 
+  function sendTerminalInput(data) {
+    if (!data) return;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: "input", data }));
+      return;
+    }
+    if (fallbackSession) {
+      queueFallbackInput(data);
+    }
+  }
+
+  function controlCode(letter) {
+    const normalized = String(letter || "").toLowerCase();
+    if (!/^[a-z]$/.test(normalized)) return "";
+    return String.fromCharCode(normalized.charCodeAt(0) - 96);
+  }
+
+  function setCtrlArmed(value) {
+    ctrlArmed = Boolean(value);
+    if (ctrlToggleButton) {
+      ctrlToggleButton.setAttribute("aria-pressed", ctrlArmed ? "true" : "false");
+      ctrlToggleButton.classList.toggle("is-active", ctrlArmed);
+    }
+  }
+
+  function mobileKeySequence(key) {
+    const sequences = {
+      "escape": "\x1b",
+      "tab": "\t",
+      "arrow-up": "\x1b[A",
+      "arrow-down": "\x1b[B",
+      "arrow-right": "\x1b[C",
+      "arrow-left": "\x1b[D",
+      "ctrl-c": "\x03",
+      "ctrl-d": "\x04"
+    };
+    return sequences[key] || "";
+  }
+
   function connect() {
     websocketGeneration += 1;
     const currentGeneration = websocketGeneration;
@@ -137,13 +179,15 @@
   }
 
   terminal.onData((data) => {
-    if (socket && socket.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: "input", data }));
-      return;
+    if (ctrlArmed) {
+      const code = data.length === 1 ? controlCode(data) : "";
+      setCtrlArmed(false);
+      if (code) {
+        sendTerminalInput(code);
+        return;
+      }
     }
-    if (fallbackSession) {
-      queueFallbackInput(data);
-    }
+    sendTerminalInput(data);
   });
 
   window.addEventListener("resize", scheduleResize);
@@ -154,8 +198,44 @@
   reconnectButton.addEventListener("click", connect);
   fitButton.addEventListener("click", sendResize);
   clearButton.addEventListener("click", () => terminal.clear());
+  if (ctrlToggleButton) {
+    ctrlToggleButton.addEventListener("click", () => {
+      setCtrlArmed(!ctrlArmed);
+      terminal.focus();
+    });
+  }
+  if (mobileKeys) {
+    mobileKeys.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-terminal-key]");
+      if (!button) return;
+      sendTerminalInput(mobileKeySequence(button.dataset.terminalKey));
+      terminal.focus();
+    });
+  }
+
+  const mobileViewportQuery = window.matchMedia("(max-width: 768px)");
+  const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+  applyMobileKeyboardMode();
+  watchMediaQuery(mobileViewportQuery, applyMobileKeyboardMode);
+  watchMediaQuery(coarsePointerQuery, applyMobileKeyboardMode);
 
   connect();
+
+  function applyMobileKeyboardMode() {
+    const isMobile = mobileViewportQuery.matches || coarsePointerQuery.matches;
+    page.classList.toggle("is-mobile-terminal", isMobile);
+    scheduleResize();
+  }
+
+  function watchMediaQuery(query, callback) {
+    if (query.addEventListener) {
+      query.addEventListener("change", callback);
+      return;
+    }
+    if (query.addListener) {
+      query.addListener(callback);
+    }
+  }
 
   function csrfToken() {
     const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
