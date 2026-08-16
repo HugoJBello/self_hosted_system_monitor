@@ -1,6 +1,8 @@
 import getpass
 import hmac
 import os
+import shutil
+import socket
 import sys
 import warnings
 
@@ -10,6 +12,7 @@ import crypt
 
 
 HOST_ROOT = os.getenv("MONITOR_ROOT_PATH", "/hostfs")
+DEFAULT_HOST_SSH_NAME = "host.docker.internal"
 
 
 def host_path(path):
@@ -61,6 +64,13 @@ def authenticate(username, password):
 
 
 def exec_host_shell(username):
+    password = os.environ.pop("WEB_TERMINAL_LOGIN_PASSWORD", "")
+    if password and ssh_transport_enabled():
+        try:
+            exec_host_ssh(username, password)
+        except OSError:
+            pass
+
     os.execvp(
         "nsenter",
         [
@@ -77,6 +87,71 @@ def exec_host_shell(username):
             "-",
             username,
         ],
+    )
+
+
+def ssh_transport_enabled():
+    return os.getenv("WEB_TERMINAL_HOST_SSH", "true").lower() not in {"0", "false", "no", "off"}
+
+
+def host_ssh_target():
+    configured = os.getenv("WEB_TERMINAL_HOST_SSH_HOST", "").strip()
+    if configured:
+        return configured
+    try:
+        socket.getaddrinfo(DEFAULT_HOST_SSH_NAME, 22)
+        return DEFAULT_HOST_SSH_NAME
+    except socket.gaierror:
+        return docker_default_gateway() or DEFAULT_HOST_SSH_NAME
+
+
+def docker_default_gateway():
+    try:
+        with open("/proc/net/route", encoding="utf-8") as route_file:
+            for line in route_file.readlines()[1:]:
+                fields = line.split()
+                if len(fields) >= 3 and fields[1] == "00000000":
+                    gateway_hex = fields[2]
+                    octets = [str(int(gateway_hex[index : index + 2], 16)) for index in range(0, 8, 2)]
+                    return ".".join(reversed(octets))
+    except OSError:
+        return ""
+    return ""
+
+
+def exec_host_ssh(username, password):
+    sshpass_bin = shutil.which("sshpass")
+    ssh_bin = shutil.which("ssh")
+    if not sshpass_bin or not ssh_bin:
+        raise OSError("sshpass or ssh is not available.")
+
+    known_hosts = os.getenv("WEB_TERMINAL_SSH_KNOWN_HOSTS", "/app/data/web_terminal_known_hosts")
+    env = {
+        **os.environ,
+        "SSHPASS": password,
+    }
+    os.execvpe(
+        sshpass_bin,
+        [
+            sshpass_bin,
+            "-e",
+            ssh_bin,
+            "-tt",
+            "-o",
+            "StrictHostKeyChecking=accept-new",
+            "-o",
+            f"UserKnownHostsFile={known_hosts}",
+            "-o",
+            "PreferredAuthentications=password,keyboard-interactive",
+            "-o",
+            "PubkeyAuthentication=no",
+            "-o",
+            "NumberOfPasswordPrompts=1",
+            "-o",
+            "LogLevel=ERROR",
+            f"{username}@{host_ssh_target()}",
+        ],
+        env,
     )
 
 
@@ -103,6 +178,7 @@ def main():
         print("Login incorrect")
         return 1
 
+    os.environ["WEB_TERMINAL_LOGIN_PASSWORD"] = password
     exec_host_shell(username)
     return 1
 

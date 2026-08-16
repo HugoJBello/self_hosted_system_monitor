@@ -16,6 +16,7 @@
 - Persistent SQLite data exposed through a bind mount in `./data`.
 - Background sampler service that continuously records system snapshots and top processes.
 - Host-oriented metric collection via read-only access to the host filesystem and `/proc`.
+- Staff-only web terminal with a Linux login prompt and host SSH session support.
 
 ## Project Layout
 
@@ -67,6 +68,11 @@ Change this password immediately from the account password page. The default adm
 - `SAMPLER_DEFAULT_INTERVAL`: default `60`
 - `MONITOR_ROOT_PATH`: default `/hostfs`
 - `MONITOR_PROCFS_PATH`: default `/hostfs/proc`
+- `WEB_TERMINAL_IDLE_TIMEOUT_SECONDS`: default `600`; disconnected terminal sessions are kept for at least 10 minutes
+- `WEB_TERMINAL_HOST_SSH`: default `true`; after validating the Linux login, open the host shell through SSH so `sudo` works normally
+- `WEB_TERMINAL_HOST_SSH_HOST`: default auto-detects `host.docker.internal`, then Docker's default gateway
+- `WEB_TERMINAL_SSH_KNOWN_HOSTS`: default `/app/data/web_terminal_known_hosts`
+- `WEB_TERMINAL_COMMAND`: optional full command override for the terminal process; advanced/debug use only
 - `NOTIFICATIONS_ENABLED`: default `False`
 - `NOTIFICATIONS_API_URL`: default `http://127.0.0.1:49231/notifications/api/receive/`
 - `NOTIFICATIONS_API_TOKEN`: default empty
@@ -90,7 +96,7 @@ On startup the web container entrypoint:
 1. applies migrations
 2. ensures the default admin user exists
 3. collects static files
-4. starts Gunicorn
+4. starts Daphne
 
 The background services do not run these initialization steps. This avoids concurrent writes against the shared SQLite database during `docker compose up`.
 
@@ -117,6 +123,44 @@ password: change_me
 ```
 
 Override it with `SYSTEM_MONITOR_DEFAULT_ADMIN_USER`, `SYSTEM_MONITOR_DEFAULT_ADMIN_PASSWORD`, and `SYSTEM_MONITOR_DEFAULT_ADMIN_EMAIL`.
+
+## Web Terminal
+
+The `Terminal` page is staff-only and opens an interactive login prompt for a real Linux user on the host.
+
+Required host/container setup:
+
+- The web container must keep `privileged: true`, `pid: host`, and the host root mounted at `MONITOR_ROOT_PATH` (`/hostfs` by default). This lets the app validate the Linux username/password against the host `/etc/passwd` and `/etc/shadow`.
+- The host must run an SSH server reachable from the web container. On Arch Linux this is normally `openssh` with `sshd` enabled:
+
+```bash
+sudo pacman -S openssh
+sudo systemctl enable --now sshd
+```
+
+- Password login must be allowed for the Linux users who should use the web terminal. Check the host SSH daemon config if login fails before the shell opens.
+- The web image includes `openssh-client` and `sshpass`; keep both installed in the Dockerfile.
+- `docker-compose.yml` maps `host.docker.internal` to Docker's `host-gateway` for the web service:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:host-gateway"
+```
+
+Why SSH is used:
+
+- The terminal first verifies the Linux login against the host shadow database.
+- After successful verification it opens `ssh -tt <user>@host.docker.internal`.
+- This creates a normal host `sshd` session, so `sudo`, PAM, groups, TTY handling, and setuid binaries behave like they do in a regular SSH terminal.
+- A direct `nsenter + su` shell is kept as a fallback, but it is not preferred because `sudo` can fail there with `effective uid is not 0` when setuid elevation is blocked by the container/runtime context.
+
+Useful terminal environment variables:
+
+- `WEB_TERMINAL_HOST_SSH=true`: use host SSH after login. This is the default and recommended setting.
+- `WEB_TERMINAL_HOST_SSH_HOST=host.docker.internal`: override the host SSH target if Docker's gateway name is not suitable.
+- `WEB_TERMINAL_SSH_KNOWN_HOSTS=/app/data/web_terminal_known_hosts`: persistent known-hosts file used by the web terminal SSH client.
+- `WEB_TERMINAL_IDLE_TIMEOUT_SECONDS=600`: keep disconnected terminal sessions alive for at least 10 minutes.
+- `WEB_TERMINAL_COMMAND`: override the whole terminal command for debugging or custom deployments.
 
 ## HTTP Backup Receiver Token
 
