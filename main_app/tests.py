@@ -193,6 +193,8 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "data-terminal-page")
         self.assertContains(response, reverse("monitor:terminal-ws"))
+        self.assertContains(response, "data-terminal-new-session")
+        self.assertContains(response, reverse("monitor:terminal-api-close", args=["__session_id__"]))
 
         self.client.logout()
         normal = User.objects.create_user("normal-terminal", password="test-pass")

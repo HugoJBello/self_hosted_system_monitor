@@ -29,6 +29,7 @@ class WebTerminalView(StaffRequiredMixin, View):
                 "settings_obj": MonitoringSettings.load(),
                 "websocket_path": reverse("monitor:terminal-ws"),
                 "terminal_api_start_url": reverse("monitor:terminal-api-start"),
+                "terminal_api_close_url_template": reverse("monitor:terminal-api-close", args=["__session_id__"]),
             },
         )
 

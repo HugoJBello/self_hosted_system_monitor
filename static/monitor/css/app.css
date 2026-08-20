@@ -2503,6 +2503,17 @@ body.app-shell {
   color: #ffb39d;
 }
 
+.terminal-new-session-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  white-space: nowrap;
+}
+
+.terminal-new-session-button i {
+  font-size: 0.95rem;
+}
+
 .terminal-shell {
   min-height: 28rem;
   height: calc(100vh - 15.5rem);
@@ -2643,6 +2654,10 @@ body.app-shell {
 }
 
 @media (max-width: 575px) {
+  .terminal-new-session-button {
+    min-height: 2rem;
+  }
+
   .terminal-toolbar {
     padding: 0.65rem;
   }

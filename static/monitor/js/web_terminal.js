@@ -5,6 +5,7 @@
   const container = page.querySelector("[data-terminal-container]");
   const stateBadge = page.querySelector("[data-terminal-state]");
   const reconnectButton = page.querySelector("[data-terminal-reconnect]");
+  const newSessionButton = page.querySelector("[data-terminal-new-session]");
   const fitButton = page.querySelector("[data-terminal-fit]");
   const clearButton = page.querySelector("[data-terminal-clear]");
   const mobileKeys = page.querySelector("[data-terminal-mobile-keys]");
@@ -27,9 +28,13 @@
   let lastPongAt = 0;
   let lastPingAt = 0;
   let replayedBlankRestore = false;
+  let socketReadyForInput = false;
+  const pendingInputQueue = [];
 
   const PING_INTERVAL_MS = 30000;
   const PONG_TIMEOUT_MS = 75000;
+  const PENDING_INPUT_TTL_MS = 5000;
+  const MAX_PENDING_INPUT_CHARS = 4096;
 
   const terminal = new window.Terminal({
     cursorBlink: true,
@@ -66,6 +71,7 @@
   terminal.loadAddon(fitAddon);
   if (webLinksAddon) terminal.loadAddon(webLinksAddon);
   terminal.open(container);
+  configureHelperTextarea();
 
   function setState(label, level) {
     stateBadge.textContent = label;
@@ -80,6 +86,12 @@
     if (terminalSessionId) url.searchParams.set("session_id", terminalSessionId);
     if (terminalCursor && !shouldReplayFromStart()) url.searchParams.set("cursor", String(terminalCursor));
     return url.toString();
+  }
+
+  function sessionCloseUrl(sessionId) {
+    const template = page.dataset.terminalApiCloseUrlTemplate || "";
+    if (!template || !sessionId) return "";
+    return template.replace("__session_id__", encodeURIComponent(sessionId));
   }
 
   function sendResize() {
@@ -100,12 +112,17 @@
 
   function sendTerminalInput(data) {
     if (!data) return;
-    if (socket && socket.readyState === WebSocket.OPEN) {
+    if (socketReadyForInput && socket && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify({ type: "input", data }));
       return;
     }
     if (fallbackSession) {
       queueFallbackInput(data);
+      return;
+    }
+    if (isSocketOpenOrConnecting() || terminalSessionId) {
+      queuePendingInput(data);
+      if (!isSocketOpenOrConnecting()) connect();
     }
   }
 
@@ -141,6 +158,7 @@
     websocketGeneration += 1;
     const currentGeneration = websocketGeneration;
     if (socket) socket.close();
+    socketReadyForInput = false;
     stopConnectionTimers();
     window.clearTimeout(reconnectTimer);
     stopFallbackPolling();
@@ -174,6 +192,8 @@
       } else if (payload.type === "session") {
         saveSession(payload.session_id, payload.cursor);
         setState(payload.reused ? "Restored" : "Connected", "success");
+        socketReadyForInput = true;
+        flushPendingInput(payload);
         sendResize();
         window.setTimeout(refreshTerminal, 0);
       } else if (payload.type === "status") {
@@ -185,6 +205,7 @@
 
     socket.addEventListener("close", () => {
       stopConnectionTimers();
+      socketReadyForInput = false;
       if (currentGeneration !== websocketGeneration) {
         return;
       }
@@ -229,6 +250,9 @@
   }
 
   reconnectButton.addEventListener("click", connect);
+  if (newSessionButton) {
+    newSessionButton.addEventListener("click", forceNewTerminal);
+  }
   fitButton.addEventListener("click", sendResize);
   clearButton.addEventListener("click", () => terminal.clear());
   if (ctrlToggleButton) {
@@ -401,6 +425,7 @@
   async function startHttpFallback() {
     if (fallbackSession) return;
     setState("HTTP fallback", "warning");
+    socketReadyForInput = false;
     try {
       fitAddon.fit();
       fallbackSession = await postJson(page.dataset.terminalApiStartUrl, {
@@ -412,6 +437,7 @@
       saveSession(fallbackSession.session_id, fallbackCursor);
       fallbackPolling = true;
       fallbackInputQueue = Promise.resolve();
+      flushPendingInput({ session_id: fallbackSession.session_id, reused: fallbackSession.reused });
       pollFallback();
     } catch (error) {
       setState("Disconnected", "error");
@@ -457,12 +483,36 @@
     fallbackInputQueue = Promise.resolve();
   }
 
-  function closeFallback() {
-    if (!fallbackSession) return;
-    const closeUrl = fallbackSession.close_url;
+  async function closeCurrentSession(sessionId) {
+    const closeUrl = fallbackSession?.close_url || sessionCloseUrl(sessionId);
+    if (!closeUrl) return;
+    await postJson(closeUrl, {});
+  }
+
+  async function forceNewTerminal() {
+    const sessionId = terminalSessionId;
+    websocketGeneration += 1;
+    pendingInputQueue.length = 0;
+    setCtrlArmed(false);
+    socketReadyForInput = false;
+    window.clearTimeout(reconnectTimer);
+    stopConnectionTimers();
     stopFallbackPolling();
     clearStoredSession();
-    postJson(closeUrl, {}).catch(() => {});
+    terminal.clear();
+    setState("Starting new terminal", "info");
+
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
+
+    try {
+      await closeCurrentSession(sessionId);
+    } catch (error) {
+    }
+
+    connect();
   }
 
   function queueFallbackInput(data) {
@@ -476,9 +526,55 @@
       });
   }
 
+  function queuePendingInput(data) {
+    const now = Date.now();
+    pendingInputQueue.push({
+      data,
+      sessionId: terminalSessionId || "",
+      createdAt: now
+    });
+    trimPendingInput(now);
+  }
+
+  function trimPendingInput(now) {
+    while (pendingInputQueue.length && now - pendingInputQueue[0].createdAt > PENDING_INPUT_TTL_MS) {
+      pendingInputQueue.shift();
+    }
+
+    let totalChars = pendingInputQueue.reduce((total, item) => total + item.data.length, 0);
+    while (pendingInputQueue.length && totalChars > MAX_PENDING_INPUT_CHARS) {
+      const removed = pendingInputQueue.shift();
+      totalChars -= removed ? removed.data.length : 0;
+    }
+  }
+
+  function flushPendingInput(sessionPayload) {
+    if (!pendingInputQueue.length) return;
+    const now = Date.now();
+    trimPendingInput(now);
+
+    const activeSessionId = sessionPayload.session_id || terminalSessionId || "";
+    const sessionWasReused = Boolean(sessionPayload.reused);
+    const flushable = [];
+
+    pendingInputQueue.forEach((item) => {
+      const queuedBeforeKnownSession = !item.sessionId;
+      const queuedForSameSession = sessionWasReused && item.sessionId === activeSessionId;
+      if (queuedBeforeKnownSession || queuedForSameSession) {
+        flushable.push(item.data);
+      }
+    });
+
+    pendingInputQueue.length = 0;
+    if (!flushable.length) return;
+
+    sendTerminalInput(flushable.join(""));
+  }
+
   function focusTerminal() {
     terminal.focus();
     const helper = container.querySelector(".xterm-helper-textarea");
+    configureHelperTextarea(helper);
     if (helper && document.activeElement !== helper) {
       try {
         helper.focus({ preventScroll: true });
@@ -486,6 +582,15 @@
         helper.focus();
       }
     }
+  }
+
+  function configureHelperTextarea(helperElement) {
+    const helper = helperElement || container.querySelector(".xterm-helper-textarea");
+    if (!helper) return;
+    helper.setAttribute("autocomplete", "off");
+    helper.setAttribute("autocapitalize", "none");
+    helper.setAttribute("autocorrect", "off");
+    helper.setAttribute("spellcheck", "false");
   }
 
   function refreshTerminal() {
