@@ -26,6 +26,7 @@
   let watchdogTimer = null;
   let lastPongAt = 0;
   let lastPingAt = 0;
+  let replayedBlankRestore = false;
 
   const PING_INTERVAL_MS = 30000;
   const PONG_TIMEOUT_MS = 75000;
@@ -77,7 +78,7 @@
     const url = new URL(path, window.location.origin);
     url.protocol = protocol;
     if (terminalSessionId) url.searchParams.set("session_id", terminalSessionId);
-    if (terminalCursor) url.searchParams.set("cursor", String(terminalCursor));
+    if (terminalCursor && !shouldReplayFromStart()) url.searchParams.set("cursor", String(terminalCursor));
     return url.toString();
   }
 
@@ -144,7 +145,7 @@
     window.clearTimeout(reconnectTimer);
     stopFallbackPolling();
     setState(terminalSessionId ? "Restoring" : "Connecting", "info");
-    terminal.focus();
+    focusTerminal();
     scheduleResize();
 
     socket = new WebSocket(websocketUrl());
@@ -168,10 +169,13 @@
       if (payload.type === "output") {
         terminal.write(payload.data || "");
         saveCursor(payload.cursor);
+        replayedBlankRestore = false;
+        refreshTerminal();
       } else if (payload.type === "session") {
         saveSession(payload.session_id, payload.cursor);
         setState(payload.reused ? "Restored" : "Connected", "success");
         sendResize();
+        window.setTimeout(refreshTerminal, 0);
       } else if (payload.type === "status") {
         setState(payload.message || "Connected", payload.level || "info");
       } else if (payload.type === "pong") {
@@ -230,7 +234,7 @@
   if (ctrlToggleButton) {
     ctrlToggleButton.addEventListener("click", () => {
       setCtrlArmed(!ctrlArmed);
-      terminal.focus();
+      focusTerminal();
     });
   }
   if (mobileKeys) {
@@ -238,8 +242,20 @@
       const button = event.target.closest("[data-terminal-key]");
       if (!button) return;
       sendTerminalInput(mobileKeySequence(button.dataset.terminalKey));
-      terminal.focus();
+      focusTerminal();
     });
+  }
+  container.addEventListener("pointerdown", focusTerminal);
+  container.addEventListener("touchstart", focusTerminal, { passive: true });
+  container.addEventListener("click", focusTerminal);
+  document.addEventListener("selectionchange", () => {
+    if (document.activeElement && container.contains(document.activeElement)) {
+      focusTerminal();
+    }
+  });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", scheduleResize);
+    window.visualViewport.addEventListener("scroll", scheduleResize);
   }
 
   const mobileViewportQuery = window.matchMedia("(max-width: 768px)");
@@ -287,6 +303,7 @@
     sessionStorage.setItem(storageKey("session_id"), sessionId);
     if (previousSessionId && previousSessionId !== sessionId) {
       terminal.clear();
+      replayedBlankRestore = false;
     }
     saveCursor(cursor);
   }
@@ -307,6 +324,7 @@
   }
 
   function restoreAfterPageResume() {
+    focusTerminal();
     scheduleResize();
     if (!isSocketOpenOrConnecting() && !fallbackPolling) {
       connect();
@@ -412,7 +430,11 @@
         const payload = await response.json();
         fallbackCursor = payload.cursor || fallbackCursor;
         saveCursor(fallbackCursor);
-        if (payload.output) terminal.write(payload.output);
+        if (payload.output) {
+          terminal.write(payload.output);
+          replayedBlankRestore = false;
+          refreshTerminal();
+        }
         if (!payload.alive) {
           setState(payload.reason || "Disconnected", "warning");
           fallbackPolling = false;
@@ -452,5 +474,46 @@
       .catch(() => {
         setState("Input error", "error");
       });
+  }
+
+  function focusTerminal() {
+    terminal.focus();
+    const helper = container.querySelector(".xterm-helper-textarea");
+    if (helper && document.activeElement !== helper) {
+      try {
+        helper.focus({ preventScroll: true });
+      } catch (error) {
+        helper.focus();
+      }
+    }
+  }
+
+  function refreshTerminal() {
+    try {
+      fitAddon.fit();
+      terminal.refresh(0, Math.max(0, terminal.rows - 1));
+    } catch (error) {
+    }
+  }
+
+  function terminalLooksBlank() {
+    const buffer = terminal.buffer && terminal.buffer.active;
+    if (!buffer) return false;
+    const visibleRows = Math.max(1, terminal.rows || 1);
+    for (let index = 0; index < visibleRows; index += 1) {
+      const line = buffer.getLine(index);
+      if (line && line.translateToString(true).trim()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function shouldReplayFromStart() {
+    if (!terminalSessionId || !terminalCursor || replayedBlankRestore || !terminalLooksBlank()) {
+      return false;
+    }
+    replayedBlankRestore = true;
+    return true;
   }
 })();

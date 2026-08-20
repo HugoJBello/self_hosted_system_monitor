@@ -2523,6 +2523,10 @@ body.app-shell {
   scrollbar-color: rgba(142, 163, 185, 0.5) transparent;
 }
 
+.terminal-shell .xterm-helper-textarea {
+  font-size: 16px !important;
+}
+
 .terminal-mobile-keys {
   display: none;
   gap: 0.65rem;
