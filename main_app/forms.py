@@ -596,8 +596,8 @@ class ScriptJobForm(forms.ModelForm):
             ),
             "run_as_sudo": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "sudo_password": forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Optional sudo password"}, render_value=True),
-            "run_timeout_seconds": forms.NumberInput(attrs={"class": "form-control d-none backup-timeout-seconds", "min": 30, "max": 604800, "step": 30}),
-            "idle_timeout_seconds": forms.NumberInput(attrs={"class": "form-control d-none backup-timeout-seconds", "min": 30, "max": 86400, "step": 30}),
+            "run_timeout_seconds": forms.HiddenInput(attrs={"class": "backup-timeout-seconds"}),
+            "idle_timeout_seconds": forms.HiddenInput(attrs={"class": "backup-timeout-seconds"}),
         }
 
     ARGUMENT_FLAG_RE = re.compile(r"^-{1,2}[A-Za-z0-9][A-Za-z0-9_.:-]*$")

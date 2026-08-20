@@ -1066,6 +1066,32 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(job.schedule_minutes, 7)
         self.assertEqual(job.schedule_unit, "days")
 
+    def test_script_job_form_shows_timeout_validation_error(self):
+        response = self.client.post(
+            self._path("monitor:script-jobs"),
+            {
+                "create_job": "1",
+                "new-name": "Timeout script",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-schedule_mode": "manual",
+                "new-schedule_minutes": "1",
+                "new-schedule_unit": "minutes",
+                "new-scheduled_for": "",
+                "new-working_directory": "/",
+                "new-script_body": "echo ok",
+                "new-script_arguments": '{"positionals":[],"flags":[]}',
+                "new-run_as_sudo": "",
+                "new-sudo_password": "",
+                "new-run_timeout_seconds": "999999999",
+                "new-idle_timeout_seconds": "60",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Script job could not be saved.")
+        self.assertContains(response, "Ensure this value is less than or equal to 604800.")
+
     @patch("backups_app.views.start_background_backup")
     def test_backup_run_now_starts_background_process(self, mock_start_background):
         job = BackupJob.objects.create(
