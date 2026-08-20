@@ -158,10 +158,12 @@
       </div>
       <div class="row g-3">
         <div class="col-md-3">
-          <label class="form-label" for="{{ form.max_size_enabled.id_for_label }}">Max file size</label>
-          <div class="form-check form-switch mb-2">
-            {{ form.max_size_enabled }}
-            <label class="form-check-label" for="{{ form.max_size_enabled.id_for_label }}">Limit file size</label>
+          <div class="d-flex justify-content-between align-items-center gap-2 mb-2">
+            <label class="form-label mb-0" for="{{ form.max_size.id_for_label }}">Max file size</label>
+            <div class="form-check form-switch m-0">
+              {{ form.max_size_enabled }}
+              <label class="form-check-label small" for="{{ form.max_size_enabled.id_for_label }}">Limit</label>
+            </div>
           </div>
           {{ form.max_size }}
           {% for error in form.max_size.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}

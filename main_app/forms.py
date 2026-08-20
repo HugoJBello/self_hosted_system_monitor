@@ -553,6 +553,15 @@ class BackupJobForm(forms.ModelForm):
 
         return cleaned_data
 
+    def save(self, commit=True):
+        instance = super().save(commit=False)
+        if "max_size" in self.cleaned_data:
+            instance.max_size = self.cleaned_data["max_size"]
+        if commit:
+            instance.save()
+            self.save_m2m()
+        return instance
+
 
 class ScriptJobForm(forms.ModelForm):
     script_arguments = forms.CharField(required=False, widget=forms.HiddenInput(attrs={"data-script-arguments-input": "1"}))

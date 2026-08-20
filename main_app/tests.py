@@ -1313,6 +1313,53 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(job.source_path, "/home/test/NewDocuments")
         self.assertEqual(job.position, 7)
 
+    def test_backup_job_edit_can_clear_max_size_limit(self):
+        job = BackupJob.objects.create(
+            name="Documents backup",
+            source_path="/home/test/Documents",
+            schedule_minutes=30,
+            remote_host="backup.example.com",
+            remote_user="backup",
+            remote_dir="/srv/backups/test",
+            connection_mode="direct",
+            auth_mode="key",
+            max_size="100m",
+        )
+
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "save_job": str(job.id),
+                f"job-{job.id}-name": job.name,
+                f"job-{job.id}-description": job.description,
+                f"job-{job.id}-enabled": "on",
+                f"job-{job.id}-backup_type": "remote",
+                f"job-{job.id}-source_path": "/home/test/Documents",
+                f"job-{job.id}-schedule_mode": "interval",
+                f"job-{job.id}-schedule_minutes": "30",
+                f"job-{job.id}-remote_host": job.remote_host,
+                f"job-{job.id}-remote_user": job.remote_user,
+                f"job-{job.id}-remote_dir": job.remote_dir,
+                f"job-{job.id}-remote_direction": "push",
+                f"job-{job.id}-ssh_port": "22",
+                f"job-{job.id}-connection_mode": "direct",
+                f"job-{job.id}-cloudflare_auth_home": "",
+                f"job-{job.id}-cloudflare_service_token_id": "",
+                f"job-{job.id}-cloudflare_service_token_secret": "",
+                f"job-{job.id}-auth_mode": "key",
+                f"job-{job.id}-password_file_path": "",
+                f"job-{job.id}-ssh_password": "",
+                f"job-{job.id}-public_key_path": "",
+                f"job-{job.id}-run_timeout_seconds": "7200",
+                f"job-{job.id}-idle_timeout_seconds": "900",
+                f"job-{job.id}-exclude_patterns": "",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
+        job.refresh_from_db()
+        self.assertEqual(job.max_size, "")
+
     def test_backup_job_edit_can_set_manual_schedule(self):
         job = BackupJob.objects.create(
             name="Documents backup",
