@@ -266,6 +266,12 @@ class ReportRuleForm(forms.ModelForm):
 
 
 class BackupJobForm(forms.ModelForm):
+    max_size_enabled = forms.BooleanField(
+        required=False,
+        label="Limit max file size",
+        widget=forms.CheckboxInput(attrs={"class": "form-check-input", "data-max-size-enabled": "1"}),
+    )
+
     class Meta:
         model = BackupJob
         fields = (
@@ -298,6 +304,7 @@ class BackupJobForm(forms.ModelForm):
             "public_key_path",
             "install_public_key",
             "delete_enabled",
+            "max_size_enabled",
             "max_size",
             "run_timeout_seconds",
             "idle_timeout_seconds",
@@ -333,9 +340,9 @@ class BackupJobForm(forms.ModelForm):
             "public_key_path": forms.TextInput(attrs={"class": "form-control", "placeholder": "/home/user/.ssh/id_ed25519.pub"}),
             "install_public_key": forms.CheckboxInput(attrs={"class": "form-check-input"}),
             "delete_enabled": forms.CheckboxInput(attrs={"class": "form-check-input"}),
-            "max_size": forms.TextInput(attrs={"class": "form-control", "placeholder": "100m"}),
-            "run_timeout_seconds": forms.NumberInput(attrs={"class": "form-control d-none backup-timeout-seconds", "min": 60, "max": 604800, "step": 60}),
-            "idle_timeout_seconds": forms.NumberInput(attrs={"class": "form-control d-none backup-timeout-seconds", "min": 30, "max": 86400, "step": 30}),
+            "max_size": forms.TextInput(attrs={"class": "form-control", "placeholder": "100m", "data-max-size-input": "1"}),
+            "run_timeout_seconds": forms.HiddenInput(attrs={"class": "backup-timeout-seconds"}),
+            "idle_timeout_seconds": forms.HiddenInput(attrs={"class": "backup-timeout-seconds"}),
             "exclude_patterns": forms.Textarea(attrs={"class": "form-control", "rows": 3, "placeholder": "*.tmp\nnode_modules/"}),
         }
 
@@ -368,6 +375,9 @@ class BackupJobForm(forms.ModelForm):
         self.fields["public_key_path"].label = "Public key path on host"
         self.fields["run_timeout_seconds"].label = "Hard timeout (seconds)"
         self.fields["idle_timeout_seconds"].label = "Idle timeout (seconds)"
+        self.fields["max_size"].required = False
+        if not self.is_bound:
+            self.fields["max_size_enabled"].initial = bool((self.instance.max_size or "").strip())
         self.fields["backup_type"].choices = [
             ("local", "Local memory backup"),
             ("remote", "SSH + rsync backup"),
@@ -534,6 +544,12 @@ class BackupJobForm(forms.ModelForm):
         idle_timeout_seconds = cleaned_data.get("idle_timeout_seconds") or 0
         if idle_timeout_seconds and run_timeout_seconds and idle_timeout_seconds >= run_timeout_seconds:
             self.add_error("idle_timeout_seconds", "Idle timeout must be lower than the hard timeout.")
+
+        max_size_enabled = bool(cleaned_data.get("max_size_enabled"))
+        max_size = (cleaned_data.get("max_size") or "").strip()
+        if max_size_enabled and not max_size:
+            self.add_error("max_size", "Enter a max file size or turn the limit off.")
+        cleaned_data["max_size"] = max_size if max_size_enabled else ""
 
         return cleaned_data
 

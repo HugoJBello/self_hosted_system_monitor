@@ -67,7 +67,7 @@ class BackupJob(models.Model):
     public_key_path = models.CharField(max_length=500, blank=True, default="")
     install_public_key = models.BooleanField(default=False)
     delete_enabled = models.BooleanField(default=True)
-    max_size = models.CharField(max_length=32, blank=True, default="100m")
+    max_size = models.CharField(max_length=32, blank=True, default="")
     run_timeout_seconds = models.PositiveIntegerField(
         default=7200,
         validators=[MinValueValidator(60), MaxValueValidator(60 * 60 * 24 * 7)],

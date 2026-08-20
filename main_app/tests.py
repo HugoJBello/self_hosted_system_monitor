@@ -1894,6 +1894,98 @@ class BackupHelpersTests(TestCase):
         self.assertTrue(form.is_valid(), form.errors)
         self.assertEqual(form.cleaned_data["remote_direction"], "push")
 
+    def test_backup_job_form_clears_max_size_when_limit_is_disabled(self):
+        form = BackupJobForm(
+            data={
+                "name": "Docs",
+                "description": "",
+                "enabled": "on",
+                "backup_type": "remote",
+                "source_path": "/home/test/Documents",
+                "local_dest_path": "",
+                "schedule_mode": "interval",
+                "schedule_minutes": "30",
+                "remote_host": "ssh.example.com",
+                "remote_user": "backup",
+                "remote_dir": "/srv/backups/test",
+                "ssh_port": "22",
+                "connection_mode": "direct",
+                "auth_mode": "key",
+                "password_file_path": "",
+                "ssh_password": "",
+                "public_key_path": "",
+                "max_size": "100m",
+                "run_timeout_seconds": "7200",
+                "idle_timeout_seconds": "900",
+                "exclude_patterns": "",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["max_size"], "")
+
+    def test_backup_job_form_requires_max_size_when_limit_is_enabled(self):
+        form = BackupJobForm(
+            data={
+                "name": "Docs",
+                "description": "",
+                "enabled": "on",
+                "backup_type": "remote",
+                "source_path": "/home/test/Documents",
+                "local_dest_path": "",
+                "schedule_mode": "interval",
+                "schedule_minutes": "30",
+                "remote_host": "ssh.example.com",
+                "remote_user": "backup",
+                "remote_dir": "/srv/backups/test",
+                "ssh_port": "22",
+                "connection_mode": "direct",
+                "auth_mode": "key",
+                "password_file_path": "",
+                "ssh_password": "",
+                "public_key_path": "",
+                "max_size_enabled": "on",
+                "max_size": "",
+                "run_timeout_seconds": "7200",
+                "idle_timeout_seconds": "900",
+                "exclude_patterns": "",
+            }
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("Enter a max file size or turn the limit off.", form.errors["max_size"])
+
+    def test_backup_job_form_keeps_max_size_when_limit_is_enabled(self):
+        form = BackupJobForm(
+            data={
+                "name": "Docs",
+                "description": "",
+                "enabled": "on",
+                "backup_type": "remote",
+                "source_path": "/home/test/Documents",
+                "local_dest_path": "",
+                "schedule_mode": "interval",
+                "schedule_minutes": "30",
+                "remote_host": "ssh.example.com",
+                "remote_user": "backup",
+                "remote_dir": "/srv/backups/test",
+                "ssh_port": "22",
+                "connection_mode": "direct",
+                "auth_mode": "key",
+                "password_file_path": "",
+                "ssh_password": "",
+                "public_key_path": "",
+                "max_size_enabled": "on",
+                "max_size": "250m",
+                "run_timeout_seconds": "7200",
+                "idle_timeout_seconds": "900",
+                "exclude_patterns": "",
+            }
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertEqual(form.cleaned_data["max_size"], "250m")
+
     def test_cloudflare_mode_allows_blank_auth_home_and_blank_service_tokens(self):
         response = self.client.post(
             self._path("monitor:backups"),
@@ -2242,6 +2334,36 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "If you use Cloudflare service tokens, fill both the ID and the secret.")
 
+    def test_backup_form_shows_timeout_validation_error(self):
+        response = self.client.post(
+            self._path("monitor:backups"),
+            {
+                "create_job": "1",
+                "new-name": "Timeout backup",
+                "new-description": "",
+                "new-enabled": "on",
+                "new-source_path": "/home/test/Documents",
+                "new-schedule_minutes": "30",
+                "new-remote_host": "ssh.example.com",
+                "new-remote_user": "backup",
+                "new-remote_dir": "/srv/backups/test",
+                "new-ssh_port": "22",
+                "new-connection_mode": "direct",
+                "new-auth_mode": "key",
+                "new-password_file_path": "",
+                "new-ssh_password": "",
+                "new-public_key_path": "",
+                "new-max_size": "",
+                "new-run_timeout_seconds": "999999999",
+                "new-idle_timeout_seconds": "900",
+                "new-exclude_patterns": "",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Backup job could not be saved.")
+        self.assertContains(response, "Ensure this value is less than or equal to 604800.")
+
     def test_http_backup_job_requires_remote_token(self):
         response = self.client.post(
             self._path("monitor:backups"),
@@ -2318,6 +2440,7 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(job.backup_type, "http")
         self.assertEqual(job.http_direction, "push")
         self.assertEqual(job.http_remote_token, "token-123")
+        self.assertEqual(job.max_size, "")
 
     def test_http_backup_job_accepts_pull_fields(self):
         response = self.client.post(

@@ -67,7 +67,7 @@ def _best_effort_reconcile_backups():
 
 @method_decorator(csrf_exempt, name="dispatch")
 class BackupsView(LoginRequiredMixin, View):
-    template_name = "monitor/backups.html"
+    template_name = "backups_app/backups.html"
 
     def get(self, request):
         _best_effort_reconcile_backups()
@@ -134,7 +134,7 @@ class BackupsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' updated.")
                 return redirect("monitor:backups")
-            return render(request, "monitor/backup_job_form_page.html", backup_job_form_context(form, job=job))
+            return render(request, "backups_app/backup_job_form_page.html", backup_job_form_context(form, job=job))
 
         if "delete_job" in request.POST:
             job = get_object_or_404(BackupJob, pk=request.POST.get("delete_job"))
@@ -150,7 +150,7 @@ class BackupsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Backup job '{instance.name}' created.")
                 return redirect("monitor:backups")
-            return render(request, "monitor/backup_job_form_page.html", backup_job_form_context(create_form, create=True))
+            return render(request, "backups_app/backup_job_form_page.html", backup_job_form_context(create_form, create=True))
 
         return render(request, self.template_name, self._context(request))
 
@@ -239,7 +239,7 @@ class BackupsView(LoginRequiredMixin, View):
 
 
 class BackupJobCreateView(LoginRequiredMixin, View):
-    template_name = "monitor/backup_job_form_page.html"
+    template_name = "backups_app/backup_job_form_page.html"
 
     def get(self, request):
         return render(request, self.template_name, backup_job_form_context(BackupJobForm(prefix="new"), create=True))
@@ -255,7 +255,7 @@ class BackupJobCreateView(LoginRequiredMixin, View):
 
 
 class BackupJobEditView(LoginRequiredMixin, View):
-    template_name = "monitor/backup_job_form_page.html"
+    template_name = "backups_app/backup_job_form_page.html"
 
     def get(self, request, job_id):
         job = get_object_or_404(BackupJob, pk=job_id)
@@ -272,7 +272,7 @@ class BackupJobEditView(LoginRequiredMixin, View):
         return render(request, self.template_name, backup_job_form_context(form, job=job))
 
 class BackupRunsView(LoginRequiredMixin, View):
-    template_name = "monitor/backup_runs.html"
+    template_name = "backups_app/backup_runs.html"
 
     def get(self, request):
         _best_effort_reconcile_backups()
@@ -373,7 +373,7 @@ class BackupRunStatusView(LoginRequiredMixin, View):
 
 
 class BackupRunDetailView(LoginRequiredMixin, View):
-    template_name = "monitor/backup_run_detail.html"
+    template_name = "backups_app/backup_run_detail.html"
 
     def get(self, request, run_id):
         _best_effort_reconcile_backups()

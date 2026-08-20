@@ -1,0 +1,226 @@
+{% extends "main_app/base.html" %}
+{% load monitor_extras %}
+
+{% block title %}Script Run Detail | System Monitor{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4" data-script-run-detail data-status-url="{% url 'monitor:script-job-run-status' script_run.id %}">
+  <div>
+    <p class="eyebrow mb-2">Script run detail</p>
+    <h1 class="display-6 mb-1">{{ script_run.job.name }}</h1>
+    <p class="text-secondary mb-0" data-run-summary>{{ script_run.summary }}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if script_run.status == "success" %}
+      <span class="live-pill" data-run-status-pill>SUCCESS</span>
+    {% elif script_run.status == "running" %}
+      <span class="live-pill" data-run-status-pill>RUNNING</span>
+    {% elif script_run.status == "cancelled" %}
+      <span class="resolved-pill" data-run-status-pill>CANCELLED</span>
+    {% elif script_run.status == "timed_out" %}
+      <span class="severity-pill severity-warning" data-run-status-pill>TIMED OUT</span>
+    {% else %}
+      <span class="severity-pill severity-critical" data-run-status-pill>FAILED</span>
+    {% endif %}
+    {% if script_run.status == "running" %}
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="stop_run" value="{{ script_run.id }}" class="btn btn-outline-danger btn-sm" data-run-stop>Stop run</button>
+      </form>
+    {% else %}
+      <form method="post">
+        {% csrf_token %}
+        <button type="submit" name="rerun_run" value="{{ script_run.id }}" class="btn btn-outline-light btn-sm">Rerun job</button>
+      </form>
+    {% endif %}
+    <a href="{% url 'monitor:script-jobs' %}?edit_job={{ script_run.job.id }}" class="btn btn-accent btn-sm"><i class="bi bi-pencil-square"></i> Edit job</a>
+    <a href="{% url 'monitor:script-jobs' %}" class="btn btn-outline-light btn-sm">Back to jobs</a>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Exit code</p>
+      <h2 class="h4 mb-1" data-run-exit>{{ script_run.exit_code }}</h2>
+      <p class="text-secondary mb-0" data-run-status-label>{{ script_run.status|title }}</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Started</p>
+      <h2 class="h6 mb-1"><span data-local-datetime="{{ script_run.started_at|date:'c' }}" data-local-style="datetime-short">{{ script_run.started_at|date:"Y-m-d H:i:s" }}</span></h2>
+      <p class="text-secondary mb-0">Browser locale</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Finished</p>
+      <h2 class="h6 mb-1" data-run-finished>{% if script_run.finished_at %}<span data-local-datetime="{{ script_run.finished_at|date:'c' }}" data-local-style="datetime-short">{{ script_run.finished_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</h2>
+      <p class="text-secondary mb-0">Browser locale</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Runner / PID</p>
+      <h2 class="h6 mb-1" data-runner-label>{{ script_run.runner_label|default:"-" }}</h2>
+      <p class="text-secondary mb-0">PID <span data-run-pid>{{ script_run.process_pid|default:"-" }}</span></p>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 align-items-stretch">
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4 h-100 script-run-balanced-card">
+      <p class="eyebrow mb-2">Job configuration</p>
+      <h2 class="h4 mb-4">Execution settings</h2>
+      <div class="stat-stack">
+        <div class="mini-stat"><span class="label">Mode</span><strong>{% if script_run.job.is_manual %}Manual only{% elif script_run.job.is_one_off %}One-off{% else %}{{ script_run.job.schedule_label }}{% endif %}</strong></div>
+        <div class="mini-stat"><span class="label">Working directory</span><strong>{{ script_run.job.working_directory|default:"/" }}</strong></div>
+        <div class="mini-stat"><span class="label">Execution user</span><strong>{% if script_run.job.run_as_sudo %}sudo{% else %}Current service user{% endif %}</strong></div>
+        <div class="mini-stat"><span class="label">Timeouts</span><strong>{{ script_run.job.run_timeout_seconds|human_uptime }} hard • {{ script_run.job.idle_timeout_seconds|human_uptime }} idle</strong></div>
+        <div class="mini-stat"><span class="label">Launch mode</span><strong>{{ script_run.get_launched_by_display }}</strong></div>
+        <div class="mini-stat"><span class="label">Last heartbeat</span><strong data-run-heartbeat>{% if script_run.heartbeat_at %}<span data-local-datetime="{{ script_run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ script_run.heartbeat_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong></div>
+        <div class="mini-stat"><span class="label">Last output</span><strong data-run-last-output>{% if script_run.last_output_at %}<span data-local-datetime="{{ script_run.last_output_at|date:'c' }}" data-local-style="datetime-short">{{ script_run.last_output_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong></div>
+      </div>
+      {% with args=script_run.job.normalized_script_arguments %}
+        <div class="script-argument-preview mt-4">
+          <div>
+            <span class="backup-job-endpoint-label">By order</span>
+            {% for item in args.positionals %}
+              <code>{{ forloop.counter }}: {{ item.value }}</code>
+            {% empty %}
+              <span class="text-secondary small">None</span>
+            {% endfor %}
+          </div>
+          <div>
+            <span class="backup-job-endpoint-label">Flags</span>
+            {% for item in args.flags %}
+              <code>{{ item.flag }}{% if item.value %} {{ item.value }}{% endif %}</code>
+            {% empty %}
+              <span class="text-secondary small">None</span>
+            {% endfor %}
+          </div>
+        </div>
+      {% endwith %}
+    </section>
+  </div>
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4 h-100 script-run-balanced-card script-run-script-card">
+      <p class="eyebrow mb-2">Script</p>
+      <h2 class="h4 mb-4">Bash content</h2>
+      <pre class="script-preview-shell"><code class="language-bash">{{ script_run.job.script_body }}</code></pre>
+    </section>
+  </div>
+  <div class="col-12">
+    <section class="panel-card p-4 script-run-log-card">
+      <p class="eyebrow mb-2">Execution log</p>
+      <h2 class="h4 mb-4">Captured command output</h2>
+      {% if script_run.command_line %}
+        <div class="script-run-command-strip mb-3">
+          <span>Command</span>
+          <code data-run-command>{{ script_run.command_line }}</code>
+        </div>
+      {% endif %}
+      <pre class="command-modal-block script-run-output-log mb-0" data-run-log>{{ script_run.log_output|default:"No log output recorded." }}</pre>
+    </section>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+<script>
+  hljs.highlightAll();
+
+  function formatDetailDateTime(value) {
+    if (!value) return "-";
+    return window.formatConfiguredDateTime(value, "datetime-short") || "-";
+  }
+
+  function updateDetailStatusPill(pill, status) {
+    if (!pill) return;
+    pill.className = "live-pill";
+    if (status === "running") {
+      pill.textContent = "RUNNING";
+      return;
+    }
+    if (status === "success") {
+      pill.textContent = "SUCCESS";
+      return;
+    }
+    if (status === "cancelled") {
+      pill.className = "resolved-pill";
+      pill.textContent = "CANCELLED";
+      return;
+    }
+    if (status === "timed_out") {
+      pill.className = "severity-pill severity-warning";
+      pill.textContent = "TIMED OUT";
+      return;
+    }
+    pill.className = "severity-pill severity-critical";
+    pill.textContent = "FAILED";
+  }
+
+  const detailRoot = document.querySelector("[data-script-run-detail]");
+  if (detailRoot) {
+    const pollRunDetail = async () => {
+      try {
+        const response = await fetch(detailRoot.dataset.statusUrl, { headers: { "X-Requested-With": "fetch" } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const logNode = document.querySelector("[data-run-log]");
+        if (logNode) {
+          const shouldStick = logNode.scrollHeight - logNode.scrollTop - logNode.clientHeight < 40;
+          if (logNode.textContent !== payload.log_output) {
+            logNode.textContent = payload.log_output || "No log output recorded.";
+            if (shouldStick) logNode.scrollTop = logNode.scrollHeight;
+          }
+        }
+        const commandNode = document.querySelector("[data-run-command]");
+        if (commandNode && payload.command_line) commandNode.textContent = payload.command_line;
+        const summaryNode = document.querySelector("[data-run-summary]");
+        if (summaryNode) summaryNode.textContent = payload.summary || "";
+        const exitNode = document.querySelector("[data-run-exit]");
+        if (exitNode) exitNode.textContent = payload.exit_code;
+        const statusLabelNode = document.querySelector("[data-run-status-label]");
+        if (statusLabelNode) statusLabelNode.textContent = payload.status_label || payload.status;
+        const finishedNode = document.querySelector("[data-run-finished]");
+        if (finishedNode) finishedNode.textContent = formatDetailDateTime(payload.finished_at);
+        const runnerNode = document.querySelector("[data-runner-label]");
+        if (runnerNode) runnerNode.textContent = payload.runner_label || "-";
+        const pidNode = document.querySelector("[data-run-pid]");
+        if (pidNode) pidNode.textContent = payload.process_pid || "-";
+        const heartbeatNode = document.querySelector("[data-run-heartbeat]");
+        if (heartbeatNode) heartbeatNode.textContent = formatDetailDateTime(payload.heartbeat_at);
+        const lastOutputNode = document.querySelector("[data-run-last-output]");
+        if (lastOutputNode) lastOutputNode.textContent = formatDetailDateTime(payload.last_output_at);
+        updateDetailStatusPill(document.querySelector("[data-run-status-pill]"), payload.status);
+        const stopButton = document.querySelector("[data-run-stop]");
+        if (stopButton && payload.status !== "running") {
+          stopButton.disabled = true;
+          stopButton.textContent = payload.status_label || payload.status;
+          detailRoot.dataset.pollingDone = "1";
+        }
+      } catch (_) {
+      }
+    };
+
+    const initialLogNode = document.querySelector("[data-run-log]");
+    if (initialLogNode) initialLogNode.scrollTop = initialLogNode.scrollHeight;
+    pollRunDetail();
+    const timer = window.setInterval(() => {
+      if (detailRoot.dataset.pollingDone === "1") {
+        window.clearInterval(timer);
+        return;
+      }
+      pollRunDetail();
+    }, 4000);
+  }
+</script>
+{% endblock %}

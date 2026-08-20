@@ -47,7 +47,7 @@ class AdminRequiredMixin(UserPassesTestMixin):
 
 
 class LoginView(auth_views.LoginView):
-    template_name = "monitor/login.html"
+    template_name = "users_app/login.html"
     redirect_authenticated_user = True
 
     def get_success_url(self):
@@ -69,7 +69,7 @@ def _with_app_subpath(url):
 
 
 class PasswordView(LoginRequiredMixin, View):
-    template_name = "monitor/password.html"
+    template_name = "users_app/password.html"
 
     def get(self, request):
         return render(request, self.template_name, {"form": StyledPasswordChangeForm(request.user), "settings_obj": MonitoringSettings.load()})
@@ -84,7 +84,7 @@ class PasswordView(LoginRequiredMixin, View):
 
 
 class UsersView(AdminRequiredMixin, View):
-    template_name = "monitor/users.html"
+    template_name = "users_app/users.html"
 
     def get(self, request):
         return render(request, self.template_name, self._context())

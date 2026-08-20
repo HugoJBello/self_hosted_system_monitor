@@ -52,7 +52,7 @@ AlertRuleFormSet = modelformset_factory(
 
 @method_decorator(csrf_exempt, name="dispatch")
 class AlertsView(LoginRequiredMixin, View):
-    template_name = "monitor/alerts.html"
+    template_name = "alerts_app/alerts.html"
 
     def get(self, request):
         ensure_default_alert_rules()
@@ -110,7 +110,7 @@ class AlertsView(LoginRequiredMixin, View):
         }
 
 class AlertDetailView(LoginRequiredMixin, View):
-    template_name = "monitor/alert_detail.html"
+    template_name = "alerts_app/alert_detail.html"
 
     def get(self, request, event_id):
         event = get_object_or_404(

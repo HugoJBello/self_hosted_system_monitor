@@ -1,0 +1,138 @@
+{% extends "main_app/base.html" %}
+
+{% block title %}Backup Runs | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Backup history</p>
+    <h1 class="display-6 mb-1">All backup runs</h1>
+    <p class="text-secondary mb-0">Search and browse every backup execution without overloading the main configuration page.</p>
+  </div>
+  <a href="{% url 'monitor:backups' %}" class="btn btn-outline-light btn-sm">Back to backups</a>
+</div>
+
+<section class="panel-card p-4">
+  <form method="get" class="job-run-filter-bar mb-4">
+    <div class="job-list-search">
+      <label class="form-label" for="backupRunSearch">Search backup runs</label>
+      <input id="backupRunSearch" name="q" value="{{ query }}" class="form-control" placeholder="job, summary, source, destination, host, or URL">
+    </div>
+    <div>
+      <label class="form-label" for="backupRunJob">Job</label>
+      <select id="backupRunJob" name="job" class="form-select">
+        <option value="">All backups</option>
+        {% for job in job_choices %}
+          <option value="{{ job.id }}"{% if job_filter == job.id|stringformat:"s" %} selected{% endif %}>{{ job.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="backupRunStatus">Status</label>
+      <select id="backupRunStatus" name="status" class="form-select">
+        <option value="all"{% if status_filter == "all" %} selected{% endif %}>All statuses</option>
+        {% for value,label in status_choices %}
+          <option value="{{ value }}"{% if status_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="backupRunType">Type</label>
+      <select id="backupRunType" name="type" class="form-select">
+        <option value="all"{% if type_filter == "all" %} selected{% endif %}>All types</option>
+        <option value="local"{% if type_filter == "local" %} selected{% endif %}>Local</option>
+        <option value="remote"{% if type_filter == "remote" %} selected{% endif %}>SSH</option>
+        <option value="http"{% if type_filter == "http" %} selected{% endif %}>HTTP</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="backupRunDirection">Direction</label>
+      <select id="backupRunDirection" name="direction" class="form-select">
+        <option value="all"{% if direction_filter == "all" %} selected{% endif %}>All directions</option>
+        <option value="push"{% if direction_filter == "push" %} selected{% endif %}>Local to remote</option>
+        <option value="pull"{% if direction_filter == "pull" %} selected{% endif %}>Remote to local</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="backupRunLaunch">Started by</label>
+      <select id="backupRunLaunch" name="launched_by" class="form-select">
+        <option value="all"{% if launched_by_filter == "all" %} selected{% endif %}>Any source</option>
+        {% for value,label in launch_choices %}
+          <option value="{{ value }}"{% if launched_by_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="job-list-toolbar-actions">
+      <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{% url 'monitor:backup-runs' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-x-lg"></i> Clear</a>
+    </div>
+  </form>
+
+  <div class="execution-list execution-list-backups">
+    {% for run in page_obj.object_list %}
+      <article class="execution-row">
+        <div class="execution-status">
+          {% if run.status == "success" %}
+            <span class="live-pill">SUCCESS</span>
+          {% elif run.status == "cancelled" %}
+            <span class="resolved-pill">CANCELLED</span>
+          {% elif run.status == "timed_out" %}
+            <span class="severity-pill severity-warning">TIMED OUT</span>
+          {% elif run.status == "running" %}
+            <span class="live-pill">RUNNING</span>
+          {% else %}
+            <span class="severity-pill severity-critical">FAILED</span>
+          {% endif %}
+          <span class="execution-exit">exit {{ run.exit_code }}</span>
+        </div>
+        <div class="execution-main">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span class="chip compact-chip">{{ run.job.name }}</span>
+            <span class="chip compact-chip">{% if run.job.is_local %}Local{% elif run.job.is_http %}HTTP {{ run.job.http_direction }}{% else %}{% if run.job.connection_mode == "cloudflare" %}Cloudflare SSH{% else %}SSH{% endif %} {{ run.job.remote_direction|default:"push" }}{% endif %}</span>
+            {% if run.job.is_remote_pull or run.job.is_http and run.job.http_direction == "pull" %}<span class="severity-pill severity-warning">REMOTE TO LOCAL</span>{% endif %}
+            <span class="chip compact-chip">{{ run.get_launched_by_display }}</span>
+          </div>
+          <h3 class="h6 mb-1">{{ run.summary|default:"Backup run" }}</h3>
+          <div class="small text-secondary">{{ run.job.source_label }} → {{ run.job.destination_label }}</div>
+        </div>
+        <div class="execution-times">
+          <span>Started <strong data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</strong></span>
+          {% if run.finished_at %}<span>Finished <strong data-local-datetime="{{ run.finished_at|date:'c' }}" data-local-style="datetime-short">{{ run.finished_at|date:"Y-m-d H:i:s" }}</strong></span>{% endif %}
+          {% if run.heartbeat_at %}<span>Heartbeat <strong data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="datetime-short">{{ run.heartbeat_at|date:"Y-m-d H:i:s" }}</strong></span>{% endif %}
+          {% if run.runner_label %}<span>Runner <strong>{{ run.runner_label }}</strong></span>{% endif %}
+        </div>
+        <div class="execution-actions">
+          {% if run.status == "running" %}
+            <form method="post" action="{% url 'monitor:backups' %}">
+              {% csrf_token %}
+              <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm">Stop</button>
+            </form>
+          {% else %}
+            <form method="post" action="{% url 'monitor:backups' %}">
+              {% csrf_token %}
+              <button type="submit" name="rerun_run" value="{{ run.id }}" class="btn btn-outline-light btn-sm">Rerun</button>
+            </form>
+          {% endif %}
+          <a href="{% url 'monitor:backup-run-detail' run.id %}" class="btn btn-accent btn-sm">Detail</a>
+        </div>
+      </article>
+    {% empty %}
+      <div class="text-secondary">No backup runs found.</div>
+    {% endfor %}
+  </div>
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-4">
+      <div class="small text-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      <div class="d-flex gap-2">
+        {% if page_obj.has_previous %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</section>
+{% endblock %}

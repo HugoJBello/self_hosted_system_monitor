@@ -63,7 +63,7 @@ def _best_effort_reconcile_script_jobs():
 
 @method_decorator(csrf_exempt, name="dispatch")
 class ScriptJobsView(LoginRequiredMixin, View):
-    template_name = "monitor/script_jobs.html"
+    template_name = "jobs_app/script_jobs.html"
 
     def get(self, request):
         _best_effort_reconcile_script_jobs()
@@ -129,7 +129,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Script job '{instance.name}' updated.")
                 return redirect("monitor:script-jobs")
-            return render(request, "monitor/script_job_form_page.html", script_job_form_context(form, job=job))
+            return render(request, "jobs_app/script_job_form_page.html", script_job_form_context(form, job=job))
 
         if "delete_job" in request.POST:
             job = get_object_or_404(ScriptJob, pk=request.POST.get("delete_job"))
@@ -145,7 +145,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
                 instance.save()
                 messages.success(request, f"Script job '{instance.name}' created.")
                 return redirect("monitor:script-jobs")
-            return render(request, "monitor/script_job_form_page.html", script_job_form_context(create_form, create=True))
+            return render(request, "jobs_app/script_job_form_page.html", script_job_form_context(create_form, create=True))
 
         return render(request, self.template_name, self._context(request))
 
@@ -214,7 +214,7 @@ class ScriptJobsView(LoginRequiredMixin, View):
 
 
 class ScriptJobCreateView(LoginRequiredMixin, View):
-    template_name = "monitor/script_job_form_page.html"
+    template_name = "jobs_app/script_job_form_page.html"
 
     def get(self, request):
         return render(request, self.template_name, script_job_form_context(ScriptJobForm(prefix="new"), create=True))
@@ -230,7 +230,7 @@ class ScriptJobCreateView(LoginRequiredMixin, View):
 
 
 class ScriptJobEditView(LoginRequiredMixin, View):
-    template_name = "monitor/script_job_form_page.html"
+    template_name = "jobs_app/script_job_form_page.html"
 
     def get(self, request, job_id):
         job = get_object_or_404(ScriptJob, pk=job_id)
@@ -248,7 +248,7 @@ class ScriptJobEditView(LoginRequiredMixin, View):
 
 
 class ScriptJobRunsView(LoginRequiredMixin, View):
-    template_name = "monitor/script_job_runs.html"
+    template_name = "jobs_app/script_job_runs.html"
 
     def get(self, request):
         _best_effort_reconcile_script_jobs()
@@ -312,7 +312,7 @@ class ScriptJobRunStatusView(LoginRequiredMixin, View):
 
 
 class ScriptJobRunDetailView(LoginRequiredMixin, View):
-    template_name = "monitor/script_job_run_detail.html"
+    template_name = "jobs_app/script_job_run_detail.html"
 
     def get(self, request, run_id):
         _best_effort_reconcile_script_jobs()

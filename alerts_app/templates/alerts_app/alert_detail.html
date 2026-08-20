@@ -1,0 +1,253 @@
+{% extends "main_app/base.html" %}
+{% load monitor_extras %}
+
+{% block title %}Alert Detail | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Alert detail</p>
+    <h1 class="display-6 mb-1">{{ event.title }}</h1>
+    <p class="text-secondary mb-0">{{ event.message }}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="severity-pill severity-{{ event.severity }}">{{ event.severity|upper }}</span>
+    {% if event.is_active %}
+      <span class="live-pill">LIVE</span>
+    {% else %}
+      <span class="resolved-pill">RESOLVED</span>
+    {% endif %}
+    <a href="{% url 'monitor:alerts' %}" class="btn btn-outline-light btn-sm">Back to alerts</a>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-4">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">Trigger snapshot</p>
+      <h2 class="h4 mb-4"><span data-local-datetime="{{ trigger_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ trigger_snapshot.captured_at|date:"Y-m-d H:i:s" }}</span></h2>
+      <div class="stat-stack">
+        <div class="mini-stat">
+          <span class="label">Rule</span>
+          <strong>{{ event.rule.name }}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">Metric</span>
+          <strong>{{ alert_metrics|get_item:event.metric|default:event.metric }}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">Evaluated value</span>
+          <strong>{{ event.evaluated_value|floatformat:2 }}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">Threshold</span>
+          <strong>{{ alert_comparators|get_item:event.comparator|default:event.comparator }} {{ event.threshold|floatformat:2 }}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">Window / matches</span>
+          <strong>{{ event.window_minutes }}m / {{ event.matching_count }} of {{ event.sample_count }}</strong>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-8">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Metric context</p>
+          <h2 class="h4 mb-0">Nearby moments</h2>
+        </div>
+      </div>
+      {{ chart_data|json_script:"alert-detail-chart-data" }}
+      <canvas id="alertMetricChart" height="110"></canvas>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">System state</p>
+      <h2 class="h4 mb-4">Snapshot at trigger time</h2>
+      <div class="row g-3">
+        <div class="col-6"><div class="mini-stat"><span class="label">CPU</span><strong>{{ trigger_snapshot.cpu_percent }}%</strong></div></div>
+        <div class="col-6"><div class="mini-stat"><span class="label">Memory</span><strong>{{ trigger_snapshot.memory_percent }}%</strong></div></div>
+        <div class="col-6"><div class="mini-stat"><span class="label">Swap</span><strong>{{ trigger_snapshot.swap_percent }}%</strong></div></div>
+        <div class="col-6"><div class="mini-stat"><span class="label">Disk</span><strong>{{ trigger_snapshot.disk_percent }}%</strong></div></div>
+        <div class="col-6"><div class="mini-stat"><span class="label">Load</span><strong>{{ trigger_snapshot.load_avg_1 }}</strong></div></div>
+        <div class="col-6"><div class="mini-stat"><span class="label">Processes</span><strong>{{ trigger_snapshot.process_count_total }}</strong></div></div>
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">Timeline table</p>
+      <h2 class="h4 mb-4">Samples around the alert</h2>
+      <div class="table-responsive">
+        <table class="table table-dark align-middle monitor-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Metric</th>
+              <th>CPU</th>
+              <th>MEM</th>
+              <th>Disk</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for snapshot in context_snapshots %}
+              <tr{% if snapshot.id == trigger_snapshot.id %} class="table-active"{% endif %}>
+                <td><span data-local-datetime="{{ snapshot.captured_at|date:'c' }}" data-local-style="time-short">{{ snapshot.captured_at|date:"H:i:s" }}</span></td>
+                <td>{{ snapshot|get_attr:event.metric|default:0 }}</td>
+                <td>{{ snapshot.cpu_percent }}</td>
+                <td>{{ snapshot.memory_percent }}</td>
+                <td>{{ snapshot.disk_percent }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>
+
+<section class="panel-card p-4">
+  <p class="eyebrow mb-2">Processes</p>
+  <h2 class="h4 mb-4">Top processes captured at trigger time</h2>
+  <div class="table-responsive">
+    <table class="table table-dark align-middle monitor-table">
+      <thead>
+        <tr>
+          <th>PID</th>
+          <th>Name</th>
+          <th>Status</th>
+          <th>CPU %</th>
+          <th>MEM %</th>
+          <th>RSS MB</th>
+          <th>Threads</th>
+          <th>User</th>
+          {% if request.user.is_staff %}<th>Actions</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for process in trigger_processes %}
+          <tr>
+            <td>{{ process.pid }}</td>
+            <td>
+              <div class="fw-semibold">{{ process.name }}</div>
+              <div class="small text-secondary text-truncate process-command">{{ process.command|default:"-" }}</div>
+            </td>
+            <td>{{ process.status }}</td>
+            <td>{{ process.cpu_percent }}</td>
+            <td>{{ process.memory_percent }}</td>
+            <td>{{ process.memory_rss_mb }}</td>
+            <td>{{ process.threads }}</td>
+            <td>{{ process.username|default:"-" }}</td>
+            {% if request.user.is_staff %}
+              <td>
+                {% include "main_app/includes/_process_actions.html" with process_is_historical=True process_control_available=process.control_available process_control_unavailable_reason=process.control_unavailable_reason process_pid=process.pid process_name=process.name process_username=process.username process_command=process.command process_snapshot_id=process.id process_container_name=process.container_name %}
+              </td>
+            {% endif %}
+          </tr>
+        {% empty %}
+          <tr><td colspan="{% if request.user.is_staff %}9{% else %}8{% endif %}" class="text-secondary">No process capture available for this snapshot.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% if alert_window_processes %}
+  <section class="panel-card p-4 mt-4">
+    <p class="eyebrow mb-2">Alert window context</p>
+    <h2 class="h4 mb-4">Processes with the highest pressure during the evaluated period</h2>
+    <div class="table-responsive">
+      <table class="table table-dark align-middle monitor-table">
+        <thead>
+          <tr>
+            <th>Process</th>
+            <th>Samples</th>
+            <th>CPU avg / peak</th>
+            <th>MEM avg / peak</th>
+            <th>Max RSS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for process in alert_window_processes %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ process.name }}</div>
+                <div class="small text-secondary">{{ process.username|default:"-" }}</div>
+              </td>
+              <td>{{ process.samples }}</td>
+              <td>{{ process.avg_cpu|floatformat:1 }}% / {{ process.peak_cpu|floatformat:1 }}%</td>
+              <td>{{ process.avg_memory|floatformat:1 }}% / {{ process.peak_memory|floatformat:1 }}%</td>
+              <td>{{ process.max_rss_mb|floatformat:1 }} MB</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const detailData = JSON.parse(document.getElementById("alert-detail-chart-data").textContent);
+  const detailWindowHours = (() => {
+    const points = detailData.label_datetimes || [];
+    if (points.length < 2) {
+      return 0;
+    }
+    const start = new Date(points[0]);
+    const end = new Date(points[points.length - 1]);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      return 0;
+    }
+    return Math.max((end.getTime() - start.getTime()) / 3600000, 0);
+  })();
+  const detailLabels = (detailData.label_datetimes || []).map((iso, index) => (
+    window.formatConfiguredChartLabel(iso, { windowHours: detailWindowHours }) || detailData.labels[index]
+  ));
+  new Chart(document.getElementById("alertMetricChart"), {
+    type: "line",
+    data: {
+      labels: detailLabels,
+      datasets: [
+        {
+          label: "Observed metric",
+          data: detailData.metric_values,
+          borderColor: "#ff7a59",
+          backgroundColor: "rgba(255,122,89,0.16)",
+          tension: 0.25,
+          fill: true
+        },
+        {
+          label: "Threshold",
+          data: detailData.threshold,
+          borderColor: "#5dc6ff",
+          borderDash: [8, 6],
+          pointRadius: 0,
+          tension: 0
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { labels: { color: "#d8e1ea" } },
+        tooltip: {
+          callbacks: {
+            title(items) {
+              const index = items[0]?.dataIndex ?? 0;
+              return window.formatConfiguredDateTime((detailData.label_datetimes || [])[index], "datetime-short") || detailLabels[index];
+            }
+          }
+        }
+      },
+      scales: { x: { ticks: { color: "#93a4b7" } }, y: { ticks: { color: "#93a4b7" } } }
+    }
+  });
+</script>
+{% endblock %}

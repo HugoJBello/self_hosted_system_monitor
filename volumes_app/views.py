@@ -59,7 +59,7 @@ class VolumeTreeView(LoginRequiredMixin, View):
 
 
 class VolumesView(LoginRequiredMixin, View):
-    template_name = "monitor/volumes.html"
+    template_name = "volumes_app/volumes.html"
 
     def get(self, request):
         return render(request, self.template_name, self._context())
@@ -134,7 +134,7 @@ class VolumesView(LoginRequiredMixin, View):
 
 
 class VolumeOperationDetailView(LoginRequiredMixin, View):
-    template_name = "monitor/volume_operation_detail.html"
+    template_name = "volumes_app/volume_operation_detail.html"
 
     def get(self, request, operation_id):
         operation = get_object_or_404(VolumeOperation, pk=operation_id)
@@ -142,7 +142,7 @@ class VolumeOperationDetailView(LoginRequiredMixin, View):
 
 
 class VolumeOperationsView(LoginRequiredMixin, View):
-    template_name = "monitor/volume_operations.html"
+    template_name = "volumes_app/volume_operations.html"
 
     def get(self, request):
         query = (request.GET.get("q") or "").strip()

@@ -174,6 +174,13 @@
     setText(editor, "[data-copy-origin]", state.origin);
     setText(editor, "[data-copy-destination]", state.destination);
     setText(editor, "[data-copy-risk]", state.risk);
+
+    editor.querySelectorAll("[data-max-size-enabled]").forEach((toggle) => {
+      const maxSizeInput = editor.querySelector("[data-max-size-input]");
+      if (!maxSizeInput) return;
+      maxSizeInput.disabled = !toggle.checked;
+      maxSizeInput.classList.toggle("disabled", !toggle.checked);
+    });
   }
 
   let backupInfoReturnModal = null;

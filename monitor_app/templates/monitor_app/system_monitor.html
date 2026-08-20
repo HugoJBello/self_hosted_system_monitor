@@ -1,0 +1,319 @@
+{% extends "main_app/base.html" %}
+{% load monitor_extras %}
+
+{% block title %}Monitor | System Monitor{% endblock %}
+
+{% block content %}
+{% with sort=process_sort dir=process_dir per_page=process_per_page auto_refresh=auto_refresh_seconds %}
+{% if latest_snapshot %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Live system view</p>
+    <h1 class="display-6 mb-1">Web system monitor</h1>
+    <p class="text-secondary mb-0 d-flex flex-wrap align-items-center gap-2">
+      <span>{{ latest_snapshot.hostname }}</span>
+      <span class="os-chip {{ latest_snapshot.platform_label|platform_tone_class }}">
+        <i class="{{ latest_snapshot.platform_label|platform_icon_class }}" aria-hidden="true"></i>
+        <span>{{ latest_snapshot.platform_label }}</span>
+      </span>
+      <span>refreshed every {{ settings_obj.sample_interval_seconds }}s</span>
+    </p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    {% if request.user.is_staff %}
+      <form method="post" action="{% url 'monitor:process-action' %}" data-confirm-submit="Reboot this host now?">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <input type="hidden" name="confirmed" value="yes">
+        <input type="hidden" name="action" value="reboot">
+        <button class="btn btn-outline-danger btn-sm" type="submit"><i class="bi bi-power"></i> Reboot host</button>
+      </form>
+    {% endif %}
+    <span class="badge text-bg-light border">Captured <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }}</span></span>
+    <span class="badge text-bg-light border">Uptime {{ latest_snapshot.uptime_seconds|human_uptime }}</span>
+    <form method="get" class="d-flex align-items-center gap-2">
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <input type="hidden" name="dir" value="{{ dir }}">
+      <input type="hidden" name="process_page" value="1">
+      <input type="hidden" name="per_page" value="{{ per_page }}">
+      <label class="small text-secondary" for="autoRefreshSelect">Autorefresh</label>
+      <select id="autoRefreshSelect" name="auto_refresh" class="form-select form-select-sm bg-transparent text-light border-secondary-subtle" onchange="this.form.submit()">
+        <option value="0" {% if auto_refresh == 0 %}selected{% endif %}>Off</option>
+        <option value="15" {% if auto_refresh == 15 %}selected{% endif %}>15s</option>
+        <option value="30" {% if auto_refresh == 30 %}selected{% endif %}>30s</option>
+        <option value="60" {% if auto_refresh == 60 %}selected{% endif %}>60s</option>
+        <option value="120" {% if auto_refresh == 120 %}selected{% endif %}>120s</option>
+      </select>
+    </form>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card cpu">
+      <p class="eyebrow mb-2">CPU</p>
+      <h2>{{ latest_snapshot.cpu_percent }}%</h2>
+      <p class="text-secondary mb-0">Logical {{ latest_snapshot.cpu_count_logical }} • Physical {{ latest_snapshot.cpu_count_physical }}</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card memory">
+      <p class="eyebrow mb-2">Memory</p>
+      <h2>{{ latest_snapshot.memory_percent }}%</h2>
+      <p class="text-secondary mb-0">{{ memory_breakdown.used_mb }} / {{ latest_snapshot.memory_total_mb }} MB used</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card disk">
+      <p class="eyebrow mb-2">Disk</p>
+      <h2>{{ latest_snapshot.disk_percent }}%</h2>
+      <p class="text-secondary mb-0">{{ latest_snapshot.disk_used_gb }} / {{ latest_snapshot.disk_total_gb }} GB</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card stat-card network">
+      <p class="eyebrow mb-2">Network</p>
+      <h2>{{ latest_snapshot.network_recv_rate_kbps }} kbps</h2>
+      <p class="text-secondary mb-0">Rx • Sent {{ latest_snapshot.network_sent_rate_kbps }} kbps</p>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-8">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Processor detail</p>
+          <h2 class="h4 mb-0">Per-core activity</h2>
+        </div>
+        <div class="text-secondary small">Load {{ latest_snapshot.load_avg_1 }} / {{ latest_snapshot.load_avg_5 }} / {{ latest_snapshot.load_avg_15 }}</div>
+      </div>
+      <div class="core-grid">
+        {% for core in latest_snapshot.per_cpu_percent %}
+          <div class="core-tile">
+            <div class="d-flex justify-content-between mb-2">
+              <span>CPU {{ forloop.counter0 }}</span>
+              <strong>{{ core }}%</strong>
+            </div>
+            <div class="progress dark-progress" role="progressbar" aria-valuenow="{{ core }}" aria-valuemin="0" aria-valuemax="100">
+              <div class="progress-bar" style="width: {{ core }}%"></div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-4">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">System health</p>
+      <h2 class="h4 mb-4">Memory and processes</h2>
+      <div class="vstack gap-4">
+        <div>
+          <div class="d-flex justify-content-between mb-2"><span>RAM usage</span><strong>{{ latest_snapshot.memory_percent }}%</strong></div>
+          <div class="progress dark-progress"><div class="progress-bar bg-info" style="width: {{ latest_snapshot.memory_percent }}%"></div></div>
+        </div>
+        <div>
+          <div class="d-flex justify-content-between mb-2"><span>Swap usage</span><strong>{{ latest_snapshot.swap_percent }}%</strong></div>
+          <div class="progress dark-progress"><div class="progress-bar bg-warning" style="width: {{ latest_snapshot.swap_percent }}%"></div></div>
+        </div>
+        <section class="memory-breakdown-panel">
+          <div class="d-flex justify-content-between align-items-center gap-3 mb-3">
+            <div>
+              <div class="memory-breakdown-title">RAM composition</div>
+              <div class="small text-secondary">High RAM can still be healthy when available memory and cache remain strong.</div>
+            </div>
+            <span class="chip">{{ memory_breakdown.available_mb }} MB available</span>
+          </div>
+          <div class="memory-breakdown-grid">
+            <article class="memory-breakdown-item">
+              <span class="memory-breakdown-label">Used</span>
+              <strong>{{ memory_breakdown.used_mb }} MB</strong>
+            </article>
+            <article class="memory-breakdown-item memory-breakdown-item-accent">
+              <span class="memory-breakdown-label">Cached</span>
+              <strong>{{ memory_breakdown.cached_mb }} MB</strong>
+            </article>
+            <article class="memory-breakdown-item">
+              <span class="memory-breakdown-label">Buffers</span>
+              <strong>{{ memory_breakdown.buffers_mb }} MB</strong>
+            </article>
+            <article class="memory-breakdown-item">
+              <span class="memory-breakdown-label">Slab</span>
+              <strong>{{ memory_breakdown.slab_mb }} MB</strong>
+            </article>
+          </div>
+          <div class="small text-secondary mt-3">Cached + buffers currently sum to {{ memory_breakdown.reclaimable_mb }} MB and are typically reusable when another workload needs RAM.</div>
+        </section>
+        <div class="process-badges">
+          <span class="chip">Processes {{ latest_snapshot.process_count_total }}</span>
+          <span class="chip">Running {{ latest_snapshot.process_count_running }}</span>
+          <span class="chip">Sleeping {{ latest_snapshot.process_count_sleeping }}</span>
+          <span class="chip">Stopped {{ latest_snapshot.process_count_stopped }}</span>
+          <span class="chip">Zombie {{ latest_snapshot.process_count_zombie }}</span>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-5">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Storage layout</p>
+          <h2 class="h4 mb-0">Mounted devices</h2>
+        </div>
+        <a href="{% url 'monitor:volumes' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-device-hdd"></i> Volumes</a>
+      </div>
+      <div class="mounted-device-list">
+        {% for disk in latest_snapshot.disk_devices %}
+          <article class="mounted-device-card">
+            <div class="mounted-device-top">
+              <div class="mounted-device-main">
+                <div class="mounted-device-path">{{ disk.mountpoint }}</div>
+              </div>
+              <div class="mounted-device-status-shell">
+                <span class="mounted-device-status {% if disk.is_mounted %}is-mounted{% else %}is-idle{% endif %}">{{ disk.status_label }}</span>
+                {% if disk.percent is not None %}
+                  <div class="mounted-device-percent">{{ disk.percent }}%</div>
+                {% endif %}
+              </div>
+            </div>
+            <div class="mounted-device-chip-row">
+              <span class="mounted-device-chip">{{ disk.device }}</span>
+              <span class="mounted-device-chip">{{ disk.fstype|upper }}</span>
+            </div>
+            {% if disk.is_mounted %}
+              <div class="mounted-device-usage-row">
+                <div class="mounted-device-usage-item">
+                  <span class="mounted-device-label">Used</span>
+                  <strong>{{ disk.used_gb }} GB</strong>
+                </div>
+                <div class="mounted-device-usage-item mounted-device-usage-item-right">
+                  <span class="mounted-device-label">Free</span>
+                  <strong>{{ disk.free_gb }} GB</strong>
+                </div>
+              </div>
+              <div class="progress dark-progress mounted-device-progress" role="progressbar" aria-valuenow="{{ disk.percent }}" aria-valuemin="0" aria-valuemax="100">
+                <div class="progress-bar mounted-device-progress-used" style="width: {{ disk.percent }}%"></div>
+              </div>
+            {% else %}
+              <div class="mounted-device-idle-note">This filesystem is configured in the host as an automount and is currently idle, so live used/free figures are not available until it is mounted.</div>
+            {% endif %}
+            <div class="mounted-device-footer">
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">Total capacity</span>
+                <strong>{% if disk.total_gb is not None %}{{ disk.total_gb }} GB{% else %}-{% endif %}</strong>
+              </div>
+              <div class="mounted-device-stat">
+                <span class="mounted-device-label">{% if disk.is_mounted %}Free space{% else %}Current state{% endif %}</span>
+                <strong>{% if disk.is_mounted and disk.free_percent is not None %}{{ disk.free_percent }}%{% else %}Idle{% endif %}</strong>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No disk detail available.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-7">
+    <section class="panel-card p-4 h-100">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Live processes</p>
+          <h2 class="h4 mb-0">Htop-inspired process table</h2>
+        </div>
+        <div class="d-flex flex-wrap align-items-center gap-2 small text-secondary">
+          <span>Showing {{ live_process_page.start_index }}-{{ live_process_page.end_index }} of {{ live_process_page.paginator.count }}</span>
+          <form method="get" class="d-flex align-items-center gap-2">
+            <input type="hidden" name="sort" value="{{ sort }}">
+            <input type="hidden" name="dir" value="{{ dir }}">
+            <input type="hidden" name="process_page" value="1">
+            <input type="hidden" name="auto_refresh" value="{{ auto_refresh }}">
+            <label for="perPageSelect" class="small text-secondary">Per page</label>
+            <select id="perPageSelect" name="per_page" class="form-select form-select-sm bg-transparent text-light border-secondary-subtle" onchange="this.form.submit()">
+              <option value="25" {% if per_page == 25 %}selected{% endif %}>25</option>
+              <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+              <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+              <option value="200" {% if per_page == 200 %}selected{% endif %}>200</option>
+            </select>
+          </form>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-dark align-middle monitor-table process-table-live">
+          <thead>
+            <tr>
+              <th><a class="process-sort-link" href="?sort=pid&dir={% if sort == 'pid' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">PID</a></th>
+              <th><a class="process-sort-link" href="?sort=name&dir={% if sort == 'name' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Name</a></th>
+              <th><a class="process-sort-link" href="?sort=status&dir={% if sort == 'status' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Status</a></th>
+              <th><a class="process-sort-link" href="?sort=cpu_percent&dir={% if sort == 'cpu_percent' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">CPU %</a></th>
+              <th><a class="process-sort-link" href="?sort=memory_percent&dir={% if sort == 'memory_percent' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">MEM %</a></th>
+              <th><a class="process-sort-link" href="?sort=memory_rss_mb&dir={% if sort == 'memory_rss_mb' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">RSS MB</a></th>
+              <th><a class="process-sort-link" href="?sort=threads&dir={% if sort == 'threads' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Threads</a></th>
+              <th><a class="process-sort-link" href="?sort=username&dir={% if sort == 'username' and dir == 'asc' %}desc{% else %}asc{% endif %}&process_page=1&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">User</a></th>
+              {% if request.user.is_staff %}<th>Actions</th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for process in live_process_page %}
+              <tr>
+                <td>{{ process.pid }}</td>
+                <td>
+                  <div class="fw-semibold">{{ process.name }}</div>
+                  <div class="small text-secondary text-truncate process-command">{{ process.command|default:"-" }}</div>
+                </td>
+                <td>{{ process.status }}</td>
+                <td>{{ process.cpu_percent }}</td>
+                <td>{{ process.memory_percent }}</td>
+                <td>{{ process.memory_rss_mb }}</td>
+                <td>{{ process.threads }}</td>
+                <td>{{ process.username|default:"-" }}</td>
+                {% if request.user.is_staff %}
+                  <td>
+                    {% include "main_app/includes/_process_actions.html" with process_is_historical=False process_pid=process.pid process_name=process.name process_username=process.username process_command=process.command process_container_name=process.container_name %}
+                  </td>
+                {% endif %}
+              </tr>
+            {% empty %}
+              <tr><td colspan="{% if request.user.is_staff %}9{% else %}8{% endif %}" class="text-secondary">No process data captured yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if live_process_page and live_process_page.paginator.num_pages > 1 %}
+        <div class="d-flex justify-content-between align-items-center gap-2 mt-3 flex-wrap">
+          <div class="small text-secondary">Page {{ live_process_page.number }} of {{ live_process_page.paginator.num_pages }}</div>
+          <div class="d-flex gap-2 flex-wrap">
+            {% if live_process_page.has_previous %}
+              <a class="btn btn-outline-light btn-sm" href="?sort={{ sort }}&dir={{ dir }}&process_page={{ live_process_page.previous_page_number }}&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Previous</a>
+            {% endif %}
+            {% if live_process_page.has_next %}
+              <a class="btn btn-outline-light btn-sm" href="?sort={{ sort }}&dir={{ dir }}&process_page={{ live_process_page.next_page_number }}&per_page={{ per_page }}&auto_refresh={{ auto_refresh }}">Next</a>
+            {% endif %}
+          </div>
+        </div>
+      {% endif %}
+    </section>
+  </div>
+</div>
+{% else %}
+<section class="panel-card p-5 text-center">
+  <p class="eyebrow mb-2">Waiting for data</p>
+  <h1 class="h3 mb-3">No snapshots available yet</h1>
+  <p class="text-secondary mb-0">Start the sampler container or wait for the first collection cycle.</p>
+</section>
+{% endif %}
+{% endwith %}
+{% endblock %}
+
+{% block scripts %}
+{% if auto_refresh_seconds %}
+<script>
+  window.setTimeout(() => window.location.reload(), {{ auto_refresh_seconds }} * 1000);
+</script>
+{% endif %}
+{% endblock %}

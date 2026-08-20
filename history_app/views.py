@@ -44,7 +44,7 @@ User = get_user_model()
 from monitor_app.views import _mark_historical_process_actions
 
 class HistoryView(LoginRequiredMixin, View):
-    template_name = "monitor/history.html"
+    template_name = "history_app/history.html"
 
     def get(self, request):
         hours = request.GET.get("hours", "24")

@@ -204,7 +204,7 @@ class ProcessActionView(AdminRequiredMixin, View):
         return redirect(next_url)
 
 class SystemMonitorView(LoginRequiredMixin, View):
-    template_name = "monitor/system_monitor.html"
+    template_name = "monitor_app/system_monitor.html"
 
     def get(self, request):
         latest_snapshot = (

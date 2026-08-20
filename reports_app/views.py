@@ -52,7 +52,7 @@ ReportRuleFormSet = modelformset_factory(
 
 @method_decorator(csrf_exempt, name="dispatch")
 class ReportsView(LoginRequiredMixin, View):
-    template_name = "monitor/reports.html"
+    template_name = "reports_app/reports.html"
 
     def get(self, request):
         formset = ReportRuleFormSet(queryset=ReportRule.objects.all())
@@ -88,7 +88,7 @@ class ReportsView(LoginRequiredMixin, View):
         }
 
 class ReportDetailView(LoginRequiredMixin, View):
-    template_name = "monitor/report_detail.html"
+    template_name = "reports_app/report_detail.html"
 
     def get(self, request, report_id):
         report = get_object_or_404(ReportRun.objects.select_related("rule"), pk=report_id)

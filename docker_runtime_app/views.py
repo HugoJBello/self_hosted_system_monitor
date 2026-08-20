@@ -17,7 +17,7 @@ class DockerAdminRequiredMixin(UserPassesTestMixin):
 
 
 class DockerOverviewView(LoginRequiredMixin, View):
-    template_name = "monitor/docker_runtime.html"
+    template_name = "docker_runtime_app/docker_runtime.html"
 
     def get(self, request):
         try:

@@ -1,0 +1,415 @@
+{% extends "main_app/base.html" %}
+{% load monitor_extras %}
+
+{% block title %}Jobs | System Monitor{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css">
+{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Automation center</p>
+    <h1 class="display-6 mb-1">Script jobs</h1>
+    <p class="text-secondary mb-0">Create recurring or one-off Bash jobs, launch them on demand, and inspect live output without leaving the monitor.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="badge text-bg-light border">Jobs {{ jobs_count }}</span>
+    <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
+    <a href="{% url 'monitor:script-job-create' %}" class="btn btn-accent btn-sm">New job</a>
+  </div>
+</div>
+
+<section class="panel-card p-4 mb-4">
+  <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end gap-3 mb-4">
+    <div>
+      <p class="eyebrow mb-2">Scheduler</p>
+      <h2 class="h4 mb-0">Configured jobs</h2>
+    </div>
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+      <span class="badge text-bg-light border">{{ filtered_jobs_count }} shown</span>
+      <span class="badge text-bg-light border">{{ jobs_count }} total</span>
+      <a href="{% url 'monitor:script-job-runs' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-clock-history"></i> Execution history</a>
+    </div>
+  </div>
+
+  <form method="get" class="job-list-toolbar mb-4">
+    <div class="job-list-search">
+      <label class="form-label" for="scriptJobSearch">Filter jobs</label>
+      <input id="scriptJobSearch" name="q" value="{{ query }}" class="form-control" placeholder="name, folder, or script text">
+    </div>
+    <div>
+      <label class="form-label" for="scriptJobState">State</label>
+      <select id="scriptJobState" name="state" class="form-select">
+        <option value="all"{% if state_filter == "all" %} selected{% endif %}>All states</option>
+        <option value="enabled"{% if state_filter == "enabled" %} selected{% endif %}>Enabled</option>
+        <option value="disabled"{% if state_filter == "disabled" %} selected{% endif %}>Disabled</option>
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="scriptJobSchedule">Schedule</label>
+      <select id="scriptJobSchedule" name="schedule" class="form-select">
+        <option value="all"{% if schedule_filter == "all" %} selected{% endif %}>All schedules</option>
+        <option value="manual"{% if schedule_filter == "manual" %} selected{% endif %}>Manual</option>
+        <option value="interval"{% if schedule_filter == "interval" %} selected{% endif %}>Recurring</option>
+        <option value="one_off"{% if schedule_filter == "one_off" %} selected{% endif %}>One-off</option>
+      </select>
+    </div>
+    <input type="hidden" name="view" value="{{ view_mode }}">
+    <div class="job-list-toolbar-actions">
+      <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{% url 'monitor:script-jobs' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-x-lg"></i> Clear</a>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Job view">
+        <a href="{{ card_view_url }}" class="btn {% if view_mode == 'cards' %}btn-accent{% else %}btn-outline-light{% endif %}" title="Card view"><i class="bi bi-grid-3x3-gap"></i></a>
+        <a href="{{ compact_view_url }}" class="btn {% if view_mode == 'compact' %}btn-accent{% else %}btn-outline-light{% endif %}" title="Compact list"><i class="bi bi-list-ul"></i></a>
+      </div>
+    </div>
+  </form>
+
+  <datalist id="script-schedule-presets">
+    <option value="1"></option>
+    <option value="2"></option>
+    <option value="7"></option>
+    <option value="15"></option>
+    <option value="30"></option>
+    <option value="60"></option>
+    <option value="360"></option>
+    <option value="1440"></option>
+  </datalist>
+
+  {% if view_mode == "compact" %}
+  <div class="job-compact-list">
+    {% for item in job_forms %}
+      {% with job=item.job run=item.last_run %}
+      <article class="job-compact-row{% if not job.enabled %} backup-job-summary-disabled{% endif %}">
+        <div class="job-compact-main">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
+            <span class="chip compact-chip">{% if job.is_manual %}Manual{% elif job.is_one_off %}One-off{% else %}Recurring{% endif %}</span>
+            {% if job.run_as_sudo %}<span class="chip compact-chip">sudo</span>{% endif %}
+          </div>
+          <h3 class="backup-job-title mb-1">{{ job.name }}</h3>
+          <div class="small text-secondary">{{ job.working_directory|default:"/" }} · {{ job.script_preview }}</div>
+        </div>
+        <div class="job-compact-meta">
+          <span>{% if job.is_manual %}Run now only{% elif job.is_one_off and job.scheduled_for %}<span data-local-datetime="{{ job.scheduled_for|date:'c' }}" data-local-style="datetime-short">{{ job.scheduled_for|date:"Y-m-d H:i" }}</span>{% else %}{{ job.schedule_label }}{% endif %}</span>
+          <span>{{ job.script_arguments_count }} params</span>
+        </div>
+        <div class="job-compact-last">
+          <span class="backup-job-endpoint-label">Last run</span>
+          {% if run %}
+            <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="job-last-run-link">
+              {% if run.status == "success" %}
+                <span class="run-dot success"></span>
+              {% elif run.status == "running" %}
+                <span class="run-dot running"></span>
+              {% elif run.status == "cancelled" %}
+                <span class="run-dot muted"></span>
+              {% else %}
+                <span class="run-dot failed"></span>
+              {% endif %}
+              <strong>{{ run.get_status_display }}</strong>
+              <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i" }}</span>
+            </a>
+          {% else %}
+            <span class="text-secondary small">No runs yet.</span>
+          {% endif %}
+        </div>
+        <div class="backup-job-actions job-compact-actions">
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light btn-sm" {% if not job.enabled %}disabled aria-disabled="true" title="Activate this job before running it"{% endif %}><i class="bi bi-play-fill"></i> Run</button>
+          </form>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="toggle_job" value="{{ job.id }}" class="btn {% if job.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-sm" title="{% if job.enabled %}Disable{% else %}Activate{% endif %}"><i class="bi {% if job.enabled %}bi-pause-circle{% else %}bi-check-circle{% endif %}"></i></button>
+          </form>
+          <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#viewScriptJobModal{{ job.id }}" title="View script"><i class="bi bi-code-slash"></i></button>
+          <a href="{% url 'monitor:script-job-edit' job.id %}" class="btn btn-accent btn-sm" title="Edit"><i class="bi bi-pencil-square"></i></a>
+        </div>
+      </article>
+      {% endwith %}
+    {% empty %}
+      <div class="text-secondary">No script jobs match these filters.</div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="backup-job-grid">
+    {% for item in job_forms %}
+      {% with job=item.job %}
+      <article class="backup-job-summary{% if not job.enabled %} backup-job-summary-disabled{% endif %}">
+        <div class="backup-job-summary-top">
+          <div class="d-flex align-items-center gap-3 min-w-0">
+            <div class="backup-job-icon"><i class="bi bi-terminal"></i></div>
+            <div class="min-w-0">
+              <div class="d-flex gap-2 align-items-center flex-wrap mb-1">
+                {% if job.enabled %}<span class="live-pill">ENABLED</span>{% else %}<span class="resolved-pill">DISABLED</span>{% endif %}
+                <span class="chip compact-chip">{% if job.is_manual %}Manual{% elif job.is_one_off %}One-off{% else %}Recurring{% endif %}</span>
+                {% if job.run_as_sudo %}<span class="chip compact-chip">sudo</span>{% endif %}
+              </div>
+              <h3 class="backup-job-title mb-0">{{ job.name }}</h3>
+            </div>
+          </div>
+          <div class="backup-job-next text-lg-end">
+            <div class="small text-secondary">{% if job.is_manual %}Trigger{% elif job.is_one_off %}Scheduled for{% else %}Cadence{% endif %}</div>
+            <strong>
+              {% if job.is_manual %}
+                Run now only
+              {% elif job.is_one_off and job.scheduled_for %}
+                <span data-local-datetime="{{ job.scheduled_for|date:'c' }}" data-local-style="datetime-short">{{ job.scheduled_for|date:"Y-m-d H:i" }}</span>
+              {% else %}
+                {{ job.schedule_label }}
+              {% endif %}
+            </strong>
+          </div>
+        </div>
+
+        <div class="backup-job-flow">
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Working directory</span>
+            <strong>{{ job.working_directory|default:"/" }}</strong>
+          </div>
+          <div class="backup-job-arrow"><i class="bi bi-arrow-right"></i></div>
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Preview</span>
+            <strong class="command-inline d-block">{{ job.script_preview }}</strong>
+          </div>
+        </div>
+
+        <div class="backup-job-metrics">
+          <span><i class="bi bi-clock-history"></i> {% if job.is_manual %}manual{% elif job.is_one_off %}one-off{% else %}{{ job.schedule_label|lower }}{% endif %}</span>
+          <span><i class="bi bi-shield-lock"></i> {% if job.run_as_sudo %}sudo{% else %}user{% endif %}</span>
+          <span><i class="bi bi-input-cursor-text"></i> {{ job.script_arguments_count }} params</span>
+          <span><i class="bi bi-stopwatch"></i> {{ job.run_timeout_seconds|human_uptime }} hard</span>
+          <span><i class="bi bi-hourglass-split"></i> {{ job.idle_timeout_seconds|human_uptime }} idle</span>
+        </div>
+
+        <div class="backup-job-runs">
+          <div class="backup-job-runs-title">Last runs</div>
+          <div class="backup-job-run-list">
+            {% for run in item.recent_runs %}
+              <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="backup-job-run-link">
+                {% if run.status == "success" %}
+                  <span class="run-dot success"></span>
+                {% elif run.status == "running" %}
+                  <span class="run-dot running"></span>
+                {% elif run.status == "cancelled" %}
+                  <span class="run-dot muted"></span>
+                {% else %}
+                  <span class="run-dot failed"></span>
+                {% endif %}
+                <span>{{ run.get_status_display }}</span>
+                <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i" }}</span>
+              </a>
+            {% empty %}
+              <span class="text-secondary small">No runs yet.</span>
+            {% endfor %}
+          </div>
+        </div>
+
+        <div class="backup-job-actions">
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="run_now" value="{{ job.id }}" class="btn btn-outline-light btn-sm" {% if not job.enabled %}disabled aria-disabled="true" title="Activate this job before running it"{% endif %}><i class="bi bi-play-fill"></i> Run now</button>
+          </form>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="toggle_job" value="{{ job.id }}" class="btn {% if job.enabled %}btn-outline-warning{% else %}btn-outline-success{% endif %} btn-sm">
+              {% if job.enabled %}<i class="bi bi-pause-circle"></i> Disable{% else %}<i class="bi bi-check-circle"></i> Activate{% endif %}
+            </button>
+          </form>
+          <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#viewScriptJobModal{{ job.id }}"><i class="bi bi-code-slash"></i> View script</button>
+          <a href="{% url 'monitor:script-job-edit' job.id %}" class="btn btn-accent btn-sm"><i class="bi bi-pencil-square"></i> Edit</a>
+          <form method="post">
+            {% csrf_token %}
+            <button type="submit" name="delete_job" value="{{ job.id }}" class="btn btn-outline-danger btn-sm"><i class="bi bi-trash3"></i> Delete</button>
+          </form>
+        </div>
+      </article>
+      {% endwith %}
+    {% empty %}
+      <div class="text-secondary">No script jobs match these filters.</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-between align-items-center mt-4">
+      <div class="small text-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</div>
+      <div class="d-flex gap-2">
+        {% if page_obj.has_previous %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+          <a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+        {% endif %}
+      </div>
+    </div>
+  {% endif %}
+</section>
+
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <section class="panel-card p-4 mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Running now</p>
+          <h2 class="h4 mb-0">Jobs in progress</h2>
+        </div>
+        <span class="badge text-bg-light border">Running {{ running_runs_count }}</span>
+      </div>
+      <div class="alerts-feed">
+        {% for run in running_runs %}
+          <article class="alert-card report-card backup-run-card running-backup-card" data-script-run-card data-run-id="{{ run.id }}" data-status-url="{% url 'monitor:script-job-run-status' run.id %}">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+                  <span class="live-pill" data-run-status-pill>RUNNING</span>
+                  <span class="chip compact-chip">{{ run.job.name }}</span>
+                </div>
+                <h3 class="h5 mb-2">{{ run.summary }}</h3>
+                <div class="small text-secondary mb-3" data-run-meta>
+                  Started <span data-local-datetime="{{ run.started_at|date:'c' }}" data-local-style="datetime-short">{{ run.started_at|date:"Y-m-d H:i:s" }}</span>
+                  {% if run.heartbeat_at %} • heartbeat <span data-local-datetime="{{ run.heartbeat_at|date:'c' }}" data-local-style="time-short">{{ run.heartbeat_at|date:"H:i:s" }}</span>{% endif %}
+                  {% if run.runner_label %} • runner {{ run.runner_label }}{% endif %}
+                </div>
+                <details class="backup-run-log-details" open>
+                  <summary>Live log</summary>
+                  <pre class="backup-run-log mb-0" data-run-log>{{ run.log_output|default:"Waiting for live output..." }}</pre>
+                </details>
+              </div>
+              <div class="text-end backup-run-side">
+                <div class="event-value" data-run-pid>{{ run.process_pid|default:"..." }}</div>
+                <div class="small text-secondary mb-2">{{ run.get_launched_by_display }}</div>
+                <form method="post" class="mb-2">
+                  {% csrf_token %}
+                  <button type="submit" name="stop_run" value="{{ run.id }}" class="btn btn-outline-danger btn-sm" data-run-stop>Stop run</button>
+                </form>
+                <a href="{% url 'monitor:script-job-run-detail' run.id %}" class="btn btn-outline-light btn-sm">Open run</a>
+              </div>
+            </div>
+          </article>
+        {% empty %}
+          <div class="text-secondary">No script jobs are running right now.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+</div>
+
+{% for item in job_forms %}
+  {% with job=item.job %}
+  <div class="modal fade" id="viewScriptJobModal{{ job.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content backup-modal-shell">
+        <div class="modal-header border-secondary-subtle">
+          <div>
+            <p class="eyebrow mb-1">View script</p>
+            <h2 class="h4 mb-0">{{ job.name }}</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="row g-4">
+            <div class="col-12 col-xl-4">
+              <div class="stat-stack">
+                <div class="mini-stat"><span class="label">Mode</span><strong>{% if job.is_manual %}Manual only{% elif job.is_one_off %}One-off{% else %}{{ job.schedule_label }}{% endif %}</strong></div>
+                <div class="mini-stat"><span class="label">Working directory</span><strong>{{ job.working_directory|default:"/" }}</strong></div>
+                <div class="mini-stat"><span class="label">Execution</span><strong>{% if job.run_as_sudo %}sudo{% else %}Current service user{% endif %}</strong></div>
+                <div class="mini-stat"><span class="label">Parameters</span><strong>{{ job.script_arguments_count }}</strong></div>
+                <div class="mini-stat"><span class="label">Next run</span><strong>{% if job.next_run_at %}<span data-local-datetime="{{ job.next_run_at|date:'c' }}" data-local-style="datetime-short">{{ job.next_run_at|date:"Y-m-d H:i:s" }}</span>{% else %}-{% endif %}</strong></div>
+              </div>
+            </div>
+            <div class="col-12 col-xl-8">
+              <div class="small text-secondary mb-2">Bash script</div>
+              <pre class="script-preview-shell"><code class="language-bash">{{ job.script_body }}</code></pre>
+              {% with args=job.normalized_script_arguments %}
+                <div class="script-argument-preview mt-3">
+                  <div>
+                    <span class="backup-job-endpoint-label">By order</span>
+                    {% for item in args.positionals %}
+                      <code>{{ forloop.counter }}: {{ item.value }}</code>
+                    {% empty %}
+                      <span class="text-secondary small">None</span>
+                    {% endfor %}
+                  </div>
+                  <div>
+                    <span class="backup-job-endpoint-label">Flags</span>
+                    {% for item in args.flags %}
+                      <code>{{ item.flag }}{% if item.value %} {{ item.value }}{% endif %}</code>
+                    {% empty %}
+                      <span class="text-secondary small">None</span>
+                    {% endfor %}
+                  </div>
+                </div>
+              {% endwith %}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% endwith %}
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+<script>
+  hljs.highlightAll();
+
+  document.querySelectorAll("[data-script-run-card]").forEach((card) => {
+    const poll = async () => {
+      try {
+        const response = await fetch(card.dataset.statusUrl, { headers: { "X-Requested-With": "fetch" } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        const logNode = card.querySelector("[data-run-log]");
+        if (logNode) {
+          const shouldStick = logNode.scrollHeight - logNode.scrollTop - logNode.clientHeight < 40;
+          if (logNode.textContent !== payload.log_output) {
+            logNode.textContent = payload.log_output || "No log output recorded.";
+            if (shouldStick) logNode.scrollTop = logNode.scrollHeight;
+          }
+        }
+        const pidNode = card.querySelector("[data-run-pid]");
+        if (pidNode) pidNode.textContent = payload.process_pid || "...";
+        const metaNode = card.querySelector("[data-run-meta]");
+        if (metaNode) {
+          const parts = [];
+          if (payload.heartbeat_at) {
+            parts.push(`heartbeat ${window.formatConfiguredDateTime(payload.heartbeat_at, "time-short") || payload.heartbeat_at}`);
+          }
+          if (payload.runner_label) {
+            parts.push(`runner ${payload.runner_label}`);
+          }
+          metaNode.textContent = parts.join(" • ");
+        }
+        const pill = card.querySelector("[data-run-status-pill]");
+        if (pill && payload.status !== "running") {
+          pill.className = payload.status === "success" ? "live-pill" : payload.status === "cancelled" ? "resolved-pill" : payload.status === "timed_out" ? "severity-pill severity-warning" : "severity-pill severity-critical";
+          pill.textContent = (payload.status_label || payload.status).toUpperCase();
+          const stopButton = card.querySelector("[data-run-stop]");
+          if (stopButton) {
+            stopButton.disabled = true;
+            stopButton.textContent = payload.status_label || payload.status;
+          }
+          card.dataset.pollingDone = "1";
+        }
+      } catch (_) {
+      }
+    };
+
+    poll();
+    const timer = window.setInterval(() => {
+      if (card.dataset.pollingDone === "1") {
+        window.clearInterval(timer);
+        return;
+      }
+      poll();
+    }, 4000);
+  });
+</script>
+{% endblock %}

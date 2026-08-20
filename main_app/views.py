@@ -19,7 +19,7 @@ class AdminRequiredMixin(UserPassesTestMixin):
 
 @method_decorator(csrf_exempt, name="dispatch")
 class SettingsView(AdminRequiredMixin, View):
-    template_name = "monitor/settings.html"
+    template_name = "main_app/settings.html"
 
     def get(self, request):
         settings_obj = MonitoringSettings.load()

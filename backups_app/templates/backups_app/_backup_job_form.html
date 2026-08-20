@@ -1,0 +1,208 @@
+<form method="post" class="vstack gap-3">
+  {% csrf_token %}
+  {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+  {% if create_job %}<input type="hidden" name="create_job" value="{{ create_job }}">{% endif %}
+
+  {% if form.errors %}
+    <div class="alert alert-danger mb-0" role="alert">
+      <strong>Backup job could not be saved.</strong>
+      <ul class="mb-0 mt-2">
+        {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+        {% for field in form %}
+          {% for error in field.errors %}<li>{{ field.label }}: {{ error }}</li>{% endfor %}
+        {% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <div class="backup-form-grid" data-backup-editor>
+    <section class="backup-form-section">
+      <div class="backup-form-section-header">
+        <div>
+          <p class="eyebrow mb-1">Basics</p>
+          <h2 class="h5 mb-0">Identity and schedule</h2>
+        </div>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label" for="{{ form.name.id_for_label }}">Job name</label>{{ form.name }}</div>
+        <div class="col-md-3">
+          <div class="d-flex justify-content-between align-items-center gap-2">
+            <label class="form-label mb-0" for="{{ form.backup_type.id_for_label }}">Backup type</label>
+            <button type="button" class="btn btn-outline-light btn-sm backup-info-button" data-backup-type-info-button data-bs-toggle="modal" data-bs-target="#backupTypeInfoModal" aria-label="Backup type info"><i class="bi bi-info-circle"></i></button>
+          </div>
+          {{ form.backup_type }}
+          <div class="form-text" data-backup-type-summary></div>
+        </div>
+        <div class="col-md-3"><label class="form-label" for="{{ form.schedule_mode.id_for_label }}">Schedule mode</label>{{ form.schedule_mode }}</div>
+        <div class="col-md-2" data-backup-interval-fields><label class="form-label" for="{{ form.schedule_minutes.id_for_label }}">Every (minutes)</label>{{ form.schedule_minutes }}</div>
+        <div class="col-12"><label class="form-label" for="{{ form.description.id_for_label }}">Description</label>{{ form.description }}</div>
+        <div class="col-md-3"><label class="form-label" for="{{ form.enabled.id_for_label }}">On</label><div class="form-check form-switch mt-2">{{ form.enabled }}</div></div>
+        <div class="col-12" data-backup-manual-fields><div class="form-text">Manual backup jobs run only when you click <strong>Run now</strong>.</div></div>
+        <div class="col-12" data-backup-scheduled-fields><div class="form-text">This job will not launch a second overlapping run of itself. Different backup jobs can still run in parallel.</div></div>
+      </div>
+    </section>
+
+    <section class="backup-form-section">
+      <div class="backup-form-section-header">
+        <div>
+          <p class="eyebrow mb-1">Copy plan</p>
+          <h2 class="h5 mb-0">Origin, destination and risk</h2>
+        </div>
+      </div>
+      <div class="backup-copy-plan" data-backup-copy-plan>
+        <div class="backup-copy-plan-heading">
+          <span class="eyebrow mb-0">Direction</span>
+          <strong data-copy-plan-title></strong>
+        </div>
+        <div class="backup-job-flow">
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Origin</span>
+            <strong data-copy-origin></strong>
+          </div>
+          <div class="backup-job-arrow"><i class="bi bi-arrow-right"></i></div>
+          <div class="backup-job-endpoint">
+            <span class="backup-job-endpoint-label">Destination</span>
+            <strong data-copy-destination></strong>
+          </div>
+        </div>
+        <div class="backup-copy-risk" data-copy-risk></div>
+      </div>
+    </section>
+
+    <section class="backup-form-section" data-local-path-section>
+      <div class="backup-form-section-header">
+        <div>
+          <p class="eyebrow mb-1">Local paths</p>
+          <h2 class="h5 mb-0">Local folders and mount checks</h2>
+        </div>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-6" data-local-source-fields>
+          <label class="form-label" for="{{ form.source_path.id_for_label }}" data-local-source-label>Local folder</label>
+          <div class="input-group flex-wrap backup-source-group">
+            {{ form.source_path }}
+            <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="backupFolderModal" data-input-id="{{ form.source_path.id_for_label }}">Browse</button>
+          </div>
+          <div class="form-text" data-local-source-help>For local, SSH, and HTTP push jobs this is the local folder used by the copy.</div>
+        </div>
+        <div class="col-md-6" data-local-destination-fields>
+          <label class="form-label" for="{{ form.local_dest_path.id_for_label }}" data-local-destination-label>Local destination folder</label>
+          <div class="input-group flex-wrap backup-source-group">
+            {{ form.local_dest_path }}
+            <button type="button" class="btn btn-outline-light backup-source-picker" data-path-browser-picker data-browser-modal-id="backupFolderModal" data-input-id="{{ form.local_dest_path.id_for_label }}">Browse</button>
+          </div>
+          <div class="form-text" data-local-destination-help>Used by local backups and HTTP pull jobs. In HTTP pull, this folder is overwritten from the remote server.</div>
+        </div>
+        <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.verify_mounted_device.id_for_label }}">Verify mounted device</label><div class="form-check form-switch mt-2">{{ form.verify_mounted_device }}</div></div>
+        <div class="col-md-3" data-local-fields><label class="form-label" for="{{ form.trigger_on_mount.id_for_label }}">Run when mount appears</label><div class="form-check form-switch mt-2">{{ form.trigger_on_mount }}</div></div>
+        <div class="col-md-6" data-local-fields><div class="form-text pt-md-4">Use these options for USB or removable targets. If the mounted path is absent, scheduled runs are skipped before changing data.</div></div>
+      </div>
+    </section>
+
+    <section class="backup-form-section" data-remote-fields>
+      <div class="backup-form-section-header">
+        <div>
+          <p class="eyebrow mb-1">SSH + rsync</p>
+          <h2 class="h5 mb-0">Remote host and authentication</h2>
+        </div>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label" for="{{ form.remote_host.id_for_label }}">Hostname or IP</label>{{ form.remote_host }}</div>
+        <div class="col-md-3"><label class="form-label" for="{{ form.remote_user.id_for_label }}">SSH user</label>{{ form.remote_user }}</div>
+        <div class="col-md-5"><label class="form-label" for="{{ form.remote_dir.id_for_label }}" data-remote-dir-label>Remote directory</label>{{ form.remote_dir }}<div class="form-text" data-remote-dir-help></div></div>
+        <div class="col-md-4"><label class="form-label" for="{{ form.remote_direction.id_for_label }}">SSH copy direction</label>{{ form.remote_direction }}</div>
+        <div class="col-md-3"><label class="form-label" for="{{ form.connection_mode.id_for_label }}">Connection mode</label>{{ form.connection_mode }}</div>
+        <div class="col-md-2"><label class="form-label" for="{{ form.ssh_port.id_for_label }}">SSH port</label>{{ form.ssh_port }}</div>
+        <div class="col-md-3"><label class="form-label" for="{{ form.auth_mode.id_for_label }}">Authentication</label>{{ form.auth_mode }}</div>
+        <div class="col-md-4"><label class="form-label" for="{{ form.ssh_password.id_for_label }}">SSH password</label>{{ form.ssh_password }}</div>
+        <div class="col-md-4"><label class="form-label" for="{{ form.install_public_key.id_for_label }}">Install public key</label><div class="form-check form-switch mt-2">{{ form.install_public_key }}</div></div>
+        <div class="col-md-4"><label class="form-label" for="{{ form.password_file_path.id_for_label }}">Password file on host</label>{{ form.password_file_path }}</div>
+        <div class="col-md-4"><label class="form-label" for="{{ form.public_key_path.id_for_label }}">Public key path on host</label>{{ form.public_key_path }}</div>
+        <div class="col-12">
+          <div class="form-text">
+            Direction controls which side is overwritten. Local -> remote is the existing default. Remote -> local makes the remote directory the source; with delete enabled, removed remote files are also deleted from the local destination.
+          </div>
+        </div>
+        <div class="col-12 d-flex justify-content-end" data-cloudflare-fields>
+          <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#cloudflareInfoModal">Cloudflare help</button>
+        </div>
+        <div class="col-md-6" data-cloudflare-fields><label class="form-label" for="{{ form.cloudflare_auth_home.id_for_label }}">Cloudflare auth home on host</label>{{ form.cloudflare_auth_home }}</div>
+        <div class="col-md-6" data-cloudflare-fields><label class="form-label" for="{{ form.cloudflare_service_token_id.id_for_label }}">Cloudflare service token ID</label>{{ form.cloudflare_service_token_id }}</div>
+        <div class="col-md-6" data-cloudflare-fields><label class="form-label" for="{{ form.cloudflare_service_token_secret.id_for_label }}">Cloudflare service token secret</label>{{ form.cloudflare_service_token_secret }}</div>
+        <div class="col-md-6" data-cloudflare-fields><div class="form-text pt-md-4">Leave Cloudflare fields empty if the job works without them. They are only for Cloudflare Access or a host auth session.</div></div>
+      </div>
+    </section>
+
+    <section class="backup-form-section" data-http-fields>
+      <div class="backup-form-section-header">
+        <div>
+          <p class="eyebrow mb-1">HTTP server</p>
+          <h2 class="h5 mb-0">Remote endpoint</h2>
+        </div>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-4"><label class="form-label" for="{{ form.http_remote_url.id_for_label }}">Remote server URL</label>{{ form.http_remote_url }}</div>
+        <div class="col-md-3"><label class="form-label" for="{{ form.http_direction.id_for_label }}">Direction</label>{{ form.http_direction }}</div>
+        <div class="col-md-5"><label class="form-label" for="{{ form.http_remote_path.id_for_label }}" data-http-remote-path-label>Remote folder</label>{{ form.http_remote_path }}<div class="form-text" data-http-remote-path-help></div></div>
+        <div class="col-md-6"><label class="form-label" for="{{ form.http_remote_token.id_for_label }}">Remote Bearer token</label>{{ form.http_remote_token }}</div>
+        <div class="col-md-6"><div class="form-text pt-md-4">The remote server must run this same project and expose the HTTP backup endpoints with the token configured in Settings.</div></div>
+      </div>
+    </section>
+
+    <section class="backup-form-section">
+      <div class="backup-form-section-header">
+        <div>
+          <p class="eyebrow mb-1">Limits</p>
+          <h2 class="h5 mb-0">Deletion, timeouts and exclusions</h2>
+        </div>
+      </div>
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label" for="{{ form.max_size_enabled.id_for_label }}">Max file size</label>
+          <div class="form-check form-switch mb-2">
+            {{ form.max_size_enabled }}
+            <label class="form-check-label" for="{{ form.max_size_enabled.id_for_label }}">Limit file size</label>
+          </div>
+          {{ form.max_size }}
+          {% for error in form.max_size.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          <div class="form-text">Leave off to copy files of any size.</div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="{{ form.run_timeout_seconds.id_for_label }}">Hard timeout</label>
+          {{ form.run_timeout_seconds }}
+          <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.run_timeout_seconds.id_for_label }}">
+            <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+            <select class="form-select" data-timeout-unit>
+              <option value="minutes">minutes</option>
+              <option value="hours">hours</option>
+              <option value="seconds">seconds</option>
+            </select>
+          </div>
+          {% for error in form.run_timeout_seconds.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          <div class="form-text">Maximum total runtime for one backup run.</div>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label" for="{{ form.idle_timeout_seconds.id_for_label }}">Idle timeout</label>
+          {{ form.idle_timeout_seconds }}
+          <div class="input-group backup-timeout-editor" data-timeout-editor data-timeout-input-id="{{ form.idle_timeout_seconds.id_for_label }}">
+            <input type="number" class="form-control" min="1" step="1" value="2" data-timeout-value>
+            <select class="form-select" data-timeout-unit>
+              <option value="minutes">minutes</option>
+              <option value="hours">hours</option>
+              <option value="seconds">seconds</option>
+            </select>
+          </div>
+          {% for error in form.idle_timeout_seconds.errors %}<div class="invalid-feedback d-block">{{ error }}</div>{% endfor %}
+          <div class="form-text">Maximum silence before the backup is considered stuck.</div>
+        </div>
+        <div class="col-md-3"><label class="form-label" for="{{ form.delete_enabled.id_for_label }}">Delete removed files</label><div class="form-check form-switch mt-2">{{ form.delete_enabled }}</div><div class="form-text" data-delete-help></div></div>
+        <div class="col-12"><label class="form-label" for="{{ form.exclude_patterns.id_for_label }}">Exclude patterns</label>{{ form.exclude_patterns }}</div>
+      </div>
+    </section>
+  </div>
+
+  <div class="d-flex gap-2 flex-wrap justify-content-end">
+    <a href="{{ cancel_url }}" class="btn btn-outline-light">Cancel</a>
+    {% if save_name %}<button type="submit" name="{{ save_name }}" value="{{ save_value }}" class="btn btn-accent">{{ submit_label }}</button>{% else %}<button type="submit" class="btn btn-accent">{{ submit_label }}</button>{% endif %}
+  </div>
+</form>

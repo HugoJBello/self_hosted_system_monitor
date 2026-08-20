@@ -19,7 +19,7 @@ class StaffRequiredMixin(UserPassesTestMixin):
 
 @method_decorator(ensure_csrf_cookie, name="dispatch")
 class WebTerminalView(StaffRequiredMixin, View):
-    template_name = "monitor/web_terminal.html"
+    template_name = "terminal_app/web_terminal.html"
 
     def get(self, request):
         return render(

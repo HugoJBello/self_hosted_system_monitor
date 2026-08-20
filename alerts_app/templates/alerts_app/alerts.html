@@ -1,0 +1,267 @@
+{% extends "main_app/base.html" %}
+{% load monitor_extras %}
+
+{% block title %}Alerts | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">Alert center</p>
+    <h1 class="display-6 mb-1">Server stress detection</h1>
+    <p class="text-secondary mb-0">Rules evaluate current and historical metrics after each snapshot. Notifications are sent automatically when enabled.</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="badge text-bg-light border">Rules {{ rules_count }}</span>
+    <span class="badge text-bg-light border">Active alerts {{ active_events_count }}</span>
+    {% if latest_snapshot %}
+      <span class="badge text-bg-light border">Last sample <span data-local-datetime="{{ latest_snapshot.captured_at|date:'c' }}" data-local-style="datetime-short">{{ latest_snapshot.captured_at|date:"Y-m-d H:i:s" }}</span></span>
+    {% endif %}
+  </div>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-xl-7">
+    <section class="panel-card p-4">
+      <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+          <p class="eyebrow mb-2">Push-style feed</p>
+          <h2 class="h4 mb-0">Recent alerts</h2>
+        </div>
+      </div>
+      <div class="alerts-feed">
+        {% for event in recent_events %}
+          <a href="{% url 'monitor:alert-detail' event.id %}" class="alert-card-link">
+          <article class="alert-card {% if event.is_active %}active{% endif %} severity-{{ event.severity }}">
+            <div class="d-flex justify-content-between align-items-start gap-3">
+              <div>
+                <div class="d-flex align-items-center gap-2 mb-2">
+                  <i class="bi {{ severity_icons|get_item:event.severity|default:'bi-bell' }} event-icon"></i>
+                  <span class="severity-pill severity-{{ event.severity }}">{{ event.severity|upper }}</span>
+                  {% if event.is_active %}
+                    <span class="live-pill">LIVE</span>
+                  {% else %}
+                    <span class="resolved-pill">RESOLVED</span>
+                  {% endif %}
+                </div>
+                <h3 class="h5 mb-2">{{ event.title }}</h3>
+                <p class="text-secondary mb-2">{{ event.message }}</p>
+                <div class="small text-secondary">
+                  Rule: {{ event.rule.name }} • Metric: {{ alert_metrics|get_item:event.metric|default:event.metric }} • Triggered <span data-local-datetime="{{ event.triggered_at|date:'c' }}" data-local-style="datetime-short">{{ event.triggered_at|date:"Y-m-d H:i:s" }}</span>
+                </div>
+                {% if event.notification_status_code %}
+                  <div class="small text-secondary mt-1">Notification HTTP {{ event.notification_status_code }}{% if event.notification_sent %} delivered{% else %} failed{% endif %}</div>
+                {% endif %}
+              </div>
+              <div class="text-end">
+                <div class="event-value">{{ event.evaluated_value|floatformat:2 }}</div>
+                <div class="small text-secondary">Threshold {{ event.threshold|floatformat:2 }}</div>
+              </div>
+            </div>
+          </article>
+          </a>
+        {% empty %}
+          <div class="text-secondary">No alert events yet.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-5">
+    <section class="panel-card p-4 h-100">
+      <p class="eyebrow mb-2">Live overview</p>
+      <h2 class="h4 mb-4">Alert posture</h2>
+      <div class="stat-stack">
+        <div class="mini-stat">
+          <span class="label">Notifications backend</span>
+          <strong>{% if settings_obj.notifications_enabled %}Enabled{% else %}Disabled{% endif %}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">Active incidents</span>
+          <strong>{{ active_events_count }}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">Sampling interval</span>
+          <strong>{{ settings_obj.sample_interval_seconds }}s</strong>
+        </div>
+      </div>
+      <hr class="border-secondary-subtle my-4">
+      <p class="text-secondary mb-0">Use averages and occurrence counts for sustained stress, or current mode for immediate incidents like full disk or zombie processes.</p>
+    </section>
+  </div>
+</div>
+
+<section class="panel-card p-4 mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <p class="eyebrow mb-2">Rule editor</p>
+      <h2 class="h4 mb-0">Alert configuration</h2>
+    </div>
+  </div>
+  <div class="rules-overview mb-4">
+    {% for rule in rules %}
+      <article class="rule-summary-card severity-{{ rule.severity }}">
+        <div class="rule-summary-top">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi {{ metric_icons|get_item:rule.metric|default:'bi-sliders' }} rule-icon"></i>
+            <strong>{{ rule.name }}</strong>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <span class="severity-pill severity-{{ rule.severity }}">{{ rule.severity|upper }}</span>
+            {% if rule.enabled %}
+              <span class="live-pill">ON</span>
+            {% else %}
+              <span class="resolved-pill">OFF</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="rule-summary-grid">
+          <span>{{ alert_metrics|get_item:rule.metric|default:rule.metric }}</span>
+          <span>{{ alert_modes|get_item:rule.evaluation_mode|default:rule.evaluation_mode }}</span>
+          <span>{{ alert_comparators|get_item:rule.comparator|default:rule.comparator }} {{ rule.threshold|floatformat:2 }}</span>
+          <span>{{ rule.window_minutes }}m window</span>
+          <span>{{ rule.min_occurrences }} hits</span>
+          <span>{{ rule.cooldown_minutes }}m cooldown</span>
+        </div>
+      </article>
+    {% endfor %}
+  </div>
+  <form method="post" class="vstack gap-3">
+    {% csrf_token %}
+    {{ formset.management_form }}
+    <div class="vstack gap-3">
+      {% for form in formset %}
+        <section class="config-section alert-rule-card severity-{{ form.instance.severity|default:'warning' }}">
+          {% for hidden in form.hidden_fields %}{{ hidden }}{% endfor %}
+          <div class="rule-editor-hero">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+              <div class="d-flex align-items-center gap-3">
+                <div class="rule-editor-icon-wrap">
+                  <i class="bi {{ metric_icons|get_item:form.instance.metric|default:'bi-sliders' }} rule-editor-icon"></i>
+                </div>
+                <div>
+                  <div class="rule-editor-kicker">Rule block</div>
+                  <div class="rule-editor-title">{{ form.instance.name|default:"New alert rule" }}</div>
+                </div>
+              </div>
+              <div class="rule-editor-badges">
+                <span class="severity-pill severity-{{ form.instance.severity|default:'warning' }}">{{ form.instance.severity|default:"warning"|upper }}</span>
+                {% if form.instance.enabled %}
+                  <span class="live-pill">ENABLED</span>
+                {% else %}
+                  <span class="resolved-pill">DISABLED</span>
+                {% endif %}
+                {% if form.instance.metric %}
+                  <span class="chip compact-chip">{{ alert_metrics|get_item:form.instance.metric|default:form.instance.metric }}</span>
+                {% endif %}
+              </div>
+            </div>
+            <div class="rule-editor-meta">
+              <span class="rule-meta-chip"><i class="bi bi-activity"></i> {{ alert_modes|get_item:form.instance.evaluation_mode|default:form.instance.evaluation_mode|default:"Current value" }}</span>
+              <span class="rule-meta-chip"><i class="bi bi-sliders"></i> {{ alert_comparators|get_item:form.instance.comparator|default:form.instance.comparator|default:">=" }} {{ form.instance.threshold|default:0|floatformat:2 }}</span>
+              <span class="rule-meta-chip"><i class="bi bi-clock-history"></i> {{ form.instance.window_minutes|default:0 }}m window</span>
+              <span class="rule-meta-chip"><i class="bi bi-arrow-repeat"></i> {{ form.instance.cooldown_minutes|default:0 }}m cooldown</span>
+            </div>
+          </div>
+
+          <div class="compact-rule-header">
+            <div class="row g-3 align-items-end">
+              <div class="col-lg-5">
+                <label class="form-label" for="{{ form.name.id_for_label }}">Rule name</label>
+                {{ form.name }}
+              </div>
+              <div class="col-6 col-lg-2">
+                <label class="form-label" for="{{ form.metric.id_for_label }}">Metric</label>
+                {{ form.metric }}
+              </div>
+              <div class="col-6 col-lg-2">
+                <label class="form-label" for="{{ form.threshold.id_for_label }}">Threshold</label>
+                {{ form.threshold }}
+              </div>
+              <div class="col-6 col-lg-1">
+                <label class="form-label" for="{{ form.enabled.id_for_label }}">On</label>
+                <div class="form-check form-switch mt-2">{{ form.enabled }}</div>
+              </div>
+              <div class="col-6 col-lg-1">
+                <label class="form-label" for="{{ form.position.id_for_label }}">#</label>
+                {{ form.position }}
+              </div>
+              <div class="col-6 col-lg-1">
+                <label class="form-label" for="{{ form.DELETE.id_for_label }}">Del</label>
+                <div class="form-check mt-2">{{ form.DELETE }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="rule-editor-section">
+            <div class="rule-section-title">
+              <i class="bi bi-ui-checks-grid"></i>
+              <span>Detection logic</span>
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-12">
+                <label class="form-label" for="{{ form.description.id_for_label }}">Description</label>
+                {{ form.description }}
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" for="{{ form.severity.id_for_label }}">Severity</label>
+                {{ form.severity }}
+              </div>
+              <div class="col-md-2">
+                <label class="form-label" for="{{ form.evaluation_mode.id_for_label }}">Mode</label>
+                {{ form.evaluation_mode }}
+              </div>
+              <div class="col-md-2">
+                <label class="form-label" for="{{ form.comparator.id_for_label }}">Comparator</label>
+                {{ form.comparator }}
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" for="{{ form.window_minutes.id_for_label }}">Window (minutes)</label>
+                {{ form.window_minutes }}
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" for="{{ form.min_occurrences.id_for_label }}">Min occurrences</label>
+                {{ form.min_occurrences }}
+              </div>
+              <div class="col-md-3">
+                <label class="form-label" for="{{ form.cooldown_minutes.id_for_label }}">Cooldown (minutes)</label>
+                {{ form.cooldown_minutes }}
+              </div>
+            </div>
+          </div>
+
+          <div class="rule-editor-section mt-3">
+            <div class="rule-section-title">
+              <i class="bi bi-broadcast"></i>
+              <span>Notification routing</span>
+            </div>
+            <div class="row g-3 mt-1">
+              <div class="col-md-3">
+                <label class="form-label" for="{{ form.notifications_enabled.id_for_label }}">Notify</label>
+                <div class="form-check form-switch mt-2">{{ form.notifications_enabled }}</div>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="{{ form.notification_channels.id_for_label }}">Rule channels</label>
+                {{ form.notification_channels }}
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="{{ form.notification_tags.id_for_label }}">Rule tags</label>
+                {{ form.notification_tags }}
+              </div>
+              <div class="col-md-4">
+                <label class="form-label" for="{{ form.notification_user.id_for_label }}">Rule user</label>
+                {{ form.notification_user }}
+              </div>
+            </div>
+          </div>
+
+          {% if form.errors %}
+            <div class="alert alert-danger mt-3 mb-0">{{ form.errors }}</div>
+          {% endif %}
+        </section>
+      {% endfor %}
+    </div>
+    <div>
+      <button type="submit" class="btn btn-accent">Save alert rules</button>
+    </div>
+  </form>
+</section>
+{% endblock %}
