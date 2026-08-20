@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 
 from main_app.models import VolumeOperation
-from main_app.volumes import execute_volume_operation
+from volumes_app.services import execute_volume_operation
 
 
 class Command(BaseCommand):

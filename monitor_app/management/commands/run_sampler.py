@@ -5,7 +5,7 @@ from django.core.management.base import BaseCommand
 from django.db import OperationalError
 
 from main_app.models import MonitoringSettings
-from main_app.services import collect_snapshot
+from monitor_app.services import collect_snapshot
 
 
 class Command(BaseCommand):

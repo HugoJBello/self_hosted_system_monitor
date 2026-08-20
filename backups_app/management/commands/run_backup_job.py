@@ -1,6 +1,6 @@
 from django.core.management.base import BaseCommand, CommandError
 
-from main_app.backups import execute_backup_job
+from backups_app.services import execute_backup_job
 from main_app.models import BackupJob, BackupRun
 
 

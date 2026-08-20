@@ -5,7 +5,7 @@ from urllib.parse import parse_qs
 
 from channels.generic.websocket import AsyncWebsocketConsumer
 
-from .terminal_sessions import DEFAULT_COLS, DEFAULT_ROWS, registry, terminal_idle_timeout
+from .sessions import DEFAULT_COLS, DEFAULT_ROWS, registry, terminal_idle_timeout
 
 
 class WebTerminalConsumer(AsyncWebsocketConsumer):

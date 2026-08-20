@@ -3,7 +3,7 @@ import time
 from collections import defaultdict
 from datetime import datetime, timezone as dt_timezone
 
-from .process_control import ProcessControlError, _run_host_command
+from monitor_app.process_control import ProcessControlError, _run_host_command
 
 
 _OVERVIEW_CACHE = {"timestamp": 0.0, "payload": None}

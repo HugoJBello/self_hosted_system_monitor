@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .terminal_consumers import WebTerminalConsumer
+from .consumers import WebTerminalConsumer
 
 
 websocket_urlpatterns = [

@@ -25,7 +25,7 @@ def terminal_command():
 
     host_root = os.getenv("MONITOR_ROOT_PATH", "/hostfs")
     if os.path.exists(os.path.join(host_root, "etc", "shadow")):
-        return ["python", "-m", "main_app.terminal_login"]
+        return ["python", "-m", "terminal_app.login"]
     return ["/bin/login"]
 
 

@@ -15,18 +15,18 @@ from django.urls import reverse
 from urllib.error import HTTPError
 from unittest.mock import patch
 
-from .alerting import ensure_default_alert_rules, evaluate_alerts
-from .backups import BackupExecutionResult, StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_command, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, finalize_backup_run, mark_stale_running_backups, request_backup_run_stop, run_backup_job
-from .docker_runtime import _group_containers_by_family
+from alerts_app.services import ensure_default_alert_rules, evaluate_alerts
+from backups_app.services import BackupExecutionResult, StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_command, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, finalize_backup_run, mark_stale_running_backups, request_backup_run_stop, run_backup_job
+from docker_runtime_app.runtime import _group_containers_by_family
 from .forms import BackupJobForm, ScriptJobForm
-from .http_backups import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
+from backups_app.http_services import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeMountPreference, VolumeOperation
-from .reporting import generate_report_for_rule
-from .script_jobs import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
-from .services import collect_snapshot
-from .path_browser import create_directory, list_directory_children as list_path_browser_children
-from .process_control import ProcessControlError
-from .volumes import _device_is_mounted, _mounted_device_error, _namespace_mount_references, execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
+from reports_app.services import generate_report_for_rule
+from jobs_app.services import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_script_command, dispatch_scheduled_script_jobs, finalize_script_run, request_script_run_stop, run_script_job
+from monitor_app.services import collect_snapshot
+from volumes_app.path_browser import create_directory, list_directory_children as list_path_browser_children
+from monitor_app.process_control import ProcessControlError
+from volumes_app.services import _device_is_mounted, _mounted_device_error, _namespace_mount_references, execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
 
 
 User = get_user_model()
@@ -209,7 +209,7 @@ class MonitorViewsTests(TestCase):
         class DummyTerminalSession:
             id = "existing-session"
 
-        with patch("main_app.terminal_views.registry") as registry_mock:
+        with patch("terminal_app.views.registry") as registry_mock:
             registry_mock.get.return_value = DummyTerminalSession()
             response = self.client.post(
                 self._path("monitor:terminal-api-start"),
@@ -861,7 +861,7 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "Timed out")
         self.assertNotContains(response, "Push backup")
 
-    @patch("main_app.docker_views.get_docker_overview")
+    @patch("docker_runtime_app.views.get_docker_overview")
     def test_docker_overview_page_loads(self, mock_get_docker_overview):
         family = {
             "key": "compose:test",
@@ -902,7 +902,7 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "test-web")
         self.assertContains(response, "nginx:latest")
 
-    @patch("main_app.docker_views.get_container_logs")
+    @patch("docker_runtime_app.views.get_container_logs")
     def test_docker_logs_view_returns_container_logs(self, mock_get_container_logs):
         mock_get_container_logs.return_value = {
             "tail": 200,
@@ -938,7 +938,7 @@ class MonitorViewsTests(TestCase):
             },
         )
 
-    @patch("main_app.docker_views.perform_docker_action")
+    @patch("docker_runtime_app.views.perform_docker_action")
     def test_docker_action_view_dispatches_compose_recreate(self, mock_perform_docker_action):
         mock_perform_docker_action.return_value = "Compose project recreated."
 
@@ -1536,7 +1536,7 @@ class AlertingTests(TestCase):
         ensure_default_alert_rules()
         self.assertGreater(AlertRule.objects.count(), 0)
 
-    @patch("main_app.alerting.send_json_notification")
+    @patch("alerts_app.services.send_json_notification")
     def test_alert_event_created_for_high_cpu(self, mock_send_json_notification):
         mock_send_json_notification.return_value = {"ok": True, "status_code": 200, "body": {"ok": True}}
         settings_obj = MonitoringSettings.load()
@@ -1725,7 +1725,7 @@ class AlertingTests(TestCase):
         self.assertIn("Top processes in the evaluation window", event.message)
         self.assertIn("python", event.message)
 
-    @patch("main_app.reporting.send_json_notification")
+    @patch("reports_app.services.send_json_notification")
     def test_generate_report_sends_notification_with_link(self, mock_send_json_notification):
         mock_send_json_notification.return_value = {"ok": True, "status_code": 201, "body": {"ok": True}}
         settings_obj = MonitoringSettings.load()
@@ -1791,7 +1791,7 @@ class BackupHelpersTests(TestCase):
     def test_create_directory_creates_folder_under_host_root(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             Path(temp_dir, "media").mkdir()
-            with patch("main_app.path_browser.HOST_ROOT_PATH", temp_dir):
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", temp_dir):
                 item = create_directory("/media", "new-folder")
 
             self.assertTrue(Path(temp_dir, "media", "new-folder").is_dir())
@@ -1806,7 +1806,7 @@ class BackupHelpersTests(TestCase):
             Path(temp_dir, "media", "mounted").mkdir(parents=True)
             Path(temp_dir, "media", "plain").mkdir()
             Path(proc_dir, "mounts").write_text("dev /media/mounted ext4 rw 0 0\n", encoding="utf-8")
-            with patch("main_app.path_browser.HOST_ROOT_PATH", temp_dir), patch.dict(os.environ, {"MONITOR_PROCFS_PATH": proc_dir}):
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", temp_dir), patch.dict(os.environ, {"MONITOR_PROCFS_PATH": proc_dir}):
                 children = list_path_browser_children("/media")
 
         mounted_item = next(item for item in children if item["path"] == "/media/mounted")
@@ -1833,7 +1833,7 @@ class BackupHelpersTests(TestCase):
         hint = _cloudflare_error_hint(job, "websocket: bad handshake\nConnection closed by UNKNOWN port 65535")
         self.assertIn("Cloudflare SSH handshake failed", hint)
 
-    @patch("main_app.backups.shutil_which", return_value="/usr/bin/rsync")
+    @patch("backups_app.services.shutil_which", return_value="/usr/bin/rsync")
     def test_remote_rsync_command_defaults_to_local_to_remote_push(self, mock_shutil_which):
         job = BackupJob(
             remote_host="ssh.example.com",
@@ -1848,7 +1848,7 @@ class BackupHelpersTests(TestCase):
         self.assertIn("--delete", command)
         self.assertEqual(command[-2:], ["/hostfs/home/test/Documents/", "backup@ssh.example.com:/srv/backups/test/"])
 
-    @patch("main_app.backups.shutil_which", return_value="/usr/bin/rsync")
+    @patch("backups_app.services.shutil_which", return_value="/usr/bin/rsync")
     def test_remote_rsync_pull_command_uses_remote_as_source_and_local_as_destination(self, mock_shutil_which):
         job = BackupJob(
             remote_host="ssh.example.com",
@@ -2127,8 +2127,8 @@ class BackupHelpersTests(TestCase):
         self.assertFalse(form.is_valid())
         self.assertIn("script_arguments", form.errors)
 
-    @patch("main_app.script_jobs.host_namespace_prefix", return_value=["nsenter", "--target", "1"])
-    @patch("main_app.script_jobs._run_streaming_command")
+    @patch("jobs_app.services.host_namespace_prefix", return_value=["nsenter", "--target", "1"])
+    @patch("jobs_app.services._run_streaming_command")
     def test_run_script_job_reports_success(self, mock_run_streaming_command, _mock_prefix):
         mock_run_streaming_command.return_value = StreamingCommandResult(0, "done", "")
         job = ScriptJob.objects.create(
@@ -2144,7 +2144,7 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(result.status, "success")
         self.assertIn("Script content:", result.log_output)
 
-    @patch("main_app.script_jobs.start_background_script_job")
+    @patch("jobs_app.services.start_background_script_job")
     def test_dispatch_scheduled_script_jobs_starts_due_job(self, mock_start_background):
         job = ScriptJob.objects.create(
             name="APT update",
@@ -2195,7 +2195,7 @@ class BackupHelpersTests(TestCase):
         self.assertLessEqual(len(script_run.log_output), SCRIPT_LOG_LIMIT)
         self.assertTrue(script_run.log_output.endswith("final zip open error"))
 
-    @patch("main_app.script_jobs.start_background_script_job")
+    @patch("jobs_app.services.start_background_script_job")
     def test_dispatch_scheduled_script_jobs_skips_manual_jobs(self, mock_start_background):
         ScriptJob.objects.create(
             name="Manual only",
@@ -2359,9 +2359,9 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(job.http_direction, "pull")
         self.assertEqual(job.local_dest_path, "/home/test/RestoredDocuments")
 
-    @patch("main_app.backups._run_streaming_command")
-    @patch("main_app.backups._ensure_local_destination", return_value="/hostfs/media/usb/docs")
-    @patch("main_app.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
+    @patch("backups_app.services._run_streaming_command")
+    @patch("backups_app.services._ensure_local_destination", return_value="/hostfs/media/usb/docs")
+    @patch("backups_app.services._ensure_local_source", return_value="/hostfs/home/test/Documents")
     def test_local_backup_job_uses_local_rsync_target(
         self,
         mock_ensure_local_source,
@@ -2384,7 +2384,7 @@ class BackupHelpersTests(TestCase):
         self.assertIn("/hostfs/home/test/Documents/", command)
         self.assertIn("/hostfs/media/usb/docs/", command)
 
-    @patch("main_app.backups._mounted_host_paths", return_value=set())
+    @patch("backups_app.services._mounted_host_paths", return_value=set())
     def test_local_backup_job_without_mount_verification_allows_unmounted_destination(
         self,
         mock_mounted_paths,
@@ -2399,13 +2399,13 @@ class BackupHelpersTests(TestCase):
             schedule_minutes=30,
         )
 
-        with patch("main_app.backups.os.makedirs") as mock_makedirs, patch("main_app.backups.os.path.isdir", return_value=True):
+        with patch("backups_app.services.os.makedirs") as mock_makedirs, patch("backups_app.services.os.path.isdir", return_value=True):
             destination = _ensure_local_destination(job)
 
         self.assertEqual(destination, "/hostfs/media/usb/docs")
         mock_makedirs.assert_called_once_with("/hostfs/media/usb/docs", exist_ok=True)
 
-    @patch("main_app.backups._mounted_host_paths", return_value={"/media/disk_usb_backups"})
+    @patch("backups_app.services._mounted_host_paths", return_value={"/media/disk_usb_backups"})
     def test_local_backup_job_mount_verification_accepts_parent_mount(
         self,
         mock_mounted_paths,
@@ -2432,11 +2432,11 @@ class BackupHelpersTests(TestCase):
 
         self.assertIn("/media/disk_usb_backups", mounts)
 
-    @patch("main_app.http_backups._upload_file")
-    @patch("main_app.http_backups._request_json")
-    @patch("main_app.http_backups._read_local_file", return_value=b"new")
+    @patch("backups_app.http_services._upload_file")
+    @patch("backups_app.http_services._request_json")
+    @patch("backups_app.http_services._read_local_file", return_value=b"new")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "keep.txt": {"size": 3, "mtime_ns": 1, "sha256": "same"},
@@ -2480,11 +2480,11 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
         self.assertEqual(mock_request_json.call_args.args[1], "compare")
 
-    @patch("main_app.http_backups._upload_file")
-    @patch("main_app.http_backups._request_json")
-    @patch("main_app.http_backups._read_local_file", return_value=b"new")
+    @patch("backups_app.http_services._upload_file")
+    @patch("backups_app.http_services._request_json")
+    @patch("backups_app.http_services._read_local_file", return_value=b"new")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "bad:name.txt": {"size": 3, "mtime_ns": 1, "sha256": "bad"},
@@ -2531,7 +2531,7 @@ class BackupHelpersTests(TestCase):
         self.assertTrue(any("Pushed 2/2 good.txt" in line for line in logs))
 
     @patch(
-        "main_app.backups.sync_http_backup",
+        "backups_app.services.sync_http_backup",
         return_value={"changed": 2, "transferred": 1, "failed": 1, "deleted": 0, "skipped": 0},
     )
     def test_http_backup_result_is_failed_when_file_errors_occur(self, mock_sync_http_backup):
@@ -2554,11 +2554,11 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(result.exit_code, 1)
         self.assertIn("1/2 transferred, 1 failed", result.summary)
 
-    @patch("main_app.http_backups._upload_file")
-    @patch("main_app.http_backups._request_json")
-    @patch("main_app.http_backups._read_local_file", return_value=b"new")
+    @patch("backups_app.http_services._upload_file")
+    @patch("backups_app.http_services._request_json")
+    @patch("backups_app.http_services._read_local_file", return_value=b"new")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
@@ -2604,11 +2604,11 @@ class BackupHelpersTests(TestCase):
         self.assertEqual([call.args[1] for call in mock_request_json.call_args_list], ["compare", "prune"])
         self.assertTrue(any("Remote prune: deleted 1" in line for line in logs))
 
-    @patch("main_app.http_backups._upload_file")
-    @patch("main_app.http_backups._request_json")
-    @patch("main_app.http_backups._read_local_file", return_value=b"new")
+    @patch("backups_app.http_services._upload_file")
+    @patch("backups_app.http_services._request_json")
+    @patch("backups_app.http_services._read_local_file", return_value=b"new")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
@@ -2657,10 +2657,10 @@ class BackupHelpersTests(TestCase):
         mock_upload_file.assert_called_once()
         self.assertTrue(any("Remote prune: deleted 1" in line for line in logs))
 
-    @patch("main_app.http_backups._head_remote_file")
-    @patch("main_app.http_backups._request_json")
+    @patch("backups_app.http_services._head_remote_file")
+    @patch("backups_app.http_services._request_json")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
@@ -2701,12 +2701,12 @@ class BackupHelpersTests(TestCase):
         mock_head_remote_file.assert_called_once()
         self.assertTrue(any("Remote HEAD checks" in line for line in logs))
 
-    @patch("main_app.http_backups._upload_file")
-    @patch("main_app.http_backups._head_remote_file")
-    @patch("main_app.http_backups._request_json")
-    @patch("main_app.http_backups._read_local_file", return_value=b"new")
+    @patch("backups_app.http_services._upload_file")
+    @patch("backups_app.http_services._head_remote_file")
+    @patch("backups_app.http_services._request_json")
+    @patch("backups_app.http_services._read_local_file", return_value=b"new")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
@@ -2751,12 +2751,12 @@ class BackupHelpersTests(TestCase):
         mock_upload_file.assert_called_once()
         self.assertEqual(mock_upload_file.call_args.args[3], "new.txt")
 
-    @patch("main_app.http_backups._delete_local_files")
-    @patch("main_app.http_backups._write_local_file")
-    @patch("main_app.http_backups._download_file", return_value=b"remote")
-    @patch("main_app.http_backups._request_json")
+    @patch("backups_app.http_services._delete_local_files")
+    @patch("backups_app.http_services._write_local_file")
+    @patch("backups_app.http_services._download_file", return_value=b"remote")
+    @patch("backups_app.http_services._request_json")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "keep.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
@@ -2820,12 +2820,12 @@ class BackupHelpersTests(TestCase):
         mock_delete_local_files.assert_called_once_with("/home/test/RestoredDocuments", ["old-local.txt"])
         self.assertTrue(any("Deleted 1 local files missing on remote." in line for line in logs))
 
-    @patch("main_app.http_backups._delete_local_files")
-    @patch("main_app.http_backups._write_local_file")
-    @patch("main_app.http_backups._download_file", return_value=b"remote")
-    @patch("main_app.http_backups._request_json")
+    @patch("backups_app.http_services._delete_local_files")
+    @patch("backups_app.http_services._write_local_file")
+    @patch("backups_app.http_services._download_file", return_value=b"remote")
+    @patch("backups_app.http_services._request_json")
     @patch(
-        "main_app.http_backups.build_manifest",
+        "backups_app.http_services.build_manifest",
         return_value={
             "files": {
                 "old-local.txt": {"size": 3, "mtime": 1, "mtime_ns": 1_000_000_000},
@@ -2868,7 +2868,7 @@ class BackupHelpersTests(TestCase):
         mock_write_local_file.assert_called_once()
         mock_delete_local_files.assert_not_called()
 
-    @patch("main_app.http_backups._request_json")
+    @patch("backups_app.http_services._request_json")
     def test_http_stat_batches_report_progress_for_heartbeat(self, mock_request_json):
         mock_request_json.return_value = {"ok": True, "files": {}, "skipped": []}
         progress_calls = []
@@ -2887,7 +2887,7 @@ class BackupHelpersTests(TestCase):
         self.assertIsNone(progress_calls[0])
         self.assertIn("1001/1001", progress_calls[1])
 
-    @patch("main_app.http_backups._request_json")
+    @patch("backups_app.http_services._request_json")
     def test_http_compare_batches_report_progress_for_heartbeat(self, mock_request_json):
         mock_request_json.return_value = {"ok": True, "changed": [], "missing": [], "skipped": []}
         progress_calls = []
@@ -2922,7 +2922,7 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(entries["folder"]["nested"], "dir")
         self.assertEqual(entries["folder/nested"]["photo.jpg"], "file")
 
-    @patch("main_app.http_backups._request_json")
+    @patch("backups_app.http_services._request_json")
     def test_http_prune_batches_report_progress_for_heartbeat(self, mock_request_json):
         mock_request_json.return_value = {"ok": True, "deleted": [], "skipped": []}
         progress_calls = []
@@ -2947,7 +2947,7 @@ class BackupHelpersTests(TestCase):
         self.assertIsNone(progress_calls[0])
         self.assertIn("502/502", progress_calls[1])
 
-    @patch("main_app.http_backups._head_remote_file", return_value=None)
+    @patch("backups_app.http_services._head_remote_file", return_value=None)
     def test_http_head_fallback_reports_progress_for_heartbeat(self, mock_head_remote_file):
         progress_calls = []
 
@@ -3163,7 +3163,7 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(_http_request_timeout(job), 900)
 
-    @patch("main_app.http_backups.urlopen")
+    @patch("backups_app.http_services.urlopen")
     def test_http_json_requests_gzip_large_payloads(self, mock_urlopen):
         mock_urlopen.return_value = FakeHttpResponse(b'{"ok": true}')
         payload = {"files": {"large.txt": {"name": "x" * HTTP_GZIP_MIN_BYTES}}}
@@ -3234,8 +3234,8 @@ class BackupHelpersTests(TestCase):
                 first.unlink(missing_ok=True)
                 second.unlink(missing_ok=True)
 
-    @patch("main_app.http_backups.time.sleep", return_value=None)
-    @patch("main_app.http_backups.urlopen")
+    @patch("backups_app.http_services.time.sleep", return_value=None)
+    @patch("backups_app.http_services.urlopen")
     def test_http_upload_retries_transient_server_errors(self, mock_urlopen, mock_sleep):
         server_error = HTTPError(
             "https://remote.example.com/system_monitor/backups/http/file/",
@@ -3260,8 +3260,8 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(mock_urlopen.call_count, 2)
         mock_sleep.assert_called_once()
 
-    @patch("main_app.http_backups.time.sleep", return_value=None)
-    @patch("main_app.http_backups.urlopen")
+    @patch("backups_app.http_services.time.sleep", return_value=None)
+    @patch("backups_app.http_services.urlopen")
     def test_http_upload_does_not_retry_bad_request(self, mock_urlopen, mock_sleep):
         mock_urlopen.side_effect = HTTPError(
             "https://remote.example.com/system_monitor/backups/http/file/",
@@ -3286,9 +3286,9 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(mock_urlopen.call_count, 1)
         mock_sleep.assert_not_called()
 
-    @patch("main_app.backups.start_background_backup")
-    @patch("main_app.backups._local_destination_is_available", return_value=False)
-    @patch("main_app.backups.mark_stale_running_backups", return_value=[])
+    @patch("backups_app.services.start_background_backup")
+    @patch("backups_app.services._local_destination_is_available", return_value=False)
+    @patch("backups_app.services.mark_stale_running_backups", return_value=[])
     def test_dispatch_scheduled_backups_skips_unmounted_local_jobs(
         self,
         mock_mark_stale,
@@ -3311,10 +3311,10 @@ class BackupHelpersTests(TestCase):
         self.assertGreater(job.next_run_at, timezone.now() - timezone.timedelta(seconds=1))
         mock_start_background.assert_not_called()
 
-    @patch("main_app.backups.start_background_backup")
-    @patch("main_app.backups._local_destination_is_available", return_value=True)
-    @patch("main_app.backups._mounted_host_paths", return_value={"/media/usb"})
-    @patch("main_app.backups.mark_stale_running_backups", return_value=[])
+    @patch("backups_app.services.start_background_backup")
+    @patch("backups_app.services._local_destination_is_available", return_value=True)
+    @patch("backups_app.services._mounted_host_paths", return_value={"/media/usb"})
+    @patch("backups_app.services.mark_stale_running_backups", return_value=[])
     def test_dispatch_scheduled_backups_triggers_local_job_when_mount_appears(
         self,
         mock_mark_stale,
@@ -3339,10 +3339,10 @@ class BackupHelpersTests(TestCase):
         self.assertTrue(job.last_mount_was_available)
         mock_start_background.assert_called_once_with(job, launched_by="scheduler")
 
-    @patch("main_app.backups.start_background_backup")
-    @patch("main_app.backups._local_destination_is_available", return_value=True)
-    @patch("main_app.backups._mounted_host_paths", return_value={"/media/usb"})
-    @patch("main_app.backups.mark_stale_running_backups", return_value=[])
+    @patch("backups_app.services.start_background_backup")
+    @patch("backups_app.services._local_destination_is_available", return_value=True)
+    @patch("backups_app.services._mounted_host_paths", return_value={"/media/usb"})
+    @patch("backups_app.services.mark_stale_running_backups", return_value=[])
     def test_dispatch_scheduled_backups_does_not_trigger_manual_local_job_when_mount_appears(
         self,
         mock_mark_stale,
@@ -3376,11 +3376,11 @@ class BackupHelpersTests(TestCase):
             connection_mode="cloudflare",
             cloudflare_auth_home="/home/goku",
         )
-        with patch("main_app.backups.os.path.isdir", return_value=True):
+        with patch("backups_app.services.os.path.isdir", return_value=True):
             env = _command_env(job)
         self.assertEqual(env["HOME"], "/hostfs/home/goku")
 
-    @patch("main_app.backups._backup_worker_matches_run", return_value=True)
+    @patch("backups_app.services._backup_worker_matches_run", return_value=True)
     def test_request_backup_run_stop_marks_stop_requested(self, mock_worker_matches):
         job = BackupJob.objects.create(
             name="Docs",
@@ -3398,8 +3398,8 @@ class BackupHelpersTests(TestCase):
             self.assertTrue(os.path.exists(os.path.join(tmpdir, "backup_runtime", f"run_{backup_run.id}.stop")))
         mock_worker_matches.assert_called_once_with(backup_run)
 
-    @patch("main_app.volumes._lsblk_rows", return_value=[])
-    @patch("main_app.volumes._disk_device_entries")
+    @patch("volumes_app.services._lsblk_rows", return_value=[])
+    @patch("volumes_app.services._disk_device_entries")
     def test_list_volumes_classifies_idle_automounts_as_unmounted(self, mock_disk_device_entries, _mock_lsblk_rows):
         mock_disk_device_entries.return_value = [
             {
@@ -3421,8 +3421,8 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(volumes["mounted"], [])
         self.assertEqual(volumes["unmounted"][0]["mountpoint"], "/media/archive")
 
-    @patch("main_app.volumes._disk_device_entries")
-    @patch("main_app.volumes._lsblk_rows")
+    @patch("volumes_app.services._disk_device_entries")
+    @patch("volumes_app.services._lsblk_rows")
     def test_list_volumes_deduplicates_unmounted_entries_by_volume_identity(self, mock_lsblk_rows, mock_disk_device_entries):
         mock_lsblk_rows.return_value = [
             {
@@ -3460,9 +3460,9 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(volumes["unmounted"][0]["uuid"], "abc")
         self.assertEqual(volumes["unmounted"][0]["identity_label"], "TOSHIBA External USB")
 
-    @patch("main_app.volumes._disk_device_entries", return_value=[])
-    @patch("main_app.volumes._usage_for_mountpoint", return_value={"total_gb": 100, "used_gb": 5, "free_gb": 95, "percent": 5, "free_percent": 95})
-    @patch("main_app.volumes._lsblk_rows")
+    @patch("volumes_app.services._disk_device_entries", return_value=[])
+    @patch("volumes_app.services._usage_for_mountpoint", return_value={"total_gb": 100, "used_gb": 5, "free_gb": 95, "percent": 5, "free_percent": 95})
+    @patch("volumes_app.services._lsblk_rows")
     def test_list_volumes_deduplicates_repeated_mounted_mountpoints(self, mock_lsblk_rows, _mock_usage, _mock_disk_device_entries):
         mock_lsblk_rows.return_value = [
             {
@@ -3483,8 +3483,8 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(volumes["mounted"][0]["device"], "/dev/sdd1")
         self.assertEqual(volumes["mounted"][0]["mountpoint"], "/media/disk_usb_backups")
 
-    @patch("main_app.volumes._disk_device_entries", return_value=[])
-    @patch("main_app.volumes._lsblk_rows")
+    @patch("volumes_app.services._disk_device_entries", return_value=[])
+    @patch("volumes_app.services._lsblk_rows")
     def test_list_volumes_suggests_saved_mountpoint_for_unmounted_volume(self, mock_lsblk_rows, _mock_disk_device_entries):
         VolumeMountPreference.objects.create(volume_key="uuid:abc", uuid="abc", mountpoint="/media/archive")
         mock_lsblk_rows.return_value = [
@@ -3503,17 +3503,17 @@ class BackupHelpersTests(TestCase):
 
         self.assertEqual(volumes["unmounted"][0]["suggested_mountpoint"], "/media/archive")
 
-    @patch("main_app.volumes._run_host_command", side_effect=ProcessControlError("mount: only root can do that"))
+    @patch("volumes_app.services._run_host_command", side_effect=ProcessControlError("mount: only root can do that"))
     def test_mount_volume_reports_sudo_retry_when_password_is_missing(self, _mock_run_host_command):
         with self.assertRaisesMessage(ProcessControlError, "Mount needs sudo permissions. Open advanced options, enter the sudo password, and try again."):
             mount_volume("/dev/sdb1", "/media/usb")
 
-    @patch("main_app.volumes._run_host_command", side_effect=ProcessControlError("Sorry, try again."))
+    @patch("volumes_app.services._run_host_command", side_effect=ProcessControlError("Sorry, try again."))
     def test_mount_volume_reports_bad_sudo_password(self, _mock_run_host_command):
         with self.assertRaisesMessage(ProcessControlError, "Mount failed because sudo authentication failed. Check the sudo password and try again."):
             mount_volume("/dev/sdb1", "/media/usb", sudo_password="bad")
 
-    @patch("main_app.volumes._run_host_command")
+    @patch("volumes_app.services._run_host_command")
     def test_mount_volume_prefers_ntfs3_for_ntfs_filesystems(self, mock_run_host_command):
         result = mount_volume("/dev/sdg1", "/media/usb_hd_libros_comics", fstype="ntfs", options="ro,force", sudo_password="secret")
 
@@ -3524,7 +3524,7 @@ class BackupHelpersTests(TestCase):
         )
         self.assertEqual(mock_run_host_command.call_count, 2)
 
-    @patch("main_app.volumes._run_host_command")
+    @patch("volumes_app.services._run_host_command")
     def test_mount_volume_falls_back_for_ntfs_when_ntfs3_fails(self, mock_run_host_command):
         mock_run_host_command.side_effect = [
             None,
@@ -3539,7 +3539,7 @@ class BackupHelpersTests(TestCase):
             ["mount", "-t", "ntfs", "/dev/sdg1", "/media/usb_hd_libros_comics"],
         )
 
-    @patch("main_app.volumes._run_host_command")
+    @patch("volumes_app.services._run_host_command")
     def test_mount_volume_adds_ntfs_recovery_hint(self, mock_run_host_command):
         ntfs_error = ProcessControlError("$MFTMirr does not match $MFT. NTFS is either inconsistent, or there is a hardware fault.")
         mock_run_host_command.side_effect = [None, ntfs_error, ntfs_error, ntfs_error]
@@ -3547,13 +3547,13 @@ class BackupHelpersTests(TestCase):
         with self.assertRaisesMessage(ProcessControlError, "retry read-only with options 'ro,force'"):
             mount_volume("/dev/sdg1", "/media/usb_hd_libros_comics", fstype="ntfs", sudo_password="secret")
 
-    @patch("main_app.volumes._run_host_command", side_effect=ProcessControlError("umount: /media/usb: target is busy."))
+    @patch("volumes_app.services._run_host_command", side_effect=ProcessControlError("umount: /media/usb: target is busy."))
     def test_unmount_volume_reports_command_detail(self, _mock_run_host_command):
         with self.assertRaisesMessage(ProcessControlError, "Unmount failed: umount: /media/usb: target is busy."):
             unmount_volume("/media/usb", sudo_password="secret")
 
-    @patch("main_app.volumes._namespace_mount_references")
-    @patch("main_app.volumes._run_host_command")
+    @patch("volumes_app.services._namespace_mount_references")
+    @patch("volumes_app.services._run_host_command")
     def test_unmount_volume_force_clears_namespace_references(self, mock_run_host_command, mock_namespace_mount_references):
         mock_namespace_mount_references.side_effect = [
             [{"pid": "123", "command": "filebrowser", "mountpoint": "/sources/media/usb", "fstype": "fuseblk"}],
@@ -3569,22 +3569,22 @@ class BackupHelpersTests(TestCase):
             ["nsenter", "--target", "123", "--mount", "umount", "-l", "/sources/media/usb"],
         )
 
-    @patch("main_app.volumes._run_host_command")
+    @patch("volumes_app.services._run_host_command")
     def test_update_volume_label_uses_filesystem_label_command(self, mock_run_host_command):
         result = update_volume_label("/dev/sdb1", "ARCHIVE", fstype="ext4", sudo_password="secret")
 
         self.assertEqual(result.message, "Updated label for /dev/sdb1.")
         mock_run_host_command.assert_called_once_with(["e2label", "/dev/sdb1", "ARCHIVE"], sudo_password="secret")
 
-    @patch("main_app.volumes._device_is_mounted", return_value=False)
-    @patch("main_app.volumes._run_host_command")
+    @patch("volumes_app.services._device_is_mounted", return_value=False)
+    @patch("volumes_app.services._run_host_command")
     def test_format_volume_requires_confirmation_and_uses_mkfs(self, mock_run_host_command, _mock_device_is_mounted):
         result = format_volume("/dev/sdb1", "ext4", label="ARCHIVE", confirm_text="FORMAT", confirm_device="/dev/sdb1", sudo_password="secret")
 
         self.assertEqual(result.message, "Formatted /dev/sdb1 as ext4.")
         mock_run_host_command.assert_called_once_with(["mkfs.ext4", "-F", "-L", "ARCHIVE", "/dev/sdb1"], sudo_password="secret", timeout_seconds=120)
 
-    @patch("main_app.volumes._device_is_mounted", return_value=False)
+    @patch("volumes_app.services._device_is_mounted", return_value=False)
     def test_format_volume_rejects_labels_too_long_for_filesystem(self, _mock_device_is_mounted):
         with self.assertRaisesMessage(ProcessControlError, "Volume label is too long for ext4. Use 16 characters or fewer."):
             format_volume("/dev/sdb1", "ext4", label="disk books comics", confirm_text="FORMAT", confirm_device="/dev/sdb1")
@@ -3593,7 +3593,7 @@ class BackupHelpersTests(TestCase):
         with self.assertRaisesMessage(ProcessControlError, "Formatting was not confirmed."):
             format_volume("/dev/sdb1", "ext4", confirm_text="", confirm_device="/dev/sdb1")
 
-    @patch("main_app.volumes._device_is_mounted", return_value=True)
+    @patch("volumes_app.services._device_is_mounted", return_value=True)
     def test_start_background_volume_operation_rejects_mounted_format_target(self, _mock_device_is_mounted):
         with self.assertRaisesMessage(ProcessControlError, "/dev/sdb1 is mounted. Unmount it before formatting."):
             start_background_volume_operation(
@@ -3604,7 +3604,7 @@ class BackupHelpersTests(TestCase):
                 confirm_device="/dev/sdb1",
             )
 
-    @patch("main_app.volumes._run_host_command")
+    @patch("volumes_app.services._run_host_command")
     def test_device_is_mounted_checks_findmnt_source(self, mock_run_host_command):
         class Result:
             returncode = 0
@@ -3647,7 +3647,7 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(references[0]["mountpoint"], "/sources/media/usb_hd_libros_comics")
         self.assertEqual(references[0]["command"], "filebrowser")
 
-    @patch("main_app.volumes._namespace_mount_references")
+    @patch("volumes_app.services._namespace_mount_references")
     def test_mounted_device_error_names_cross_namespace_owner(self, mock_namespace_mount_references):
         mock_namespace_mount_references.return_value = [
             {"pid": "123", "command": "filebrowser", "mountpoint": "/sources/media/usb_hd_libros_comics", "fstype": "fuseblk"}
@@ -3655,7 +3655,7 @@ class BackupHelpersTests(TestCase):
 
         self.assertIn("filebrowser pid 123 at /sources/media/usb_hd_libros_comics", _mounted_device_error("/dev/sdg1"))
 
-    @patch("main_app.volumes.update_volume_label")
+    @patch("volumes_app.services.update_volume_label")
     def test_execute_volume_operation_records_success(self, mock_update_label):
         mock_update_label.return_value.message = "Updated label for /dev/sdb1."
         operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
@@ -3667,7 +3667,7 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(operation.summary, "Updated label for /dev/sdb1.")
         self.assertIn("Started update label", operation.log_output)
 
-    @patch("main_app.volumes.update_volume_label", side_effect=ProcessControlError("Update label needs sudo permissions."))
+    @patch("volumes_app.services.update_volume_label", side_effect=ProcessControlError("Update label needs sudo permissions."))
     def test_execute_volume_operation_records_failure(self, _mock_update_label):
         operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
 
@@ -3677,9 +3677,9 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(operation.status, "failed")
         self.assertEqual(operation.summary, "Update label needs sudo permissions.")
 
-    @patch("main_app.backups.time.sleep", return_value=None)
-    @patch("main_app.backups._remove_runtime_files")
-    @patch("main_app.backups._write_runtime_state")
+    @patch("backups_app.services.time.sleep", return_value=None)
+    @patch("backups_app.services._remove_runtime_files")
+    @patch("backups_app.services._write_runtime_state")
     def test_finalize_backup_run_falls_back_to_direct_update(
         self,
         mock_write_runtime_state,
@@ -3736,9 +3736,9 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(backup_run.status, "failed")
         self.assertIn("heartbeat became stale", backup_run.log_output)
 
-    @patch("main_app.backups._runner_label", return_value="runner-a")
-    @patch("main_app.backups._process_cmdline", return_value="/usr/local/bin/python manage.py run_backup_job 7 --run-id 123")
-    @patch("main_app.backups._pid_is_alive", return_value=True)
+    @patch("backups_app.services._runner_label", return_value="runner-a")
+    @patch("backups_app.services._process_cmdline", return_value="/usr/local/bin/python manage.py run_backup_job 7 --run-id 123")
+    @patch("backups_app.services._pid_is_alive", return_value=True)
     def test_mark_stale_running_backups_keeps_live_worker_running(self, mock_pid_is_alive, mock_process_cmdline, mock_runner_label):
         job = BackupJob.objects.create(
             name="Docs",
@@ -3772,9 +3772,9 @@ class BackupHelpersTests(TestCase):
         mock_process_cmdline.assert_called_with(12345)
         mock_runner_label.assert_called_once()
 
-    @patch("main_app.backups._runner_label", return_value="runner-b")
-    @patch("main_app.backups._process_cmdline", return_value="/usr/local/bin/python manage.py run_backup_job 7 --run-id 123")
-    @patch("main_app.backups._pid_is_alive", return_value=True)
+    @patch("backups_app.services._runner_label", return_value="runner-b")
+    @patch("backups_app.services._process_cmdline", return_value="/usr/local/bin/python manage.py run_backup_job 7 --run-id 123")
+    @patch("backups_app.services._pid_is_alive", return_value=True)
     def test_mark_stale_running_backups_reconciles_runner_mismatch(self, mock_pid_is_alive, mock_process_cmdline, mock_runner_label):
         job = BackupJob.objects.create(
             name="Docs",
@@ -3807,9 +3807,9 @@ class BackupHelpersTests(TestCase):
         mock_process_cmdline.assert_not_called()
         mock_runner_label.assert_called_once()
 
-    @patch("main_app.backups._runner_label", return_value="runner-a")
-    @patch("main_app.backups._process_cmdline", return_value="/usr/bin/sleep 9999")
-    @patch("main_app.backups._pid_is_alive", return_value=True)
+    @patch("backups_app.services._runner_label", return_value="runner-a")
+    @patch("backups_app.services._process_cmdline", return_value="/usr/bin/sleep 9999")
+    @patch("backups_app.services._pid_is_alive", return_value=True)
     def test_request_backup_run_stop_cancels_when_pid_reused(self, mock_pid_is_alive, mock_process_cmdline, mock_runner_label):
         job = BackupJob.objects.create(
             name="Docs",
@@ -3838,7 +3838,7 @@ class BackupHelpersTests(TestCase):
 
     def test_periodic_heartbeat_runs_until_stopped(self):
         calls = []
-        with patch("main_app.backups.BACKUP_HEARTBEAT_INTERVAL_SECONDS", 0.01):
+        with patch("backups_app.services.BACKUP_HEARTBEAT_INTERVAL_SECONDS", 0.01):
             stop_event, thread = _start_periodic_heartbeat(lambda force=False: calls.append(force))
             deadline = time.monotonic() + 0.5
             while not calls and time.monotonic() < deadline:
@@ -3853,15 +3853,15 @@ class BackupHelpersTests(TestCase):
         self.assertTrue(_rsync_exit_is_partial_success(24))
         self.assertFalse(_rsync_exit_is_partial_success(12))
 
-    @patch("main_app.backups._command_env", return_value={})
-    @patch("main_app.backups._run_streaming_command")
-    @patch("main_app.backups._rsync_command", return_value=["rsync", "/src/", "host:/dst/"])
-    @patch("main_app.backups._key_auth_works", return_value=True)
-    @patch("main_app.backups._install_public_key", return_value="")
-    @patch("main_app.backups._ensure_remote_directory", return_value=(False, "Remote directory already existed."))
-    @patch("main_app.backups._resolve_password", return_value="")
-    @patch("main_app.backups._normalized_remote_host", return_value="backup.example.com")
-    @patch("main_app.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
+    @patch("backups_app.services._command_env", return_value={})
+    @patch("backups_app.services._run_streaming_command")
+    @patch("backups_app.services._rsync_command", return_value=["rsync", "/src/", "host:/dst/"])
+    @patch("backups_app.services._key_auth_works", return_value=True)
+    @patch("backups_app.services._install_public_key", return_value="")
+    @patch("backups_app.services._ensure_remote_directory", return_value=(False, "Remote directory already existed."))
+    @patch("backups_app.services._resolve_password", return_value="")
+    @patch("backups_app.services._normalized_remote_host", return_value="backup.example.com")
+    @patch("backups_app.services._ensure_local_source", return_value="/hostfs/home/test/Documents")
     def test_main_rsync_transfer_does_not_use_output_idle_timeout(
         self,
         mock_ensure_local_source,
@@ -3893,10 +3893,10 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(mock_run_streaming_command.call_args.kwargs["timeout_seconds"], 7200)
         self.assertEqual(mock_run_streaming_command.call_args.kwargs["idle_timeout_seconds"], None)
 
-    @patch("main_app.backups._command_env", return_value={})
-    @patch("main_app.backups._run_streaming_command")
-    @patch("main_app.backups._rsync_command", return_value=["rsync", "/src/", "host:/dst/"])
-    @patch("main_app.backups._ensure_local_source", return_value="/hostfs/home/test/Documents")
+    @patch("backups_app.services._command_env", return_value={})
+    @patch("backups_app.services._run_streaming_command")
+    @patch("backups_app.services._rsync_command", return_value=["rsync", "/src/", "host:/dst/"])
+    @patch("backups_app.services._ensure_local_source", return_value="/hostfs/home/test/Documents")
     def test_local_rsync_transfer_has_no_hard_timeout(
         self,
         mock_ensure_local_source,
@@ -3922,19 +3922,19 @@ class BackupHelpersTests(TestCase):
 
 
 class MonitoringIsolationTests(TestCase):
-    @patch("main_app.services.prune_old_snapshots")
-    @patch("main_app.services.dispatch_scheduled_reports")
-    @patch("main_app.services.evaluate_alerts")
-    @patch("main_app.services._process_rows", return_value={"rows": [], "total": 10, "running": 2, "sleeping": 8, "stopped": 0, "zombie": 0, "status_counts": {"running": 2}})
-    @patch("main_app.services._disk_devices", return_value=[])
-    @patch("main_app.services._network_stats", return_value={"sent_mb": 1, "recv_mb": 2, "sent_rate_kbps": 3, "recv_rate_kbps": 4})
-    @patch("main_app.services._safe_load_avg", return_value=(0.1, 0.2, 0.3))
-    @patch("main_app.services.psutil.disk_usage")
-    @patch("main_app.services.psutil.swap_memory")
-    @patch("main_app.services.psutil.virtual_memory")
-    @patch("main_app.services.psutil.cpu_count", side_effect=[4, 2])
-    @patch("main_app.services.psutil.cpu_percent", side_effect=[12.5, [12.5, 0.0]])
-    @patch("main_app.services.psutil.boot_time", return_value=1_700_000_000)
+    @patch("monitor_app.services.prune_old_snapshots")
+    @patch("monitor_app.services.dispatch_scheduled_reports")
+    @patch("monitor_app.services.evaluate_alerts")
+    @patch("monitor_app.services._process_rows", return_value={"rows": [], "total": 10, "running": 2, "sleeping": 8, "stopped": 0, "zombie": 0, "status_counts": {"running": 2}})
+    @patch("monitor_app.services._disk_devices", return_value=[])
+    @patch("monitor_app.services._network_stats", return_value={"sent_mb": 1, "recv_mb": 2, "sent_rate_kbps": 3, "recv_rate_kbps": 4})
+    @patch("monitor_app.services._safe_load_avg", return_value=(0.1, 0.2, 0.3))
+    @patch("monitor_app.services.psutil.disk_usage")
+    @patch("monitor_app.services.psutil.swap_memory")
+    @patch("monitor_app.services.psutil.virtual_memory")
+    @patch("monitor_app.services.psutil.cpu_count", side_effect=[4, 2])
+    @patch("monitor_app.services.psutil.cpu_percent", side_effect=[12.5, [12.5, 0.0]])
+    @patch("monitor_app.services.psutil.boot_time", return_value=1_700_000_000)
     def test_post_collection_failures_do_not_break_snapshot_collection(
         self,
         mock_boot_time,

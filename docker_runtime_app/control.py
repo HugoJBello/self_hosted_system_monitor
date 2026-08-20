@@ -1,5 +1,5 @@
-from .docker_runtime import get_docker_overview
-from .process_control import ProcessControlError, _run_host_command
+from .runtime import get_docker_overview
+from monitor_app.process_control import ProcessControlError, _run_host_command
 
 
 _DOCKER_ACTION_TIMEOUT_SECONDS = 120

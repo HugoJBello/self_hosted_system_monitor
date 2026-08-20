@@ -1,7 +1,7 @@
 from django.core.management.base import BaseCommand, CommandError
 
 from main_app.models import ScriptJob, ScriptJobRun
-from main_app.script_jobs import execute_script_job
+from jobs_app.services import execute_script_job
 
 
 class Command(BaseCommand):

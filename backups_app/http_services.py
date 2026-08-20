@@ -14,7 +14,7 @@ from urllib.request import Request, urlopen
 from django.http import FileResponse, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 
-from .models import MonitoringSettings
+from main_app.models import MonitoringSettings
 
 
 DEFAULT_HTTP_TIMEOUT_SECONDS = 60

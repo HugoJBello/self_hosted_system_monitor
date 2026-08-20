@@ -3,8 +3,8 @@ import time
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from main_app.backups import dispatch_scheduled_backups
-from main_app.script_jobs import dispatch_scheduled_script_jobs
+from backups_app.services import dispatch_scheduled_backups
+from jobs_app.services import dispatch_scheduled_script_jobs
 
 
 class Command(BaseCommand):
