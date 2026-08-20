@@ -22,7 +22,13 @@ from django.views.decorators.csrf import csrf_exempt
 from alerts_app.services import ensure_default_alert_rules, top_processes_for_alert_window
 from backups_app.services import _normalize_stream_output, get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
 from main_app.forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, ScriptJobForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
-from main_app.models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeOperation
+from main_app.models import MonitoringSettings
+from monitor_app.models import ProcessSnapshot, SystemSnapshot
+from alerts_app.models import AlertEvent, AlertRule
+from reports_app.models import ReportRule, ReportRun
+from jobs_app.models import ScriptJob, ScriptJobRun
+from backups_app.models import BackupJob, BackupRun
+from volumes_app.models import VolumeOperation
 from main_app.notification_client import build_test_payload, send_json_notification
 from volumes_app.path_browser import create_directory as create_path_directory, list_browser_roots as list_path_browser_roots, list_directory_children as list_path_directory_children
 from monitor_app.process_control import ProcessControlError, container_info_for_pid, docker_container_action, kill_process, reboot_host, restart_process, terminate_process, validate_process_identity
@@ -51,6 +57,15 @@ class LoginView(auth_views.LoginView):
 
 class LogoutView(auth_views.LogoutView):
     pass
+
+
+def _with_app_subpath(url):
+    app_subpath = getattr(settings, "APP_SUBPATH", "")
+    if not app_subpath or not url.startswith("/") or url.startswith("//"):
+        return url
+    if url == app_subpath or url.startswith(f"{app_subpath}/"):
+        return url
+    return f"{app_subpath}{url}"
 
 
 class PasswordView(LoginRequiredMixin, View):
@@ -123,4 +138,3 @@ class UsersView(AdminRequiredMixin, View):
             "create_form": create_form or UserAdminCreateForm(prefix="new"),
             "settings_obj": MonitoringSettings.load(),
         }
-

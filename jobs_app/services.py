@@ -16,7 +16,7 @@ from pathlib import Path
 from django.db import OperationalError
 from django.utils import timezone
 
-from main_app.models import ScriptJob, ScriptJobRun
+from jobs_app.models import ScriptJob, ScriptJobRun
 from monitor_app.process_control import host_namespace_prefix
 
 

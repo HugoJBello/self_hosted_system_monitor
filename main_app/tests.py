@@ -172,8 +172,8 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response["Location"], f"{settings.APP_SUBPATH}/terminal/")
 
-    def test_backups_page_explains_backup_type_and_copy_plan(self):
-        response = self.client.get(self._path("monitor:backups"))
+    def test_backup_job_form_explains_backup_type_and_copy_plan(self):
+        response = self.client.get(self._path("monitor:backup-job-create"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Copy plan")
@@ -271,8 +271,8 @@ class MonitorViewsTests(TestCase):
         messages_list = list(response.wsgi_request._messages)
         self.assertTrue(any("not confirmed" in str(message) for message in messages_list))
 
-    @patch("main_app.views.terminate_process")
-    @patch("main_app.views.validate_process_identity")
+    @patch("monitor_app.views.terminate_process")
+    @patch("monitor_app.views.validate_process_identity")
     def test_process_action_terminates_valid_live_process(self, mock_validate_process_identity, mock_terminate_process):
         class Current:
             name = "worker"
@@ -301,8 +301,8 @@ class MonitorViewsTests(TestCase):
         )
         mock_terminate_process.assert_called_once_with(123)
 
-    @patch("main_app.views.kill_process")
-    @patch("main_app.views.validate_process_identity")
+    @patch("monitor_app.views.kill_process")
+    @patch("monitor_app.views.validate_process_identity")
     def test_process_action_validates_historical_snapshot_before_kill(self, mock_validate_process_identity, mock_kill_process):
         class Current:
             name = "old-worker"
@@ -342,8 +342,8 @@ class MonitorViewsTests(TestCase):
         )
         mock_kill_process.assert_called_once_with(321)
 
-    @patch("main_app.views.docker_container_action")
-    @patch("main_app.views.validate_process_identity")
+    @patch("monitor_app.views.docker_container_action")
+    @patch("monitor_app.views.validate_process_identity")
     def test_process_action_restarts_docker_container_for_container_process(self, mock_validate_process_identity, mock_docker_container_action):
         class Current:
             name = "python"
@@ -363,7 +363,7 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
         mock_docker_container_action.assert_called_once_with("a" * 64, "restart")
 
-    @patch("main_app.views.reboot_host")
+    @patch("monitor_app.views.reboot_host")
     def test_process_action_can_request_reboot(self, mock_reboot_host):
         response = self.client.post(
             self._path("monitor:process-action"),
@@ -571,8 +571,8 @@ class MonitorViewsTests(TestCase):
         self.assertNotContains(response, "All job runs")
         self.assertNotContains(response, "Latest finished runs")
 
-    @patch("main_app.views.list_path_browser_roots", return_value=[{"path": "/media", "name": "media"}])
-    @patch("main_app.views.list_volumes")
+    @patch("volumes_app.views.list_path_browser_roots", return_value=[{"path": "/media", "name": "media"}])
+    @patch("volumes_app.views.list_volumes")
     def test_volumes_page_loads(self, mock_list_volumes, _mock_browser_roots):
         mock_list_volumes.return_value = {
             "mounted": [
@@ -614,8 +614,8 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "/dev/sdb1")
         self.assertContains(response, "Mount")
 
-    @patch("main_app.views.remember_mount_preference")
-    @patch("main_app.views.mount_volume")
+    @patch("volumes_app.views.remember_mount_preference")
+    @patch("volumes_app.views.mount_volume")
     def test_volumes_mount_action_uses_submitted_target(self, mock_mount_volume, _mock_remember_mount_preference):
         mock_mount_volume.return_value.message = "Mounted /dev/sdb1 on /media/usb."
 
@@ -640,8 +640,8 @@ class MonitorViewsTests(TestCase):
             sudo_password="secret",
         )
 
-    @patch("main_app.views.remember_mount_preference")
-    @patch("main_app.views.mount_volume")
+    @patch("volumes_app.views.remember_mount_preference")
+    @patch("volumes_app.views.mount_volume")
     def test_volumes_mount_action_remembers_submitted_volume_identity(self, mock_mount_volume, mock_remember_mount_preference):
         mock_mount_volume.return_value.message = "Mounted /dev/sdb1 on /media/usb."
 
@@ -669,7 +669,7 @@ class MonitorViewsTests(TestCase):
             mountpoint="/media/usb",
         )
 
-    @patch("main_app.views.unmount_volume")
+    @patch("volumes_app.views.unmount_volume")
     def test_volumes_unmount_action_uses_submitted_target(self, mock_unmount_volume):
         mock_unmount_volume.return_value.message = "Unmounted /media/usb."
 
@@ -685,7 +685,7 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
         mock_unmount_volume.assert_called_once_with("/media/usb", device="", sudo_password="secret", force=False)
 
-    @patch("main_app.views.unmount_volume")
+    @patch("volumes_app.views.unmount_volume")
     def test_volumes_unmount_action_can_request_forced_unmount(self, mock_unmount_volume):
         mock_unmount_volume.return_value.message = "Unmounted /media/usb."
 
@@ -703,7 +703,7 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
         mock_unmount_volume.assert_called_once_with("/media/usb", device="/dev/sdb1", sudo_password="secret", force=True)
 
-    @patch("main_app.views.start_background_volume_operation")
+    @patch("volumes_app.views.start_background_volume_operation")
     def test_volumes_label_action_starts_background_operation(self, mock_start_operation):
         operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
         mock_start_operation.return_value = operation
@@ -728,7 +728,7 @@ class MonitorViewsTests(TestCase):
             sudo_password="secret",
         )
 
-    @patch("main_app.views.start_background_volume_operation")
+    @patch("volumes_app.views.start_background_volume_operation")
     def test_volumes_format_action_starts_background_operation(self, mock_start_operation):
         operation = VolumeOperation.objects.create(action="format", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
         mock_start_operation.return_value = operation
@@ -786,7 +786,7 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.json()["device"], "/dev/sdb1")
         self.assertEqual(response.json()["status"], "running")
 
-    @patch("main_app.views.list_path_directory_children", side_effect=ValueError("This host path is not selectable."))
+    @patch("volumes_app.views.list_path_directory_children", side_effect=ValueError("This host path is not selectable."))
     def test_volume_tree_returns_json_error_for_invalid_path(self, _mock_children):
         response = self.client.get(self._path("monitor:volume-tree"), {"path": "/proc"})
 
@@ -794,7 +794,7 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.json()["items"], [])
         self.assertEqual(response.json()["error"], "This host path is not selectable.")
 
-    @patch("main_app.views.list_directory_children", side_effect=ValueError("Host paths must be absolute."))
+    @patch("backups_app.views.list_directory_children", side_effect=ValueError("Host paths must be absolute."))
     def test_backup_tree_returns_json_error_for_invalid_path(self, _mock_children):
         response = self.client.get(self._path("monitor:backup-tree"), {"path": "relative"})
 
@@ -802,7 +802,7 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.json()["items"], [])
         self.assertEqual(response.json()["error"], "Host paths must be absolute.")
 
-    @patch("main_app.views.create_path_directory", return_value={"path": "/media/new-folder", "name": "new-folder", "is_mounted": False})
+    @patch("volumes_app.views.create_path_directory", return_value={"path": "/media/new-folder", "name": "new-folder", "is_mounted": False})
     def test_volume_tree_can_create_directory(self, mock_create_path_directory):
         response = self.client.post(self._path("monitor:volume-tree"), {"parent_path": "/media", "folder_name": "new-folder"})
 
@@ -810,7 +810,7 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.json()["item"]["path"], "/media/new-folder")
         mock_create_path_directory.assert_called_once_with("/media", "new-folder")
 
-    @patch("main_app.views.create_path_directory", side_effect=ValueError("Folder name cannot contain path separators."))
+    @patch("backups_app.views.create_path_directory", side_effect=ValueError("Folder name cannot contain path separators."))
     def test_backup_tree_returns_json_error_for_invalid_create_directory(self, _mock_create_path_directory):
         response = self.client.post(self._path("monitor:backup-tree"), {"parent_path": "/media", "folder_name": "bad/name"})
 
@@ -994,7 +994,7 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "REMOTE TO LOCAL")
         self.assertNotContains(response, "Local finished")
 
-    @patch("main_app.views.start_background_script_job")
+    @patch("jobs_app.views.start_background_script_job")
     def test_script_job_run_now_starts_background_process(self, mock_start_background):
         job = ScriptJob.objects.create(
             name="APT update",
@@ -1066,7 +1066,7 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(job.schedule_minutes, 7)
         self.assertEqual(job.schedule_unit, "days")
 
-    @patch("main_app.views.start_background_backup")
+    @patch("backups_app.views.start_background_backup")
     def test_backup_run_now_starts_background_process(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Documents backup",
@@ -1082,7 +1082,7 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
         mock_start_background.assert_called_once()
 
-    @patch("main_app.views.start_background_backup")
+    @patch("backups_app.views.start_background_backup")
     def test_manual_backup_run_now_starts_background_process(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Manual documents backup",
@@ -1115,7 +1115,7 @@ class MonitorViewsTests(TestCase):
         self.assertIsNone(job.next_run_at)
         self.assertEqual(job.schedule_label, "Run only on demand")
 
-    @patch("main_app.views.start_background_backup")
+    @patch("backups_app.views.start_background_backup")
     def test_backup_run_now_does_not_duplicate_running_job(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Documents backup",
@@ -1136,7 +1136,7 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
         mock_start_background.assert_not_called()
 
-    @patch("main_app.views.start_background_backup")
+    @patch("backups_app.views.start_background_backup")
     def test_backup_run_now_does_not_start_disabled_job(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Disabled backup",
@@ -1177,7 +1177,7 @@ class MonitorViewsTests(TestCase):
         self.assertTrue(job.enabled)
         self.assertIsNotNone(job.next_run_at)
 
-    @patch("main_app.views.start_background_backup")
+    @patch("backups_app.views.start_background_backup")
     def test_backup_rerun_starts_background_process(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Documents backup",
@@ -1198,7 +1198,7 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:backups"), fetch_redirect_response=False)
         mock_start_background.assert_called_once_with(job, launched_by="manual")
 
-    @patch("main_app.views.start_background_backup")
+    @patch("backups_app.views.start_background_backup")
     def test_backup_rerun_does_not_start_disabled_job(self, mock_start_background):
         job = BackupJob.objects.create(
             name="Disabled backup",

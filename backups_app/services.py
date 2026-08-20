@@ -19,7 +19,7 @@ from urllib.parse import urlparse
 from django.utils import timezone
 from django.db import OperationalError
 
-from main_app.models import BackupJob, BackupRun
+from backups_app.models import BackupJob, BackupRun
 from .http_services import sync_http_backup
 from volumes_app.path_browser import list_browser_roots as _list_browser_roots
 from volumes_app.path_browser import list_directory_children as _list_directory_children

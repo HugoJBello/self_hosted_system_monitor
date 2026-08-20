@@ -14,7 +14,8 @@ from django.utils import timezone
 
 from alerts_app.services import evaluate_alerts
 from .memory import build_memory_breakdown
-from main_app.models import MonitoringSettings, ProcessSnapshot, SystemSnapshot
+from main_app.models import MonitoringSettings
+from monitor_app.models import ProcessSnapshot, SystemSnapshot
 from reports_app.services import dispatch_scheduled_reports
 
 

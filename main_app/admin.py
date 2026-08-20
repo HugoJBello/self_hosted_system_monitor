@@ -1,6 +1,10 @@
 from django.contrib import admin
 
-from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
+from alerts_app.models import AlertEvent, AlertRule
+from backups_app.models import BackupJob, BackupRun
+from monitor_app.models import ProcessSnapshot, SystemSnapshot
+from reports_app.models import ReportRule, ReportRun
+from .models import MonitoringSettings
 
 
 @admin.register(MonitoringSettings)

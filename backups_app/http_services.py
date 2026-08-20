@@ -225,12 +225,32 @@ def _auth_ok(request):
 
 def _json_request(request):
     try:
-        body = request.body
+        body = _read_request_body(request)
         if request.headers.get("Content-Encoding", "").lower() == "gzip":
             body = gzip.decompress(body)
         return json.loads(body.decode("utf-8") or "{}")
     except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         raise ValueError("Invalid JSON body.") from exc
+
+
+def _read_request_body(request):
+    stream = request.META.get("wsgi.input") or getattr(request, "_stream", None)
+    if stream is None:
+        return request.body
+
+    content_length = request.META.get("CONTENT_LENGTH")
+    if not content_length:
+        return stream.read()
+
+    remaining = int(content_length)
+    chunks = []
+    while remaining > 0:
+        chunk = stream.read(min(CHUNK_SIZE, remaining))
+        if not chunk:
+            raise ValueError("Request ended before the declared content length.")
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
 
 
 def _json_error(message, status=400):

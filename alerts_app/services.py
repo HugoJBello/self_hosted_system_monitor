@@ -3,7 +3,9 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.utils import timezone
 
-from main_app.models import AlertEvent, AlertRule, MonitoringSettings, ProcessSnapshot, SystemSnapshot
+from main_app.models import MonitoringSettings
+from monitor_app.models import ProcessSnapshot, SystemSnapshot
+from alerts_app.models import AlertEvent, AlertRule
 from main_app.notification_client import send_json_notification
 
 

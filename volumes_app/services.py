@@ -10,7 +10,7 @@ from pathlib import Path
 import psutil
 from django.utils import timezone
 
-from main_app.models import VolumeMountPreference, VolumeOperation
+from volumes_app.models import VolumeMountPreference, VolumeOperation
 from .path_browser import hostfs_path, normalize_host_path
 from monitor_app.process_control import ProcessControlError, host_namespace_prefix
 from monitor_app.services import disk_devices, _gb

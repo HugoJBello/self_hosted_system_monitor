@@ -7,7 +7,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from monitor_app.memory import build_memory_breakdown, build_snapshot_memory_breakdown
-from main_app.models import MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, SystemSnapshot
+from main_app.models import MonitoringSettings
+from monitor_app.models import ProcessSnapshot, SystemSnapshot
+from reports_app.models import ReportRule, ReportRun
 from main_app.notification_client import send_json_notification
 
 

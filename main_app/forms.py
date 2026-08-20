@@ -7,7 +7,11 @@ from django.contrib.auth.forms import PasswordChangeForm, SetPasswordForm, UserC
 from django.utils import timezone
 from zoneinfo import available_timezones
 
-from .models import AlertRule, BackupJob, MonitoringSettings, ReportRule, ScriptJob
+from alerts_app.models import AlertRule
+from backups_app.models import BackupJob
+from jobs_app.models import ScriptJob
+from reports_app.models import ReportRule
+from .models import MonitoringSettings
 
 
 User = get_user_model()
