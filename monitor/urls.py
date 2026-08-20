@@ -1,60 +1,19 @@
-from django.urls import path
+from django.urls import include, path
 
-from .docker_views import DockerActionView, DockerLogsView, DockerOverviewView
-from .http_backups import http_backup_compare_view, http_backup_delete_view, http_backup_file_view, http_backup_list_view, http_backup_manifest_view, http_backup_prune_view, http_backup_stat_view
-from .terminal_views import TerminalSessionCloseView, TerminalSessionInputView, TerminalSessionPollView, TerminalSessionResizeView, TerminalSessionStartView, WebTerminalView, terminal_websocket_http_view
-from .views import AlertDetailView, AlertsView, BackupJobCreateView, BackupJobEditView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView, HistoryView, LoginView, LogoutView, PasswordView, ProcessActionView, RedirectHomeView, ReportDetailView, ReportsView, ScriptJobCreateView, ScriptJobEditView, ScriptJobRunDetailView, ScriptJobRunsView, ScriptJobRunStatusView, ScriptJobsView, SettingsView, SystemMonitorView, UsersView, VolumeOperationDetailView, VolumeOperationStatusView, VolumeOperationsView, VolumeTreeView, VolumesView, healthz_view
+from .views import SettingsView
 
 app_name = "monitor"
 
 urlpatterns = [
-    path("healthz/", healthz_view, name="healthz"),
-    path("", RedirectHomeView.as_view(), name="home"),
-    path("login/", LoginView.as_view(), name="login"),
-    path("logout/", LogoutView.as_view(), name="logout"),
-    path("password/", PasswordView.as_view(), name="password"),
-    path("users/", UsersView.as_view(), name="users"),
+    path("", include("monitor_area.urls")),
+    path("", include("users.urls")),
     path("settings/", SettingsView.as_view(), name="settings"),
-    path("process-action/", ProcessActionView.as_view(), name="process-action"),
-    path("monitor/", SystemMonitorView.as_view(), name="system-monitor"),
-    path("history/", HistoryView.as_view(), name="history"),
-    path("alerts/", AlertsView.as_view(), name="alerts"),
-    path("alerts/<int:event_id>/", AlertDetailView.as_view(), name="alert-detail"),
-    path("reports/", ReportsView.as_view(), name="reports"),
-    path("reports/<int:report_id>/", ReportDetailView.as_view(), name="report-detail"),
-    path("docker/", DockerOverviewView.as_view(), name="docker-overview"),
-    path("docker/action/", DockerActionView.as_view(), name="docker-action"),
-    path("docker/logs/", DockerLogsView.as_view(), name="docker-logs"),
-    path("terminal/", WebTerminalView.as_view(), name="web-terminal"),
-    path("ws/terminal/", terminal_websocket_http_view, name="terminal-ws"),
-    path("terminal/api/start/", TerminalSessionStartView.as_view(), name="terminal-api-start"),
-    path("terminal/api/<str:session_id>/poll/", TerminalSessionPollView.as_view(), name="terminal-api-poll"),
-    path("terminal/api/<str:session_id>/input/", TerminalSessionInputView.as_view(), name="terminal-api-input"),
-    path("terminal/api/<str:session_id>/resize/", TerminalSessionResizeView.as_view(), name="terminal-api-resize"),
-    path("terminal/api/<str:session_id>/close/", TerminalSessionCloseView.as_view(), name="terminal-api-close"),
-    path("volumes/", VolumesView.as_view(), name="volumes"),
-    path("volumes/tree/", VolumeTreeView.as_view(), name="volume-tree"),
-    path("volumes/operations/", VolumeOperationsView.as_view(), name="volume-operations"),
-    path("volumes/operations/<int:operation_id>/status/", VolumeOperationStatusView.as_view(), name="volume-operation-status"),
-    path("volumes/operations/<int:operation_id>/", VolumeOperationDetailView.as_view(), name="volume-operation-detail"),
-    path("jobs/new/", ScriptJobCreateView.as_view(), name="script-job-create"),
-    path("jobs/<int:job_id>/edit/", ScriptJobEditView.as_view(), name="script-job-edit"),
-    path("jobs/", ScriptJobsView.as_view(), name="script-jobs"),
-    path("jobs/runs/", ScriptJobRunsView.as_view(), name="script-job-runs"),
-    path("jobs/runs/<int:run_id>/status/", ScriptJobRunStatusView.as_view(), name="script-job-run-status"),
-    path("jobs/runs/<int:run_id>/", ScriptJobRunDetailView.as_view(), name="script-job-run-detail"),
-    path("backups/new/", BackupJobCreateView.as_view(), name="backup-job-create"),
-    path("backups/<int:job_id>/edit/", BackupJobEditView.as_view(), name="backup-job-edit"),
-    path("backups/", BackupsView.as_view(), name="backups"),
-    path("backups/runs/", BackupRunsView.as_view(), name="backup-runs"),
-    path("backups/tree/", BackupTreeView.as_view(), name="backup-tree"),
-    path("backups/http/manifest/", http_backup_manifest_view, name="backup-http-manifest"),
-    path("backups/http/list/", http_backup_list_view, name="backup-http-list"),
-    path("backups/http/stat/", http_backup_stat_view, name="backup-http-stat"),
-    path("backups/http/compare/", http_backup_compare_view, name="backup-http-compare"),
-    path("backups/http/prune/", http_backup_prune_view, name="backup-http-prune"),
-    path("backups/http/file/", http_backup_file_view, name="backup-http-file"),
-    path("backups/http/delete/", http_backup_delete_view, name="backup-http-delete"),
-    path("backups/runs/<int:run_id>/status/", BackupRunStatusView.as_view(), name="backup-run-status"),
-    path("backups/runs/<int:run_id>/", BackupRunDetailView.as_view(), name="backup-run-detail"),
+    path("", include("history.urls")),
+    path("", include("alerts.urls")),
+    path("", include("reports.urls")),
+    path("", include("docker_app.urls")),
+    path("", include("terminal_app.urls")),
+    path("", include("volumes_app.urls")),
+    path("", include("jobs.urls")),
+    path("", include("backups_app.urls")),
 ]

@@ -26,6 +26,16 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "monitor",
+    "monitor_area",
+    "history",
+    "alerts",
+    "reports",
+    "docker_app",
+    "terminal_app",
+    "volumes_app",
+    "jobs",
+    "backups_app",
+    "users",
 ]
 
 MIDDLEWARE = [
