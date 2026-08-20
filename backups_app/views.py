@@ -1,4 +1,4 @@
-from monitor.http_backups import (
+from main_app.http_backups import (
     http_backup_compare_view,
     http_backup_delete_view,
     http_backup_file_view,
@@ -7,7 +7,7 @@ from monitor.http_backups import (
     http_backup_prune_view,
     http_backup_stat_view,
 )
-from monitor.views import BackupJobCreateView, BackupJobEditView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView
+from main_app.views import BackupJobCreateView, BackupJobEditView, BackupRunDetailView, BackupRunsView, BackupRunStatusView, BackupTreeView, BackupsView
 
 
 __all__ = [

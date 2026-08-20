@@ -1,4 +1,4 @@
-from monitor.terminal_views import (
+from main_app.terminal_views import (
     TerminalSessionCloseView,
     TerminalSessionInputView,
     TerminalSessionPollView,

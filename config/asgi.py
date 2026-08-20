@@ -10,7 +10,7 @@ os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
 
 django_asgi_app = get_asgi_application()
 
-from monitor import terminal_routing
+from main_app import terminal_routing
 
 
 class AppSubpathWebSocketMiddleware:

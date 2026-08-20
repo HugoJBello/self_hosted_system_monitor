@@ -1,5 +1,5 @@
-from monitor.path_browser import create_directory, list_browser_roots, list_directory_children
-from monitor.volumes import (
+from main_app.path_browser import create_directory, list_browser_roots, list_directory_children
+from main_app.volumes import (
     execute_volume_operation,
     list_volumes,
     mount_volume,

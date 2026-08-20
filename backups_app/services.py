@@ -1,4 +1,4 @@
-from monitor.backups import (
+from main_app.backups import (
     dispatch_scheduled_backups,
     execute_backup_job,
     get_runtime_state,
@@ -8,7 +8,7 @@ from monitor.backups import (
     request_backup_run_stop,
     start_background_backup,
 )
-from monitor.http_backups import build_manifest
+from main_app.http_backups import build_manifest
 
 
 __all__ = [
