@@ -1,0 +1,286 @@
+{% extends "main_app/base.html" %}
+{% load static %}
+
+{% block title %}Files | System Monitor{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" class="file-manager-page" id="file-manager-form" data-file-manager-page data-list-url="{% url 'monitor:file-manager-list' %}" data-current-path="{{ current_path }}" data-parent-path="{{ parent_path }}">
+  {% csrf_token %}
+  <input type="hidden" name="current_path" value="{{ current_path }}" data-current-path-input>
+  <input type="hidden" name="return_path" value="{{ current_path }}" data-return-path-input>
+  <input type="hidden" name="destination_path" value="" data-destination-path-input>
+  <div data-selected-paths-inputs></div>
+  <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end gap-3 mb-4">
+    <div>
+      <p class="eyebrow mb-2">File manager</p>
+      <h1 class="display-6 mb-1">Files</h1>
+      <p class="text-secondary mb-0">Browse host folders from a clean graphical view.</p>
+    </div>
+    <div class="file-manager-actions">
+      <button type="button" class="btn btn-outline-light" data-parent-button {% if not parent_path %}disabled{% endif %}>
+        <i class="bi bi-arrow-up"></i><span>Up</span>
+      </button>
+      <button type="button" class="btn btn-outline-light" data-view-mode-toggle aria-pressed="false">
+        <i class="bi bi-grid-3x3-gap"></i><span data-view-mode-label>Grid</span>
+      </button>
+      <div class="dropdown">
+        <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+          <i class="bi bi-toggles"></i><span>Options</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow">
+          <li>
+            <button type="button" class="dropdown-item" data-multiple-select-toggle aria-pressed="false">
+              <i class="bi bi-check2-square me-2"></i>Multiple select
+            </button>
+          </li>
+        </ul>
+      </div>
+      <a href="{% url 'monitor:file-manager-operations' %}" class="btn btn-outline-light">
+        <i class="bi bi-list-task"></i><span>Processes</span>
+      </a>
+      <div class="dropdown">
+        <button class="btn btn-accent dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-actions-toggle>
+          <i class="bi bi-lightning-charge"></i><span>Actions</span>
+        </button>
+        <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow">
+          <li><button type="button" class="dropdown-item" data-create-folder-trigger><i class="bi bi-folder-plus me-2"></i>New folder</button></li>
+          <li><button type="button" class="dropdown-item" data-upload-trigger><i class="bi bi-upload me-2"></i>Upload here</button></li>
+          <li><button type="button" class="dropdown-item" data-preview-trigger disabled><i class="bi bi-eye me-2"></i>Preview</button></li>
+          <li><button type="button" class="dropdown-item" data-download-trigger data-selection-action disabled><i class="bi bi-download me-2"></i>Download</button></li>
+          <li><button type="button" class="dropdown-item" data-destination-action="copy" data-selection-action disabled><i class="bi bi-copy me-2"></i>Copy to...</button></li>
+          <li><button type="button" class="dropdown-item" data-destination-action="move" data-selection-action disabled><i class="bi bi-arrows-move me-2"></i>Move to...</button></li>
+          <li><hr class="dropdown-divider"></li>
+          <li><button type="button" class="dropdown-item text-danger" data-delete-trigger data-selection-action disabled><i class="bi bi-trash me-2"></i>Delete</button></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <section class="panel-card file-manager-panel">
+    <div class="file-manager-toolbar">
+      <div class="file-manager-path">
+        <i class="bi bi-hdd-stack"></i>
+        <nav class="file-manager-breadcrumbs" data-current-breadcrumbs aria-label="Current path"></nav>
+      </div>
+      <div class="file-manager-summary">
+        <span data-item-count>{{ entries|length }}</span> items
+        <span class="file-manager-selection-count d-none" data-selection-count></span>
+      </div>
+    </div>
+
+    <div class="file-manager-status {% if not file_manager_error %}d-none{% endif %}" data-file-manager-error>
+      {{ file_manager_error }}
+    </div>
+
+    <div class="file-manager-list" role="table" aria-label="Items in current path" data-file-manager-area>
+      <div data-file-manager-table>
+        <div class="file-manager-row file-manager-row-head" role="row">
+          <div role="columnheader" class="file-manager-select-cell"></div>
+          <div role="columnheader">Name</div>
+          <div role="columnheader">Type</div>
+          <div role="columnheader">Size</div>
+          <div role="columnheader">Modified</div>
+          <div role="columnheader">Owner</div>
+          <div role="columnheader">Permissions</div>
+        </div>
+        <div data-file-manager-rows>
+          {% for entry in entries %}
+            <button type="button" class="file-manager-row file-manager-item" role="row" data-path="{{ entry.path }}" data-name="{{ entry.name }}" data-kind="{{ entry.kind }}" data-media-kind="{{ entry.media_kind }}" data-content-type="{{ entry.content_type }}" data-preview-url="{{ entry.preview_url|default:'' }}" data-size-bytes-value="{{ entry.size_bytes|default_if_none:'' }}" data-modified-at="{{ entry.modified_at }}" data-owner="{{ entry.owner|default:'' }}" data-group="{{ entry.group|default:'' }}" data-permissions="{{ entry.permissions|default:'' }}" data-mounted="{{ entry.is_mounted|yesno:'1,0' }}" data-symlink="{{ entry.is_symlink|yesno:'1,0' }}" aria-selected="false">
+              <span class="file-manager-select-cell" role="cell">
+                <span class="file-manager-checkbox" aria-hidden="true"><i class="bi bi-check"></i></span>
+              </span>
+              <div class="file-manager-name" role="cell">
+                <span class="file-manager-icon file-manager-icon-{{ entry.kind }}"><i class="bi {% if entry.is_dir %}bi-folder-fill{% else %}bi-file-earmark-text{% endif %}"></i></span>
+                <span class="text-truncate">{{ entry.name }}</span>
+                {% if entry.is_mounted %}<span class="file-manager-chip">mounted</span>{% endif %}
+                {% if entry.is_symlink %}<span class="file-manager-chip">link</span>{% endif %}
+              </div>
+              <div role="cell">{{ entry.kind|title }}</div>
+              <div role="cell" data-size-bytes="{{ entry.size_bytes|default_if_none:'' }}">{% if entry.size_bytes is None %}-{% else %}{{ entry.size_bytes }}{% endif %}</div>
+              <div role="cell" data-file-date="{{ entry.modified_at }}">{{ entry.modified_at|default:"-" }}</div>
+              <div role="cell">{{ entry.owner|default:"-" }}{% if entry.group %}:{{ entry.group }}{% endif %}</div>
+              <div role="cell"><code>{{ entry.permissions|default:"-" }}</code></div>
+            </button>
+          {% empty %}
+            <div class="file-manager-empty" data-file-manager-empty>No items in this location.</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="file-manager-grid d-none" data-file-manager-grid></div>
+    </div>
+  </section>
+
+  <div class="modal fade" id="fileDestinationModal" tabindex="-1" aria-hidden="true" data-destination-modal>
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <div>
+            <p class="eyebrow mb-1">Destination</p>
+            <h2 class="h5 mb-0" data-destination-title>Choose folder</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="file-manager-destination-topbar mb-3">
+            <div class="file-manager-path">
+              <i class="bi bi-folder2-open"></i>
+              <nav class="file-manager-breadcrumbs" data-destination-breadcrumbs aria-label="Destination path"></nav>
+            </div>
+            <button type="button" class="btn btn-outline-light btn-sm" data-destination-up disabled><i class="bi bi-arrow-up"></i> Up</button>
+          </div>
+          <div class="file-manager-destination-list" data-destination-rows></div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="submit" name="file_action" value="copy" class="btn btn-accent" data-destination-submit>Copy here</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="fileDeleteModal" tabindex="-1" aria-hidden="true" data-delete-modal>
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <div>
+            <p class="eyebrow mb-1">Delete</p>
+            <h2 class="h5 mb-0">Confirm deletion</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body vstack gap-3">
+          <div class="file-manager-status is-error m-0">
+            This will permanently delete the selected files and folders from the host filesystem.
+          </div>
+          <div class="file-manager-upload-selection text-secondary small" data-delete-summary>No items selected.</div>
+          <div class="file-manager-delete-list" data-delete-list></div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" name="file_action" value="delete" class="btn btn-danger" data-delete-confirm disabled>
+            <i class="bi bi-trash me-1"></i>Delete selected
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="fileCreateFolderModal" tabindex="-1" aria-hidden="true" data-create-folder-modal>
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <div>
+            <p class="eyebrow mb-1">New folder</p>
+            <h2 class="h5 mb-0">Create folder here</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <label class="form-label" for="newFolderName">Folder name</label>
+          <input id="newFolderName" type="text" name="folder_name" class="form-control" autocomplete="off" data-create-folder-name>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" name="file_action" value="mkdir" class="btn btn-accent">Create folder</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="fileUploadModal" tabindex="-1" aria-hidden="true" data-upload-modal>
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <div>
+            <p class="eyebrow mb-1">Upload</p>
+            <h2 class="h5 mb-0">Upload to current folder</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body vstack gap-3">
+          <div class="file-manager-path">
+            <i class="bi bi-folder2-open"></i>
+            <nav class="file-manager-breadcrumbs" data-upload-breadcrumbs aria-label="Upload destination"></nav>
+          </div>
+          <div>
+            <label class="form-label" for="uploadWorkers">Upload workers</label>
+            <input id="uploadWorkers" type="number" name="upload_workers" class="form-control" min="1" max="4" value="2" data-upload-workers>
+            <div class="form-text">Default 2. Kept low to avoid overloading the server while large files arrive from the browser.</div>
+          </div>
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="uploadUseChunks" checked data-upload-chunk-toggle>
+            <label class="form-check-label" for="uploadUseChunks">Split upload into smaller requests</label>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-light" data-upload-files-button><i class="bi bi-file-earmark-arrow-up"></i> Choose files</button>
+            <button type="button" class="btn btn-outline-light" data-upload-folder-button><i class="bi bi-folder-plus"></i> Choose folder</button>
+            <button type="button" class="btn btn-outline-light" data-upload-clear-button disabled><i class="bi bi-x-circle"></i> Clear</button>
+          </div>
+          <input type="file" class="d-none" multiple data-upload-files-input>
+          <input type="file" class="d-none" multiple webkitdirectory directory data-upload-folder-input>
+          <div class="file-manager-upload-selection text-secondary small" data-upload-selection>No files selected.</div>
+          <div class="file-manager-upload-list d-none" data-upload-list></div>
+          <div class="progress file-manager-upload-progress d-none" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-upload-progress-wrap>
+            <div class="progress-bar" style="width: 0%" data-upload-progress-bar>0%</div>
+          </div>
+          <div class="file-manager-status d-none m-0" data-upload-status></div>
+        </div>
+        <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-accent" data-upload-start disabled>Start upload</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="fileDownloadModal" tabindex="-1" aria-hidden="true" data-download-modal>
+    <div class="modal-dialog">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <div>
+            <p class="eyebrow mb-1">Download</p>
+            <h2 class="h5 mb-0">Preparing archive</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body vstack gap-3">
+          <div class="file-manager-upload-selection text-secondary small" data-download-selection>No items selected.</div>
+          <div class="progress file-manager-upload-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100">
+            <div class="progress-bar" style="width: 0%" data-download-progress-bar>0%</div>
+          </div>
+          <div class="file-manager-status m-0" data-download-status>Waiting to start.</div>
+          <pre class="command-modal-block file-manager-download-log mb-0 d-none" data-download-log></pre>
+        </div>
+        <div class="modal-footer border-secondary">
+          <a href="#" class="btn btn-accent disabled" data-download-ready>Download ZIP</a>
+          <a href="#" class="btn btn-outline-light disabled" data-download-detail>Process detail</a>
+          <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal fade" id="filePreviewModal" tabindex="-1" aria-hidden="true" data-preview-modal>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <div class="min-w-0">
+            <p class="eyebrow mb-1">Preview</p>
+            <h2 class="h5 mb-0 text-truncate" data-preview-title>File preview</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="file-manager-preview-stage" data-preview-stage>
+            <div class="file-manager-empty">Select a previewable file.</div>
+          </div>
+          <div class="file-manager-status d-none mt-3" data-preview-status></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260821-process-back-path"></script>
+{% endblock %}

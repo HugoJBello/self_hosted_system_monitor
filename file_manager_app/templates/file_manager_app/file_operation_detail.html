@@ -1,0 +1,126 @@
+{% extends "main_app/base.html" %}
+
+{% block title %}File Operation | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4" data-file-operation-detail data-status-url="{% url 'monitor:file-manager-operation-status' operation.id %}" data-download-url="{% if operation.action == 'download' %}{% url 'monitor:file-manager-operation-download' operation.id %}{% endif %}" data-auto-download-done="0">
+  <div>
+    <p class="eyebrow mb-2">File process detail</p>
+    <h1 class="display-6 mb-1">{{ operation.get_action_display }} operation</h1>
+    <p class="text-secondary mb-0" data-file-operation-summary>{{ operation.summary }}</p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <span class="{% if operation.status == 'failed' %}severity-pill severity-critical{% elif operation.status == 'paused' %}severity-pill severity-warning{% elif operation.status == 'cancelled' %}resolved-pill{% else %}live-pill{% endif %}" data-file-operation-status-pill>{{ operation.status|upper }}</span>
+    <a href="{{ file_manager_back_url }}" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    {% if operation.status == "running" %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="return_path" value="{{ return_path }}"><button type="submit" name="pause_operation" value="1" class="btn btn-outline-light btn-sm">Pause</button></form>
+      <form method="post">{% csrf_token %}<input type="hidden" name="return_path" value="{{ return_path }}"><button type="submit" name="cancel_operation" value="1" class="btn btn-outline-danger btn-sm">Cancel</button></form>
+    {% elif operation.status == "paused" or operation.status == "failed" or operation.status == "cancelled" %}
+      <form method="post">{% csrf_token %}<input type="hidden" name="return_path" value="{{ return_path }}"><button type="submit" name="resume_operation" value="1" class="btn btn-accent btn-sm">Resume</button></form>
+    {% endif %}
+    {% if operation.action == "download" %}
+      <a href="{% url 'monitor:file-manager-operation-download' operation.id %}" class="btn btn-accent btn-sm {% if operation.status != 'success' %}d-none{% endif %}" data-file-operation-download>Download ZIP</a>
+    {% endif %}
+    <a href="{{ file_manager_operations_url }}" class="btn btn-outline-light btn-sm">All processes</a>
+    <a href="{{ file_manager_back_url }}" class="btn btn-outline-light btn-sm">Files</a>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Progress</p>
+      <h2 class="h4 mb-1"><span data-file-operation-progress>{{ operation.progress_percent }}</span>%</h2>
+      <p class="text-secondary mb-0"><span data-file-operation-counts>{{ operation.processed_count }}/{{ operation.total_count }}</span> items</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Status</p>
+      <h2 class="h5 mb-1" data-file-operation-status-label>{{ operation.get_status_display }}</h2>
+      <p class="text-secondary mb-0">{{ operation.get_action_display }}</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Destination</p>
+      <h2 class="h6 mb-1">{{ operation.destination_path|default:"-" }}</h2>
+      <p class="text-secondary mb-0">Current <span data-file-operation-current>{{ operation.current_path|default:"-" }}</span></p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Worker</p>
+      <h2 class="h6 mb-1" data-file-operation-runner>{{ operation.runner_label|default:"-" }}</h2>
+      <p class="text-secondary mb-0">PID <span data-file-operation-pid>{{ operation.process_pid|default:"-" }}</span></p>
+    </section>
+  </div>
+</div>
+
+<section class="panel-card p-4">
+  <p class="eyebrow mb-2">Execution log</p>
+  <h2 class="h4 mb-4">Operation output</h2>
+  <pre class="command-modal-block backup-run-output-log mb-0" data-file-operation-log>{{ operation.log_output|default:"Operation is starting." }}</pre>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const fileOperationRoot = document.querySelector("[data-file-operation-detail]");
+  if (fileOperationRoot) {
+    function updatePill(status) {
+      const pill = document.querySelector("[data-file-operation-status-pill]");
+      if (!pill) return;
+      pill.className = "live-pill";
+      if (status === "failed") pill.className = "severity-pill severity-critical";
+      if (status === "paused") pill.className = "severity-pill severity-warning";
+      if (status === "cancelled") pill.className = "resolved-pill";
+      pill.textContent = String(status || "").toUpperCase();
+    }
+    const poll = async () => {
+      try {
+        const response = await fetch(fileOperationRoot.dataset.statusUrl, { headers: { "X-Requested-With": "fetch" } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        document.querySelector("[data-file-operation-summary]").textContent = payload.summary || "";
+        document.querySelector("[data-file-operation-progress]").textContent = payload.progress_percent;
+        document.querySelector("[data-file-operation-counts]").textContent = `${payload.processed_count}/${payload.total_count}`;
+        document.querySelector("[data-file-operation-status-label]").textContent = payload.status_label || payload.status;
+        document.querySelector("[data-file-operation-current]").textContent = payload.current_path || "-";
+        document.querySelector("[data-file-operation-runner]").textContent = payload.runner_label || "-";
+        document.querySelector("[data-file-operation-pid]").textContent = payload.process_pid || "-";
+        const logNode = document.querySelector("[data-file-operation-log]");
+        if (logNode) {
+          logNode.textContent = payload.log_output || "Operation is running.";
+          logNode.scrollTop = logNode.scrollHeight;
+        }
+        updatePill(payload.status);
+        const downloadButton = document.querySelector("[data-file-operation-download]");
+        if (payload.status === "success" && payload.download_url && downloadButton) {
+          downloadButton.href = payload.download_url;
+          downloadButton.classList.remove("d-none");
+          if (fileOperationRoot.dataset.autoDownloadDone !== "1") {
+            fileOperationRoot.dataset.autoDownloadDone = "1";
+            const frame = document.createElement("iframe");
+            frame.src = payload.download_url;
+            frame.className = "d-none";
+            frame.setAttribute("aria-hidden", "true");
+            document.body.appendChild(frame);
+            window.setTimeout(() => frame.remove(), 120000);
+          }
+        }
+        if (!["running"].includes(payload.status)) fileOperationRoot.dataset.pollingDone = "1";
+      } catch (_) {
+      }
+    };
+    poll();
+    const timer = window.setInterval(() => {
+      if (fileOperationRoot.dataset.pollingDone === "1") {
+        window.clearInterval(timer);
+        return;
+      }
+      poll();
+    }, 2500);
+  }
+</script>
+{% endblock %}

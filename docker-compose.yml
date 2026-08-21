@@ -29,7 +29,8 @@ services:
       MONITOR_PROCFS_PATH: "/hostfs/proc"
       GUNICORN_TIMEOUT_SECONDS: "960"
       WEB_TERMINAL_IDLE_TIMEOUT_SECONDS: "600"
-      DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE: "20971520"
+      DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE: "10737418240"
+      DJANGO_FILE_UPLOAD_MAX_MEMORY_SIZE: "2097152"
     volumes:
       - ./data:/app/data
       - /:/hostfs
@@ -51,7 +52,8 @@ services:
       SAMPLER_DEFAULT_INTERVAL: "60"
       MONITOR_ROOT_PATH: "/hostfs"
       MONITOR_PROCFS_PATH: "/hostfs/proc"
-      DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE: "20971520"
+      DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE: "10737418240"
+      DJANGO_FILE_UPLOAD_MAX_MEMORY_SIZE: "2097152"
     volumes:
       - ./data:/app/data
       - /:/hostfs:ro
@@ -77,7 +79,8 @@ services:
       BACKUP_SCHEDULER_POLL_SECONDS: "15"
       MONITOR_ROOT_PATH: "/hostfs"
       MONITOR_PROCFS_PATH: "/hostfs/proc"
-      DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE: "20971520"
+      DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE: "10737418240"
+      DJANGO_FILE_UPLOAD_MAX_MEMORY_SIZE: "2097152"
     volumes:
       - ./data:/app/data
       - /:/hostfs

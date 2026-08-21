@@ -1,4 +1,8 @@
 import os
+import pwd
+import grp
+import stat
+from datetime import datetime, timezone
 
 
 HOST_ROOT_PATH = os.getenv("MONITOR_ROOT_PATH", "/")
@@ -90,6 +94,17 @@ def list_browser_roots():
 
 
 def list_directory_children(host_path):
+    return [
+        {
+            "path": item["path"],
+            "name": item["name"],
+            "is_mounted": item["is_mounted"],
+        }
+        for item in list_directory_entries(host_path, include_files=False)
+    ]
+
+
+def list_directory_entries(host_path, *, include_files=False):
     normalized_path = normalize_host_path(host_path)
     try:
         absolute_path = hostfs_path(normalized_path)
@@ -100,26 +115,65 @@ def list_directory_children(host_path):
 
     children = []
     try:
-        entries = sorted(os.scandir(absolute_path), key=lambda entry: entry.name.lower())
+        entries = sorted(
+            os.scandir(absolute_path),
+            key=lambda entry: (not entry.is_dir(follow_symlinks=False), entry.name.lower()),
+        )
     except PermissionError:
         return []
 
     mounted_paths = _mounted_host_paths()
     for entry in entries:
-        if not entry.is_dir(follow_symlinks=False):
+        is_dir = entry.is_dir(follow_symlinks=False)
+        if not is_dir and not include_files:
             continue
         relative_path = os.path.join(normalized_path, entry.name).replace("\\", "/")
         if relative_path in EXCLUDED_BROWSER_PATHS:
             continue
         relative_path = relative_path if relative_path.startswith("/") else f"/{relative_path}"
-        children.append(
-            {
-                "path": relative_path,
-                "name": entry.name,
-                "is_mounted": relative_path in mounted_paths,
-            }
-        )
+        children.append(_entry_metadata(entry, relative_path, is_mounted=relative_path in mounted_paths))
     return children
+
+
+def _entry_metadata(entry, host_path, *, is_mounted=False):
+    try:
+        stat_result = entry.stat(follow_symlinks=False)
+    except OSError:
+        stat_result = None
+
+    mode = stat_result.st_mode if stat_result else 0
+    is_dir = entry.is_dir(follow_symlinks=False)
+    is_symlink = entry.is_symlink()
+    modified_at = datetime.fromtimestamp(stat_result.st_mtime, tz=timezone.utc).isoformat() if stat_result else ""
+
+    return {
+        "path": host_path,
+        "name": entry.name,
+        "kind": "folder" if is_dir else "file",
+        "is_dir": is_dir,
+        "is_file": not is_dir,
+        "is_symlink": is_symlink,
+        "is_mounted": is_mounted,
+        "size_bytes": stat_result.st_size if stat_result and not is_dir else None,
+        "modified_at": modified_at,
+        "permissions": stat.filemode(mode) if stat_result else "",
+        "owner": _owner_name(stat_result.st_uid) if stat_result else "",
+        "group": _group_name(stat_result.st_gid) if stat_result else "",
+    }
+
+
+def _owner_name(uid):
+    try:
+        return pwd.getpwuid(uid).pw_name
+    except KeyError:
+        return str(uid)
+
+
+def _group_name(gid):
+    try:
+        return grp.getgrgid(gid).gr_name
+    except KeyError:
+        return str(gid)
 
 
 def create_directory(parent_path, folder_name):

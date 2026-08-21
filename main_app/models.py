@@ -62,6 +62,10 @@ class MonitoringSettings(models.Model):
         max_length=64,
         default="Europe/Madrid",
     )
+    file_manager_start_path = models.CharField(
+        max_length=500,
+        default="/",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
@@ -91,6 +95,7 @@ class MonitoringSettings(models.Model):
                 "http_backup_token": os.getenv("HTTP_BACKUP_TOKEN", "change_this_token"),
                 "display_time_mode": os.getenv("SYSTEM_MONITOR_DISPLAY_TIME_MODE", "browser"),
                 "display_timezone": os.getenv("SYSTEM_MONITOR_DISPLAY_TIMEZONE", "Europe/Madrid"),
+                "file_manager_start_path": os.getenv("FILE_MANAGER_START_PATH", "/"),
             },
         )
         return settings_obj
@@ -119,6 +124,7 @@ from reports_app.models import ReportRule, ReportRun
 from jobs_app.models import ScriptJob, ScriptJobRun
 from backups_app.models import BackupJob, BackupRun
 from volumes_app.models import VolumeMountPreference, VolumeOperation
+from file_manager_app.models import FileOperation
 
 
 __all__ = [
@@ -126,6 +132,7 @@ __all__ = [
     "AlertRule",
     "BackupJob",
     "BackupRun",
+    "FileOperation",
     "MonitoringSettings",
     "ProcessSnapshot",
     "ReportRule",

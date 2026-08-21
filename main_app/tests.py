@@ -8,6 +8,7 @@ from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import OperationalError
 from django.utils import timezone
 from django.test import TestCase, override_settings
@@ -18,6 +19,7 @@ from unittest.mock import patch
 from alerts_app.services import ensure_default_alert_rules, evaluate_alerts
 from backups_app.services import BackupExecutionResult, StreamingCommandResult, _cloudflare_error_hint, _command_env, _consume_stream_buffer, _ensure_local_destination, _local_destination_is_available, _mounted_host_paths, _normalized_remote_host, _rsync_command, _rsync_exit_is_partial_success, _start_periodic_heartbeat, _stop_periodic_heartbeat, dispatch_scheduled_backups, finalize_backup_run, mark_stale_running_backups, request_backup_run_stop, run_backup_job
 from docker_runtime_app.runtime import _group_containers_by_family
+from file_manager_app.models import FileOperation
 from .forms import BackupJobForm, ScriptJobForm
 from backups_app.http_services import HTTP_GZIP_MIN_BYTES, HttpBackupError, _changed_files, _http_auth_headers, _http_request_timeout, _request_json, _request_remote_compare, _request_remote_file_heads, _request_remote_prune, _request_remote_stats, _source_directory_entries, _temporary_upload_path, _upload_file, sync_http_backup
 from .models import AlertEvent, AlertRule, BackupJob, BackupRun, MonitoringSettings, ProcessSnapshot, ReportRule, ReportRun, ScriptJob, ScriptJobRun, SystemSnapshot, VolumeMountPreference, VolumeOperation
@@ -226,6 +228,187 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(payload["session_id"], "existing-session")
         self.assertTrue(payload["reused"])
         self.assertIn("/terminal/api/existing-session/poll/", payload["poll_url"])
+
+    def test_file_manager_page_renders_folder_list(self):
+        response = self.client.get(self._path("monitor:file-manager"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "data-file-manager-page")
+        self.assertContains(response, "data-file-manager-rows")
+        self.assertContains(response, "data-file-manager-grid")
+        self.assertContains(response, "data-file-manager-area")
+        self.assertContains(response, "data-view-mode-toggle")
+        self.assertContains(response, "data-actions-toggle")
+        self.assertContains(response, "data-multiple-select-toggle")
+        self.assertContains(response, "data-preview-trigger")
+        self.assertContains(response, "data-preview-modal")
+        self.assertContains(response, "data-destination-modal")
+        self.assertContains(response, "data-delete-modal")
+        self.assertContains(response, "data-delete-trigger")
+        self.assertContains(response, "data-create-folder-modal")
+        self.assertContains(response, "data-upload-modal")
+        self.assertContains(response, "data-upload-list")
+        self.assertContains(response, "data-upload-clear-button")
+        self.assertContains(response, "data-upload-chunk-toggle")
+        self.assertNotContains(response, "data-confirm-submit=\"Delete selected files and folders?\"")
+        self.assertContains(response, reverse("monitor:file-manager-operations"))
+        self.assertContains(response, reverse("monitor:file-manager-list"))
+
+    def test_file_manager_list_api_returns_items(self):
+        response = self.client.get(self._path("monitor:file-manager-list"), {"path": "/"})
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["path"], "/")
+        self.assertIn("items", payload)
+        if payload["items"]:
+            self.assertIn("kind", payload["items"][0])
+
+    def test_file_manager_preview_serves_small_images_only(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            image_path = Path(tmpdir, "image.png")
+            image_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+            text_path = Path(tmpdir, "note.txt")
+            text_path.write_text("not an image", encoding="utf-8")
+
+            list_response = self.client.get(self._path("monitor:file-manager-list"), {"path": tmpdir})
+            self.assertEqual(list_response.status_code, 200)
+            image_item = next(item for item in list_response.json()["items"] if item["name"] == "image.png")
+            text_item = next(item for item in list_response.json()["items"] if item["name"] == "note.txt")
+            self.assertEqual(image_item["media_kind"], "image")
+            self.assertIn("preview_url", image_item)
+            self.assertEqual(text_item["media_kind"], "text")
+            self.assertIn("preview_url", text_item)
+
+            preview_response = self.client.get(image_item["preview_url"].replace(settings.APP_SUBPATH, "", 1))
+            self.assertEqual(preview_response.status_code, 200)
+            self.assertEqual(preview_response["Content-Type"], "image/png")
+
+            text_response = self.client.get(self._path("monitor:file-manager-preview"), {"path": str(text_path)})
+            self.assertEqual(text_response.status_code, 200)
+            self.assertEqual(text_response["Content-Type"], "text/plain")
+
+    def test_settings_page_exposes_file_manager_start_path(self):
+        response = self.client.get(self._path("monitor:settings"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "File manager")
+        self.assertContains(response, "file_manager_start_path")
+
+    def test_file_manager_operations_page_renders(self):
+        response = self.client.get(self._path("monitor:file-manager-operations"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "File operations")
+        self.assertContains(response, reverse("monitor:file-manager"))
+
+    def test_file_manager_operations_page_preserves_return_path(self):
+        return_path = "/app"
+        response = self.client.get(self._path("monitor:file-manager-operations"), {"return_path": return_path})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f"{reverse('monitor:file-manager')}?path=%2Fapp")
+
+    def test_file_manager_operation_detail_preserves_return_path(self):
+        operation = FileOperation.objects.create(action="copy", sources=["/tmp/source"], total_count=1)
+        response = self.client.get(self._path("monitor:file-manager-operation-detail", [operation.id]), {"return_path": "/app"})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Back")
+        self.assertContains(response, f"{reverse('monitor:file-manager')}?path=%2Fapp")
+
+    def test_file_manager_can_create_folder(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            response = self.client.post(
+                self._path("monitor:file-manager"),
+                {
+                    "file_action": "mkdir",
+                    "current_path": tmpdir,
+                    "folder_name": "created-from-test",
+                },
+            )
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(os.path.isdir(os.path.join(tmpdir, "created-from-test")))
+
+    def test_file_manager_chunked_upload_reassembles_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            start_response = self.client.post(
+                self._path("monitor:file-manager"),
+                {
+                    "file_action": "upload_start",
+                    "current_path": tmpdir,
+                    "file_count": "1",
+                    "upload_workers": "2",
+                },
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+            self.assertEqual(start_response.status_code, 200)
+            operation_id = start_response.json()["operation_id"]
+
+            for index, payload in enumerate([b"hello ", b"world"]):
+                chunk_response = self.client.post(
+                    self._path("monitor:file-manager"),
+                    {
+                        "file_action": "upload_chunk",
+                        "current_path": tmpdir,
+                        "operation_id": str(operation_id),
+                        "relative_path": "folder/upload.txt",
+                        "chunk_index": str(index),
+                        "total_chunks": "2",
+                        "chunk": SimpleUploadedFile("upload.txt", payload),
+                    },
+                    HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+                )
+                self.assertEqual(chunk_response.status_code, 200)
+
+            finish_response = self.client.post(
+                self._path("monitor:file-manager"),
+                {
+                    "file_action": "upload_finish",
+                    "current_path": tmpdir,
+                    "operation_id": str(operation_id),
+                },
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+
+            self.assertEqual(finish_response.status_code, 200)
+            self.assertEqual(Path(tmpdir, "folder", "upload.txt").read_bytes(), b"hello world")
+
+    def test_file_manager_download_starts_operation(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = os.path.join(tmpdir, "download.txt")
+            Path(file_path).write_text("download me", encoding="utf-8")
+            with patch("file_manager_app.views.start_background_file_operation"):
+                response = self.client.post(
+                    self._path("monitor:file-manager"),
+                    {
+                        "file_action": "download",
+                        "current_path": tmpdir,
+                        "return_path": tmpdir,
+                        "selected_paths": [file_path],
+                    },
+                    HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+                )
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertIn("status_url", payload)
+            self.assertIn("download_url", payload)
+            self.assertIn("return_path=", payload["detail_url"])
+
+    def test_file_manager_download_endpoint_serves_ready_archive(self):
+        from file_manager_app.models import FileOperation
+        from file_manager_app.services import download_archive_path
+
+        operation = FileOperation.objects.create(
+            action="download",
+            status="success",
+            sources=["/tmp/download.txt"],
+            total_count=1,
+            processed_count=1,
+            summary="Download ZIP ready.",
+        )
+        archive_path = download_archive_path(operation.id)
+        archive_path.write_bytes(b"zip-bytes")
+        self.addCleanup(lambda: archive_path.exists() and archive_path.unlink())
+
+        response = self.client.get(self._path("monitor:file-manager-operation-download", [operation.id]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Disposition"], f'attachment; filename="file-manager-download-{operation.id}.zip"')
 
     def test_admin_can_open_users_page(self):
         response = self.client.get(self._path("monitor:users"))

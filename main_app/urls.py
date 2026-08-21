@@ -13,6 +13,7 @@ urlpatterns = [
     path("", include("reports_app.urls")),
     path("", include("docker_runtime_app.urls")),
     path("", include("terminal_app.urls")),
+    path("", include("file_manager_app.urls")),
     path("", include("volumes_app.urls")),
     path("", include("jobs_app.urls")),
     path("", include("backups_app.urls")),

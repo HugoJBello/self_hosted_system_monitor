@@ -69,6 +69,20 @@
         </section>
 
         <section class="config-section">
+          <h2 class="h5 mb-3">File manager</h2>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label" for="{{ form.file_manager_start_path.id_for_label }}">Initial folder</label>
+              {{ form.file_manager_start_path }}
+              <div class="form-text">Absolute host path opened by default. Use `/` to start at the filesystem root.</div>
+              {% for error in form.file_manager_start_path.errors %}
+                <div class="text-danger small mt-1">{{ error }}</div>
+              {% endfor %}
+            </div>
+          </div>
+        </section>
+
+        <section class="config-section">
           <h2 class="h5 mb-3">Date and Time Display</h2>
           <div class="row g-3">
             <div class="col-md-5">
@@ -189,6 +203,10 @@
         <div class="mini-stat">
           <span class="label">HTTP backup receiver</span>
           <strong>{% if settings_obj.http_backup_token %}Token configured{% else %}Disabled{% endif %}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">File manager start</span>
+          <strong>{{ settings_obj.file_manager_start_path|default:"/" }}</strong>
         </div>
       </div>
       <hr class="border-secondary-subtle my-4">

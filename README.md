@@ -291,6 +291,8 @@ location = /system_monitor {
 }
 
 location /system_monitor/ {
+    client_max_body_size 10G;
+
     proxy_pass http://127.0.0.1:8012/;
 
     proxy_http_version 1.1;
@@ -314,6 +316,7 @@ Important notes:
 
 - Keep the trailing slash in `/system_monitor/`.
 - Keep the trailing slash in `proxy_pass`.
+- Keep `client_max_body_size` high enough for file-manager uploads. Align it with `DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE`; otherwise Nginx can return `413 Request Entity Too Large` before Django receives the upload.
 - With this example, Nginx strips `/system_monitor/` before forwarding to Django. `FORCE_SCRIPT_NAME` handles URL generation with the external prefix.
 - Keep `X-Forwarded-Prefix /system_monitor` aligned with `APP_SUBPATH`.
 - Add the public origin to `DJANGO_CSRF_TRUSTED_ORIGINS`, for example `https://*.hjbello.org` or explicit hosts such as `https://api-android18.hjbello.org`, otherwise login and other POST forms will be rejected by Django CSRF origin checks.

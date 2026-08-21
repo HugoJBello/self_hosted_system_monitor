@@ -1,4 +1,5 @@
 import json
+import os
 import re
 
 from django import forms
@@ -11,6 +12,7 @@ from alerts_app.models import AlertRule
 from backups_app.models import BackupJob
 from jobs_app.models import ScriptJob
 from reports_app.models import ReportRule
+from volumes_app.path_browser import hostfs_path, normalize_host_path
 from .models import MonitoringSettings
 
 
@@ -94,6 +96,7 @@ class MonitoringSettingsForm(forms.ModelForm):
             "http_backup_token",
             "display_time_mode",
             "display_timezone",
+            "file_manager_start_path",
         )
         widgets = {
             "sample_interval_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 10, "step": 5}),
@@ -114,6 +117,7 @@ class MonitoringSettingsForm(forms.ModelForm):
             "http_backup_token": forms.PasswordInput(attrs={"class": "form-control", "placeholder": "Bearer token"}, render_value=True),
             "display_time_mode": forms.Select(attrs={"class": "form-select js-display-time-mode"}),
             "display_timezone": forms.Select(attrs={"class": "form-select js-display-timezone"}),
+            "file_manager_start_path": forms.TextInput(attrs={"class": "form-control", "placeholder": "/"}),
         }
 
     COMMON_TIMEZONES = [
@@ -171,6 +175,16 @@ class MonitoringSettingsForm(forms.ModelForm):
         if value:
             return value
         return self.instance.http_backup_token or "change_this_token"
+
+    def clean_file_manager_start_path(self):
+        value = (self.cleaned_data.get("file_manager_start_path") or "/").strip() or "/"
+        try:
+            normalized = normalize_host_path(value)
+        except ValueError as exc:
+            raise forms.ValidationError(str(exc)) from exc
+        if not os.path.isdir(hostfs_path(normalized)):
+            raise forms.ValidationError("Choose an existing folder.")
+        return normalized
 
 
 class AlertRuleForm(forms.ModelForm):

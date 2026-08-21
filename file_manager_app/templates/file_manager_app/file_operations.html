@@ -1,0 +1,79 @@
+{% extends "main_app/base.html" %}
+
+{% block title %}File Processes | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">File processes</p>
+    <h1 class="display-6 mb-1">File operations</h1>
+    <p class="text-secondary mb-0">Track copy, move, delete and upload activity from the file manager.</p>
+  </div>
+  <a href="{{ file_manager_back_url }}" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+</div>
+
+<section class="panel-card p-4">
+  <form method="get" class="job-run-filter-bar mb-4">
+    <div>
+      <label class="form-label" for="fileOperationStatus">Status</label>
+      <select id="fileOperationStatus" name="status" class="form-select">
+        <option value="all"{% if status_filter == "all" %} selected{% endif %}>All statuses</option>
+        {% for value,label in status_choices %}
+          <option value="{{ value }}"{% if status_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label" for="fileOperationAction">Action</label>
+      <select id="fileOperationAction" name="action" class="form-select">
+        <option value="all"{% if action_filter == "all" %} selected{% endif %}>All actions</option>
+        {% for value,label in action_choices %}
+          <option value="{{ value }}"{% if action_filter == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="job-list-toolbar-actions">
+      <button type="submit" class="btn btn-accent btn-sm"><i class="bi bi-funnel"></i> Filter</button>
+      <a href="{% url 'monitor:file-manager-operations' %}" class="btn btn-outline-light btn-sm"><i class="bi bi-x-lg"></i> Clear</a>
+    </div>
+  </form>
+
+  <div class="execution-list">
+    {% for operation in page_obj.object_list %}
+      <article class="execution-row">
+        <div class="execution-status">
+          {% if operation.status == "success" %}
+            <span class="live-pill">SUCCESS</span>
+          {% elif operation.status == "running" %}
+            <span class="live-pill">RUNNING</span>
+          {% elif operation.status == "paused" %}
+            <span class="severity-pill severity-warning">PAUSED</span>
+          {% elif operation.status == "cancelled" %}
+            <span class="resolved-pill">CANCELLED</span>
+          {% else %}
+            <span class="severity-pill severity-critical">FAILED</span>
+          {% endif %}
+          <span class="execution-exit">{{ operation.processed_count }}/{{ operation.total_count }}</span>
+        </div>
+        <div class="execution-main">
+          <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
+            <span class="chip compact-chip">{{ operation.get_action_display }}</span>
+            {% if operation.runner_label %}<span class="chip compact-chip">{{ operation.runner_label }}</span>{% endif %}
+          </div>
+          <h3 class="h6 mb-1">{{ operation.summary|default:"File operation" }}</h3>
+          <div class="small text-secondary command-inline">{{ operation.current_path|default:operation.destination_path|default:"-" }}</div>
+        </div>
+        <div class="execution-times">
+          <span>Started <strong data-local-datetime="{{ operation.started_at|date:'c' }}" data-local-style="datetime-short">{{ operation.started_at|date:"Y-m-d H:i:s" }}</strong></span>
+          {% if operation.finished_at %}<span>Finished <strong data-local-datetime="{{ operation.finished_at|date:'c' }}" data-local-style="datetime-short">{{ operation.finished_at|date:"Y-m-d H:i:s" }}</strong></span>{% endif %}
+        </div>
+        <div class="execution-actions">
+          <a href="{% url 'monitor:file-manager-operation-detail' operation.id %}{% if return_path %}?return_path={{ return_path|urlencode }}{% endif %}" class="btn btn-accent btn-sm">Detail</a>
+        </div>
+      </article>
+    {% empty %}
+      <div class="text-secondary">No file operations found.</div>
+    {% endfor %}
+  </div>
+</section>
+{% endblock %}
