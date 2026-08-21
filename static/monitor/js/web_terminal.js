@@ -12,6 +12,7 @@
   const ctrlToggleButton = page.querySelector("[data-terminal-ctrl-toggle]");
   const fitAddon = new window.FitAddon.FitAddon();
   const webLinksAddon = window.WebLinksAddon ? new window.WebLinksAddon.WebLinksAddon() : null;
+  const mobileInput = document.createElement("textarea");
   let socket = null;
   let pingTimer = null;
   let resizeTimer = null;
@@ -29,6 +30,9 @@
   let lastPingAt = 0;
   let replayedBlankRestore = false;
   let socketReadyForInput = false;
+  let mobileKeyboardMode = false;
+  let mobileInputValue = "";
+  let mobileViewportScrollTimer = null;
   const pendingInputQueue = [];
 
   const PING_INTERVAL_MS = 30000;
@@ -71,6 +75,7 @@
   terminal.loadAddon(fitAddon);
   if (webLinksAddon) terminal.loadAddon(webLinksAddon);
   terminal.open(container);
+  setupMobileInputBridge();
   configureHelperTextarea();
 
   function setState(label, level) {
@@ -266,6 +271,7 @@
       const button = event.target.closest("[data-terminal-key]");
       if (!button) return;
       sendTerminalInput(mobileKeySequence(button.dataset.terminalKey));
+      if (button.dataset.terminalKey !== "tab") resetMobileInputValue();
       focusTerminal();
     });
   }
@@ -273,6 +279,7 @@
   container.addEventListener("touchstart", focusTerminal, { passive: true });
   container.addEventListener("click", focusTerminal);
   document.addEventListener("selectionchange", () => {
+    if (mobileKeyboardMode) return;
     if (document.activeElement && container.contains(document.activeElement)) {
       focusTerminal();
     }
@@ -280,10 +287,12 @@
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", scheduleResize);
     window.visualViewport.addEventListener("scroll", scheduleResize);
+    window.visualViewport.addEventListener("resize", scheduleMobileViewportAlignment);
   }
 
   const mobileViewportQuery = window.matchMedia("(max-width: 768px)");
   const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
+  const touchCapableDevice = Boolean(navigator.maxTouchPoints || navigator.msMaxTouchPoints);
   applyMobileKeyboardMode();
   watchMediaQuery(mobileViewportQuery, applyMobileKeyboardMode);
   watchMediaQuery(coarsePointerQuery, applyMobileKeyboardMode);
@@ -291,8 +300,10 @@
   connect();
 
   function applyMobileKeyboardMode() {
-    const isMobile = mobileViewportQuery.matches || coarsePointerQuery.matches;
+    const isMobile = touchCapableDevice && (mobileViewportQuery.matches || coarsePointerQuery.matches);
+    mobileKeyboardMode = isMobile;
     page.classList.toggle("is-mobile-terminal", isMobile);
+    container.classList.toggle("uses-mobile-input-bridge", isMobile);
     scheduleResize();
   }
 
@@ -493,6 +504,7 @@
     const sessionId = terminalSessionId;
     websocketGeneration += 1;
     pendingInputQueue.length = 0;
+    resetMobileInputValue();
     setCtrlArmed(false);
     socketReadyForInput = false;
     window.clearTimeout(reconnectTimer);
@@ -572,6 +584,10 @@
   }
 
   function focusTerminal() {
+    if (mobileKeyboardMode) {
+      focusMobileInput();
+      return;
+    }
     terminal.focus();
     const helper = container.querySelector(".xterm-helper-textarea");
     configureHelperTextarea(helper);
@@ -587,10 +603,158 @@
   function configureHelperTextarea(helperElement) {
     const helper = helperElement || container.querySelector(".xterm-helper-textarea");
     if (!helper) return;
+    helper.setAttribute("inputmode", "text");
+    helper.setAttribute("enterkeyhint", "enter");
     helper.setAttribute("autocomplete", "off");
     helper.setAttribute("autocapitalize", "none");
     helper.setAttribute("autocorrect", "off");
     helper.setAttribute("spellcheck", "false");
+  }
+
+  function setupMobileInputBridge() {
+    mobileInput.className = "terminal-mobile-input";
+    mobileInput.setAttribute("aria-label", "Terminal keyboard input");
+    mobileInput.setAttribute("inputmode", "text");
+    mobileInput.setAttribute("enterkeyhint", "enter");
+    mobileInput.setAttribute("autocomplete", "off");
+    mobileInput.setAttribute("autocapitalize", "none");
+    mobileInput.setAttribute("autocorrect", "off");
+    mobileInput.setAttribute("spellcheck", "false");
+    mobileInput.rows = 1;
+    mobileInput.value = "";
+    mobileInput.style.cssText = [
+      "position:absolute",
+      "bottom:0",
+      "left:0",
+      "width:1px",
+      "height:1px",
+      "min-width:1px",
+      "min-height:1px",
+      "padding:0",
+      "border:0",
+      "outline:0",
+      "opacity:0",
+      "color:transparent",
+      "background:transparent",
+      "caret-color:transparent",
+      "resize:none",
+      "overflow:hidden",
+      "pointer-events:none",
+      "z-index:0"
+    ].join(";");
+    container.appendChild(mobileInput);
+
+    mobileInput.addEventListener("keydown", handleMobileInputKeydown);
+    mobileInput.addEventListener("input", handleMobileInput);
+    mobileInput.addEventListener("compositionend", () => {
+      window.setTimeout(handleMobileInput, 0);
+    });
+  }
+
+  function focusMobileInput() {
+    configureHelperTextarea();
+    if (document.activeElement !== mobileInput) {
+      try {
+        mobileInput.focus({ preventScroll: true });
+      } catch (error) {
+        mobileInput.focus();
+      }
+    }
+    keepTerminalInputVisible();
+  }
+
+  function handleMobileInputKeydown(event) {
+    if (!mobileKeyboardMode) return;
+    if (event.key === "Enter") {
+      event.preventDefault();
+      sendTerminalInput("\r");
+      resetMobileInputValue();
+      keepTerminalInputVisible();
+      return;
+    }
+    if (event.key === "Backspace" && !mobileInput.value) {
+      event.preventDefault();
+      sendTerminalInput("\x7f");
+      resetMobileInputValue();
+      keepTerminalInputVisible();
+      return;
+    }
+    if (event.key === "Delete") {
+      event.preventDefault();
+      sendTerminalInput("\x1b[3~");
+      return;
+    }
+    if (event.key === "Escape") {
+      event.preventDefault();
+      sendTerminalInput("\x1b");
+      resetMobileInputValue();
+    }
+  }
+
+  function handleMobileInput() {
+    if (!mobileKeyboardMode) return;
+    const nextValue = mobileInput.value || "";
+    const sequence = inputDiffToTerminalSequence(mobileInputValue, nextValue);
+    mobileInputValue = nextValue;
+    if (sequence) sendTerminalInput(sequence);
+    keepMobileInputCaretAtEnd();
+    keepTerminalInputVisible();
+  }
+
+  function inputDiffToTerminalSequence(previousValue, nextValue) {
+    if (previousValue === nextValue) return "";
+    let prefixLength = 0;
+    const maxPrefix = Math.min(previousValue.length, nextValue.length);
+    while (prefixLength < maxPrefix && previousValue[prefixLength] === nextValue[prefixLength]) {
+      prefixLength += 1;
+    }
+
+    let suffixLength = 0;
+    const maxSuffix = Math.min(previousValue.length - prefixLength, nextValue.length - prefixLength);
+    while (
+      suffixLength < maxSuffix &&
+      previousValue[previousValue.length - 1 - suffixLength] === nextValue[nextValue.length - 1 - suffixLength]
+    ) {
+      suffixLength += 1;
+    }
+
+    const removedCount = previousValue.length - prefixLength - suffixLength;
+    const insertedText = nextValue.slice(prefixLength, nextValue.length - suffixLength);
+    return "\x7f".repeat(Math.max(0, removedCount)) + insertedText.replace(/\n/g, "\r");
+  }
+
+  function keepMobileInputCaretAtEnd() {
+    const end = mobileInput.value.length;
+    try {
+      mobileInput.setSelectionRange(end, end);
+    } catch (error) {
+    }
+  }
+
+  function resetMobileInputValue() {
+    mobileInputValue = "";
+    mobileInput.value = "";
+  }
+
+  function keepTerminalInputVisible() {
+    if (!mobileKeyboardMode) return;
+    try {
+      terminal.scrollToBottom();
+    } catch (error) {
+    }
+    window.requestAnimationFrame(() => {
+      try {
+        terminal.refresh(0, Math.max(0, terminal.rows - 1));
+      } catch (error) {
+      }
+    });
+  }
+
+  function scheduleMobileViewportAlignment() {
+    window.clearTimeout(mobileViewportScrollTimer);
+    mobileViewportScrollTimer = window.setTimeout(() => {
+      keepTerminalInputVisible();
+    }, 120);
   }
 
   function refreshTerminal() {

@@ -2515,6 +2515,7 @@ body.app-shell {
 }
 
 .terminal-shell {
+  position: relative;
   min-height: 28rem;
   height: calc(100vh - 15.5rem);
   flex: 1 1 auto;
@@ -2536,6 +2537,27 @@ body.app-shell {
 
 .terminal-shell .xterm-helper-textarea {
   font-size: 16px !important;
+}
+
+.terminal-mobile-input {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  min-width: 1px;
+  min-height: 1px;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  opacity: 0;
+  color: transparent;
+  background: transparent;
+  caret-color: transparent;
+  resize: none;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .terminal-mobile-keys {
