@@ -102,6 +102,14 @@ class MonitorViewsTests(TestCase):
         response = self.client.get(self._path("monitor:home"))
         self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
 
+    def test_base_template_resets_stale_pending_ui(self):
+        response = self.client.get(self._path("monitor:system-monitor"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "function resetPendingUi()")
+        self.assertContains(response, 'window.addEventListener("pageshow", resetPendingUi)')
+        self.assertContains(response, 'document.addEventListener("visibilitychange"')
+        self.assertContains(response, "schedulePendingReset()")
+
     def test_healthz_endpoint_is_public_and_lightweight(self):
         self.client.logout()
         response = self.client.get(self._path("monitor:healthz"))

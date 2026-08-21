@@ -187,11 +187,60 @@
         }
         applyBrowserLocaleDates(document);
         const pageBusyBar = document.getElementById("pageBusyBar");
+        let pendingResetTimer = null;
 
         function showPageBusyBar() {
           if (pageBusyBar) {
             pageBusyBar.classList.add("is-active");
           }
+        }
+
+        function hidePageBusyBar() {
+          if (pageBusyBar) {
+            pageBusyBar.classList.remove("is-active");
+          }
+        }
+
+        function schedulePendingReset() {
+          window.clearTimeout(pendingResetTimer);
+          pendingResetTimer = window.setTimeout(resetPendingUi, 45000);
+        }
+
+        function restorePendingElement(element) {
+          element.querySelectorAll(":scope > .action-pending-spinner").forEach((spinner) => spinner.remove());
+          const label = element.querySelector(":scope > .action-pending-label");
+          if (label) {
+            while (label.firstChild) {
+              element.insertBefore(label.firstChild, label);
+            }
+            label.remove();
+          }
+          element.classList.remove("action-pending");
+          element.removeAttribute("aria-busy");
+          if (element.dataset.pendingMinWidthSet === "1") {
+            element.style.minWidth = "";
+          }
+          delete element.dataset.pendingMinWidthSet;
+        }
+
+        function restorePendingControl(control) {
+          if (control.dataset.pendingDisabledPrevious !== undefined) {
+            control.disabled = control.dataset.pendingDisabledPrevious === "1";
+            delete control.dataset.pendingDisabledPrevious;
+          }
+          if (control instanceof HTMLInputElement && control.type === "submit" && control.dataset.pendingOriginalValue) {
+            control.value = control.dataset.pendingOriginalValue;
+            delete control.dataset.pendingOriginalValue;
+          }
+        }
+
+        function resetPendingUi() {
+          window.clearTimeout(pendingResetTimer);
+          pendingResetTimer = null;
+          hidePageBusyBar();
+          document.querySelectorAll(".action-pending").forEach(restorePendingElement);
+          document.querySelectorAll("[data-pending-disabled-previous]").forEach(restorePendingControl);
+          document.querySelectorAll("[data-pending-submit-marker]").forEach((marker) => marker.remove());
         }
 
         function isModifiedNavigation(event) {
@@ -229,6 +278,7 @@
           const width = Math.ceil(element.getBoundingClientRect().width);
           if (width > 0 && !element.style.minWidth) {
             element.style.minWidth = `${width}px`;
+            element.dataset.pendingMinWidthSet = "1";
           }
           element.classList.add("action-pending");
           element.setAttribute("aria-busy", "true");
@@ -245,11 +295,13 @@
               }
               element.append(spinner, label);
             }
+            element.dataset.pendingDisabledPrevious = element.disabled ? "1" : "0";
             element.disabled = true;
           } else if (element instanceof HTMLInputElement && element.type === "submit") {
             if (!element.dataset.pendingOriginalValue) {
               element.dataset.pendingOriginalValue = element.value;
             }
+            element.dataset.pendingDisabledPrevious = element.disabled ? "1" : "0";
             element.value = element.dataset.pendingLabel || "Working...";
             element.disabled = true;
           } else if (element instanceof HTMLAnchorElement) {
@@ -300,9 +352,11 @@
             form.querySelectorAll("button[type='submit'], input[type='submit']").forEach((control) => {
               if (submitter && control === submitter) return;
               if (isIgnoredPendingElement(control)) return;
+              control.dataset.pendingDisabledPrevious = control.disabled ? "1" : "0";
               control.disabled = true;
             });
             showPageBusyBar();
+            schedulePendingReset();
           });
         });
 
@@ -313,6 +367,15 @@
           }
           markPendingElement(link);
           showPageBusyBar();
+          schedulePendingReset();
+        });
+
+        window.addEventListener("pageshow", resetPendingUi);
+        window.addEventListener("focus", () => {
+          if (document.visibilityState === "visible") resetPendingUi();
+        });
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") resetPendingUi();
         });
       });
 
