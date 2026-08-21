@@ -227,17 +227,20 @@
     });
   }
 
-  terminal.onData((data) => {
+  terminal.onData(sendInteractiveInput);
+
+  function sendInteractiveInput(data) {
     if (ctrlArmed) {
       const code = data.length === 1 ? controlCode(data) : "";
       setCtrlArmed(false);
       if (code) {
         sendTerminalInput(code);
-        return;
+        return true;
       }
     }
     sendTerminalInput(data);
-  });
+    return false;
+  }
 
   window.addEventListener("resize", scheduleResize);
   window.addEventListener("pageshow", restoreAfterPageResume);
@@ -696,7 +699,8 @@
     const nextValue = mobileInput.value || "";
     const sequence = inputDiffToTerminalSequence(mobileInputValue, nextValue);
     mobileInputValue = nextValue;
-    if (sequence) sendTerminalInput(sequence);
+    const consumedControl = sequence ? sendInteractiveInput(sequence) : false;
+    if (consumedControl) resetMobileInputValue();
     keepMobileInputCaretAtEnd();
     keepTerminalInputVisible();
   }
