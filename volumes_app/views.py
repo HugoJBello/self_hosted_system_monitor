@@ -36,7 +36,7 @@ from monitor_app.memory import build_memory_breakdown, build_snapshot_memory_bre
 from reports_app.services import build_time_series_chart_data
 from jobs_app.services import get_runtime_state as get_script_runtime_state, mark_stale_running_script_jobs, request_script_run_stop, start_background_script_job
 from monitor_app.services import _process_rows
-from volumes_app.services import list_volumes, mount_volume, remember_mount_preference, start_background_volume_operation, unmount_volume
+from volumes_app.services import list_volumes, mount_volume, release_namespace_mounts, remember_mount_preference, start_background_volume_operation, unmount_volume
 
 
 User = get_user_model()
@@ -91,6 +91,11 @@ class VolumesView(LoginRequiredMixin, View):
                     sudo_password=sudo_password,
                     force=request.POST.get("force_unmount") == "on",
                 )
+            elif action == "release_namespace_mounts":
+                result = release_namespace_mounts(
+                    request.POST.get("device"),
+                    sudo_password=sudo_password,
+                )
             elif action == "label":
                 operation = start_background_volume_operation(
                     action="label",
@@ -110,6 +115,7 @@ class VolumesView(LoginRequiredMixin, View):
                     confirm_text=request.POST.get("confirm_text") or "",
                     confirm_device=request.POST.get("confirm_device") or "",
                     sudo_password=sudo_password,
+                    force_namespace_unmount=request.POST.get("force_namespace_unmount") == "on",
                 )
                 messages.warning(request, f"Format operation started for {operation.device}.")
                 return redirect("monitor:volume-operation-detail", operation_id=operation.id)
@@ -203,4 +209,3 @@ class VolumeOperationStatusView(LoginRequiredMixin, View):
                 "finished_at": operation.finished_at.isoformat() if operation.finished_at else None,
             }
         )
-

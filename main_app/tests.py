@@ -28,7 +28,7 @@ from jobs_app.services import SCRIPT_LOG_LIMIT, ScriptExecutionResult, _build_sc
 from monitor_app.services import collect_snapshot
 from volumes_app.path_browser import create_directory, list_directory_children as list_path_browser_children
 from monitor_app.process_control import ProcessControlError
-from volumes_app.services import _device_is_mounted, _mounted_device_error, _namespace_mount_references, execute_volume_operation, format_volume, list_volumes, mount_volume, start_background_volume_operation, unmount_volume, update_volume_label
+from volumes_app.services import _device_is_mounted, _mounted_device_error, _namespace_mount_references, execute_volume_operation, format_volume, list_volumes, mount_volume, release_namespace_mounts, start_background_volume_operation, unmount_volume, update_volume_label
 
 
 User = get_user_model()
@@ -897,6 +897,22 @@ class MonitorViewsTests(TestCase):
         self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
         mock_unmount_volume.assert_called_once_with("/media/usb", device="/dev/sdb1", sudo_password="secret", force=True)
 
+    @patch("volumes_app.views.release_namespace_mounts")
+    def test_volumes_release_namespace_action_uses_submitted_device(self, mock_release_namespace_mounts):
+        mock_release_namespace_mounts.return_value.message = "Released 1 stuck namespace mount(s) for /dev/sdb1."
+
+        response = self.client.post(
+            self._path("monitor:volumes"),
+            {
+                "volume_action": "release_namespace_mounts",
+                "device": "/dev/sdb1",
+                "sudo_password": "secret",
+            },
+        )
+
+        self.assertRedirects(response, reverse("monitor:volumes"), fetch_redirect_response=False)
+        mock_release_namespace_mounts.assert_called_once_with("/dev/sdb1", sudo_password="secret")
+
     @patch("volumes_app.views.start_background_volume_operation")
     def test_volumes_label_action_starts_background_operation(self, mock_start_operation):
         operation = VolumeOperation.objects.create(action="label", device="/dev/sdb1", fstype="ext4", label="ARCHIVE")
@@ -949,6 +965,7 @@ class MonitorViewsTests(TestCase):
             confirm_text="FORMAT",
             confirm_device="/dev/sdb1",
             sudo_password="secret",
+            force_namespace_unmount=False,
         )
 
     def test_volume_operation_detail_page_loads(self):
@@ -3850,6 +3867,31 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(volumes["unmounted"][0]["uuid"], "abc")
         self.assertEqual(volumes["unmounted"][0]["identity_label"], "TOSHIBA External USB")
 
+    @patch("volumes_app.services._namespace_mount_references")
+    @patch("volumes_app.services._disk_device_entries", return_value=[])
+    @patch("volumes_app.services._lsblk_rows")
+    def test_list_volumes_marks_unmounted_namespace_mounts(self, mock_lsblk_rows, _mock_disk_device_entries, mock_namespace_mount_references):
+        mock_lsblk_rows.return_value = [
+            {
+                "path": "/dev/sdb1",
+                "name": "/dev/sdb1",
+                "type": "part",
+                "size": 1000,
+                "fstype": "ntfs",
+                "label": "ARCHIVE",
+                "uuid": "abc",
+                "mountpoints": [],
+            }
+        ]
+        mock_namespace_mount_references.return_value = [
+            {"pid": "123", "command": "kiwix-serve", "mountpoint": "/data", "fstype": "fuseblk"}
+        ]
+
+        volumes = list_volumes()
+
+        self.assertTrue(volumes["unmounted"][0]["has_namespace_mounts"])
+        self.assertEqual(volumes["unmounted"][0]["status_label"], "Held by app")
+
     @patch("volumes_app.services._disk_device_entries", return_value=[])
     @patch("volumes_app.services._usage_for_mountpoint", return_value={"total_gb": 100, "used_gb": 5, "free_gb": 95, "percent": 5, "free_percent": 95})
     @patch("volumes_app.services._lsblk_rows")
@@ -3959,6 +4001,20 @@ class BackupHelpersTests(TestCase):
             ["nsenter", "--target", "123", "--mount", "umount", "-l", "/sources/media/usb"],
         )
 
+    @patch("volumes_app.services._unmount_namespace_references", return_value=1)
+    @patch("volumes_app.services._namespace_mount_references", return_value=[{"pid": "123", "command": "kiwix-serve", "mountpoint": "/data", "fstype": "fuseblk"}])
+    @patch("volumes_app.services._device_host_mountpoints", return_value=[])
+    def test_release_namespace_mounts_clears_stuck_mounts(self, _mock_host_mountpoints, _mock_namespace_mount_references, mock_unmount_namespace_references):
+        result = release_namespace_mounts("/dev/sdb1", sudo_password="secret")
+
+        self.assertEqual(result.message, "Released 1 stuck namespace mount(s) for /dev/sdb1.")
+        mock_unmount_namespace_references.assert_called_once_with("/dev/sdb1", sudo_password="secret", lazy=True)
+
+    @patch("volumes_app.services._device_host_mountpoints", return_value=["/media/usb"])
+    def test_release_namespace_mounts_rejects_host_mounted_device(self, _mock_host_mountpoints):
+        with self.assertRaisesMessage(ProcessControlError, "/dev/sdb1 is mounted at /media/usb."):
+            release_namespace_mounts("/dev/sdb1")
+
     @patch("volumes_app.services._run_host_command")
     def test_update_volume_label_uses_filesystem_label_command(self, mock_run_host_command):
         result = update_volume_label("/dev/sdb1", "ARCHIVE", fstype="ext4", sudo_password="secret")
@@ -3966,16 +4022,17 @@ class BackupHelpersTests(TestCase):
         self.assertEqual(result.message, "Updated label for /dev/sdb1.")
         mock_run_host_command.assert_called_once_with(["e2label", "/dev/sdb1", "ARCHIVE"], sudo_password="secret")
 
-    @patch("volumes_app.services._device_is_mounted", return_value=False)
+    @patch("volumes_app.services._prepare_format_target")
     @patch("volumes_app.services._run_host_command")
-    def test_format_volume_requires_confirmation_and_uses_mkfs(self, mock_run_host_command, _mock_device_is_mounted):
+    def test_format_volume_requires_confirmation_and_uses_mkfs(self, mock_run_host_command, mock_prepare_format_target):
         result = format_volume("/dev/sdb1", "ext4", label="ARCHIVE", confirm_text="FORMAT", confirm_device="/dev/sdb1", sudo_password="secret")
 
         self.assertEqual(result.message, "Formatted /dev/sdb1 as ext4.")
+        mock_prepare_format_target.assert_called_once_with("/dev/sdb1", sudo_password="secret", force_namespace_unmount=False)
         mock_run_host_command.assert_called_once_with(["mkfs.ext4", "-F", "-L", "ARCHIVE", "/dev/sdb1"], sudo_password="secret", timeout_seconds=120)
 
-    @patch("volumes_app.services._device_is_mounted", return_value=False)
-    def test_format_volume_rejects_labels_too_long_for_filesystem(self, _mock_device_is_mounted):
+    @patch("volumes_app.services._prepare_format_target")
+    def test_format_volume_rejects_labels_too_long_for_filesystem(self, _mock_prepare_format_target):
         with self.assertRaisesMessage(ProcessControlError, "Volume label is too long for ext4. Use 16 characters or fewer."):
             format_volume("/dev/sdb1", "ext4", label="disk books comics", confirm_text="FORMAT", confirm_device="/dev/sdb1")
 
@@ -3983,8 +4040,8 @@ class BackupHelpersTests(TestCase):
         with self.assertRaisesMessage(ProcessControlError, "Formatting was not confirmed."):
             format_volume("/dev/sdb1", "ext4", confirm_text="", confirm_device="/dev/sdb1")
 
-    @patch("volumes_app.services._device_is_mounted", return_value=True)
-    def test_start_background_volume_operation_rejects_mounted_format_target(self, _mock_device_is_mounted):
+    @patch("volumes_app.services._prepare_format_target", side_effect=ProcessControlError("/dev/sdb1 is mounted. Unmount it before formatting."))
+    def test_start_background_volume_operation_rejects_mounted_format_target(self, _mock_prepare_format_target):
         with self.assertRaisesMessage(ProcessControlError, "/dev/sdb1 is mounted. Unmount it before formatting."):
             start_background_volume_operation(
                 action="format",
@@ -3993,6 +4050,35 @@ class BackupHelpersTests(TestCase):
                 confirm_text="FORMAT",
                 confirm_device="/dev/sdb1",
             )
+
+    @patch("volumes_app.services._unmount_namespace_references")
+    @patch("volumes_app.services._namespace_mount_references")
+    @patch("volumes_app.services._device_host_mountpoints", return_value=[])
+    @patch("volumes_app.services.subprocess.Popen")
+    def test_format_target_can_clear_private_namespace_mounts(
+        self,
+        mock_popen,
+        _mock_host_mountpoints,
+        mock_namespace_mount_references,
+        mock_unmount_namespace_references,
+    ):
+        mock_popen.return_value.pid = 4321
+        mock_namespace_mount_references.side_effect = [
+            [{"pid": "123", "command": "kiwix-serve", "mountpoint": "/data", "fstype": "fuseblk"}],
+            [],
+        ]
+
+        start_background_volume_operation(
+            action="format",
+            device="/dev/sdb1",
+            fstype="ext4",
+            confirm_text="FORMAT",
+            confirm_device="/dev/sdb1",
+            sudo_password="secret",
+            force_namespace_unmount=True,
+        )
+
+        mock_unmount_namespace_references.assert_called_once_with("/dev/sdb1", sudo_password="secret", lazy=True)
 
     @patch("volumes_app.services._run_host_command")
     def test_device_is_mounted_checks_findmnt_source(self, mock_run_host_command):

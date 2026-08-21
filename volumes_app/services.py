@@ -28,7 +28,7 @@ SUPPORTED_FORMATS = {
     "btrfs": {"label_flag": "-L", "command": "mkfs.btrfs", "force_args": ["-f"]},
     "vfat": {"label_flag": "-n", "command": "mkfs.vfat", "force_args": []},
     "exfat": {"label_flag": "-n", "command": "mkfs.exfat", "force_args": []},
-    "ntfs": {"label_flag": "-L", "command": "mkfs.ntfs", "force_args": []},
+    "ntfs": {"label_flag": "-L", "command": "mkfs.ntfs", "force_args": ["--fast", "--force"]},
 }
 FILESYSTEM_LABEL_LIMITS = {
     "ext2": 16,
@@ -277,17 +277,25 @@ def _row_for_device(device):
     return None
 
 
-def _device_is_mounted(device):
+def _device_host_mountpoints(device):
+    mountpoints = []
     try:
         result = _run_host_command(["findmnt", "--noheadings", "--source", device, "--output", "TARGET"], check=False, timeout_seconds=8)
     except ProcessControlError:
         result = None
     if result and result.returncode == 0 and (result.stdout or "").strip():
-        return True
-    if _namespace_mount_references(device):
-        return True
+        mountpoints.extend(line.strip() for line in result.stdout.splitlines() if line.strip())
+        return list(dict.fromkeys(os.path.normpath(item) for item in mountpoints))
     row = _row_for_device(device)
-    return bool(row and _as_list(row.get("mountpoints")))
+    if row:
+        mountpoints.extend(item for item in _as_list(row.get("mountpoints")) if item and not item.startswith("["))
+    return list(dict.fromkeys(os.path.normpath(item) for item in mountpoints))
+
+
+def _device_is_mounted(device):
+    if _device_host_mountpoints(device):
+        return True
+    return bool(_namespace_mount_references(device))
 
 
 def _read_proc_text(path):
@@ -360,15 +368,36 @@ def _namespace_mount_references(device, *, proc_root="/proc", limit=5, mount_ids
     return references
 
 
-def _mounted_device_error(device):
-    references = _namespace_mount_references(device)
+def _mounted_device_error(device, *, host_mountpoints=None, references=None):
+    if host_mountpoints is None:
+        host_mountpoints = _device_host_mountpoints(device)
+    if host_mountpoints:
+        locations = ", ".join(host_mountpoints)
+        return f"{device} is mounted at {locations}. Unmount it before formatting."
+    if references is None:
+        references = _namespace_mount_references(device)
     if references:
         details = ", ".join(
             f"{item['command']} pid {item['pid']} at {item['mountpoint']}"
             for item in references
         )
-        return f"{device} is mounted in another process namespace ({details}). Close that app or container and try again."
+        return f"{device} is mounted in another process namespace ({details}). Close that app or container, or enable the advanced format option to lazy unmount stuck namespaces first."
     return f"{device} is mounted. Unmount it before formatting."
+
+
+def _prepare_format_target(device, *, sudo_password="", force_namespace_unmount=False):
+    host_mountpoints = _device_host_mountpoints(device)
+    if host_mountpoints:
+        raise ProcessControlError(_mounted_device_error(device, host_mountpoints=host_mountpoints, references=[]))
+    references = _namespace_mount_references(device)
+    if not references:
+        return
+    if not force_namespace_unmount:
+        raise ProcessControlError(_mounted_device_error(device, host_mountpoints=[], references=references))
+    _unmount_namespace_references(device, sudo_password=sudo_password, lazy=True)
+    references = _namespace_mount_references(device)
+    if references:
+        raise ProcessControlError(_mounted_device_error(device, host_mountpoints=[], references=references))
 
 
 def _unmount_namespace_references(device, *, sudo_password="", lazy=False):
@@ -432,6 +461,16 @@ def _attach_mount_preferences(items, preferences):
         item["identity_label"] = _identity_label(item)
         preference = preferences.get(item["volume_key"])
         item["suggested_mountpoint"] = preference.mountpoint if preference else ""
+    return items
+
+
+def _attach_namespace_references(items):
+    for item in items:
+        device = item.get("device") or ""
+        item["namespace_mounts"] = _namespace_mount_references(device, limit=3) if device.startswith("/dev/") else []
+        item["has_namespace_mounts"] = bool(item["namespace_mounts"])
+        if item["has_namespace_mounts"]:
+            item["status_label"] = "Held by app"
     return items
 
 
@@ -615,6 +654,7 @@ def list_volumes():
     mounted_items = _dedupe_mounted_items(mounted_items)
     _attach_mount_preferences(mounted_items, preferences)
     unmounted_items = _attach_mount_preferences(_dedupe_unmounted_items(unmounted_items), preferences)
+    _attach_namespace_references(unmounted_items)
     mounted_items.sort(key=lambda item: (item.get("mountpoint") != "/", item.get("mountpoint") or "", item.get("device") or ""))
     unmounted_items.sort(key=lambda item: (item.get("device") or ""))
     return {
@@ -744,6 +784,18 @@ def unmount_volume(target, *, device="", sudo_password="", force=False):
     return VolumeActionResult(True, f"No active mount found for {target}.")
 
 
+def release_namespace_mounts(device, *, sudo_password=""):
+    device = _validate_block_device(device)
+    host_mountpoints = _device_host_mountpoints(device)
+    if host_mountpoints:
+        raise ProcessControlError(_mounted_device_error(device, host_mountpoints=host_mountpoints, references=[]))
+    references = _namespace_mount_references(device)
+    if not references:
+        return VolumeActionResult(True, f"No stuck namespace mounts found for {device}.")
+    namespace_count = _unmount_namespace_references(device, sudo_password=sudo_password, lazy=True)
+    return VolumeActionResult(True, f"Released {namespace_count} stuck namespace mount(s) for {device}.")
+
+
 def update_volume_label(device, label, *, fstype="", sudo_password=""):
     device = _validate_block_device(device)
     fstype = _normalize_fstype(fstype)
@@ -766,14 +818,13 @@ def update_volume_label(device, label, *, fstype="", sudo_password=""):
     return VolumeActionResult(True, f"Updated label for {device}.")
 
 
-def format_volume(device, fstype, *, label="", confirm_text="", confirm_device="", sudo_password=""):
+def format_volume(device, fstype, *, label="", confirm_text="", confirm_device="", sudo_password="", force_namespace_unmount=False):
     device = _validate_block_device(device)
     fstype = _normalize_fstype(fstype)
     label = _validate_label_for_fstype(label, fstype)
     if confirm_text != "FORMAT" or confirm_device != device:
         raise ProcessControlError("Formatting was not confirmed. Type FORMAT and the exact device path before trying again.")
-    if _device_is_mounted(device):
-        raise ProcessControlError(_mounted_device_error(device))
+    _prepare_format_target(device, sudo_password=sudo_password, force_namespace_unmount=force_namespace_unmount)
     format_config = SUPPORTED_FORMATS.get(fstype)
     if not format_config:
         supported = ", ".join(sorted(SUPPORTED_FORMATS))
@@ -817,12 +868,12 @@ def create_volume_operation(*, action, device, fstype="", label=""):
     )
 
 
-def start_background_volume_operation(*, action, device, fstype="", label="", sudo_password="", confirm_text="", confirm_device=""):
+def start_background_volume_operation(*, action, device, fstype="", label="", sudo_password="", confirm_text="", confirm_device="", force_namespace_unmount=False):
     if action == "format":
         if confirm_text != "FORMAT" or confirm_device != device:
             raise ProcessControlError("Formatting was not confirmed. Type FORMAT and the exact device path before trying again.")
-        if _device_is_mounted(device):
-            raise ProcessControlError(_mounted_device_error(device))
+        device = _validate_block_device(device)
+        _prepare_format_target(device, sudo_password=sudo_password, force_namespace_unmount=force_namespace_unmount)
         if _normalize_fstype(fstype) not in SUPPORTED_FORMATS:
             supported = ", ".join(sorted(SUPPORTED_FORMATS))
             raise ProcessControlError(f"Formatting as '{fstype or 'unknown'}' is not supported. Supported filesystems: {supported}.")

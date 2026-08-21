@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential procps util-linux openssh-client rsync sshpass curl ca-certificates \
+    && apt-get install -y --no-install-recommends build-essential procps util-linux e2fsprogs xfsprogs btrfs-progs dosfstools exfatprogs ntfs-3g openssh-client rsync sshpass curl ca-certificates \
     && arch="$(dpkg --print-architecture)" \
     && case "$arch" in \
         amd64) cloudflared_arch="amd64" ;; \

@@ -122,8 +122,20 @@
               {% if volume.removable %}<span class="mounted-device-chip">removable</span>{% endif %}
               {% if volume.hotplug %}<span class="mounted-device-chip">hotplug</span>{% endif %}
               {% if volume.readonly %}<span class="mounted-device-chip">read-only</span>{% endif %}
+              {% if volume.has_namespace_mounts %}<span class="mounted-device-chip text-bg-warning text-dark"><i class="bi bi-exclamation-triangle"></i> held by app</span>{% endif %}
               {% if volume.suggested_mountpoint %}<span class="mounted-device-chip is-suggested"><i class="bi bi-pin-map"></i> {{ volume.suggested_mountpoint }}</span>{% endif %}
             </div>
+            {% if volume.has_namespace_mounts %}
+              <div class="volume-danger-note mt-3">
+                <i class="bi bi-exclamation-triangle"></i>
+                <span>
+                  Still held by
+                  {% for mount in volume.namespace_mounts %}
+                    {{ mount.command }} pid {{ mount.pid }} at {{ mount.mountpoint }}{% if not forloop.last %}, {% endif %}
+                  {% endfor %}.
+                </span>
+              </div>
+            {% endif %}
             {% if volume.fs_percent is not None %}
               <div class="mounted-device-usage-row">
                 <div class="mounted-device-usage-item">
@@ -167,6 +179,9 @@
             </div>
             <div class="volume-card-actions">
               <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#editUnmountedVolumeModal{{ forloop.counter }}"><i class="bi bi-pencil-square"></i> Edit</button>
+              {% if volume.has_namespace_mounts %}
+                <button type="button" class="btn btn-outline-warning btn-sm" data-bs-toggle="modal" data-bs-target="#releaseNamespaceModal{{ forloop.counter }}"><i class="bi bi-unlock"></i> Release</button>
+              {% endif %}
               <button type="button" class="btn btn-accent btn-sm" data-bs-toggle="modal" data-bs-target="#mountVolumeModal{{ forloop.counter }}"><i class="bi bi-hdd-stack"></i> Mount</button>
             </div>
           </article>
@@ -277,6 +292,53 @@
 {% endfor %}
 
 {% for volume in unmounted %}
+  {% if volume.has_namespace_mounts %}
+    <div class="modal fade" id="releaseNamespaceModal{{ forloop.counter }}" tabindex="-1" aria-labelledby="releaseNamespaceModal{{ forloop.counter }}Label" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content backup-modal-shell">
+          <div class="modal-header border-secondary-subtle">
+            <div>
+              <p class="eyebrow mb-1">Release stuck mounts</p>
+              <h2 class="h4 mb-0" id="releaseNamespaceModal{{ forloop.counter }}Label">{{ volume.identity_label|default:volume.device }}</h2>
+              <div class="small text-secondary">{{ volume.device }}</div>
+            </div>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="volume-danger-note mb-4">
+              <i class="bi bi-exclamation-triangle"></i>
+              <span>This volume is unmounted on the host but still held inside another process namespace.</span>
+            </div>
+            <div class="volume-detail-grid mb-4">
+              {% for mount in volume.namespace_mounts %}
+                <div class="mounted-device-stat">
+                  <span class="mounted-device-label">{{ mount.command }} pid {{ mount.pid }}</span>
+                  <strong>{{ mount.mountpoint }}</strong>
+                </div>
+              {% endfor %}
+            </div>
+            <form method="post" class="volume-action-form" data-confirm-submit="Release stuck namespace mounts for {{ volume.device }}? Open files in those apps may stop working.">
+              {% csrf_token %}
+              <input type="hidden" name="volume_action" value="release_namespace_mounts">
+              <input type="hidden" name="device" value="{{ volume.device }}">
+              <details class="volume-advanced-details">
+                <summary class="volume-inline-toggle"><i class="bi bi-key"></i> Use sudo password</summary>
+                <div class="mt-2">
+                  <label class="form-label" for="sudo-release-{{ forloop.counter }}">Sudo password</label>
+                  <input id="sudo-release-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                </div>
+              </details>
+              <div class="d-flex justify-content-end gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                <button type="submit" class="btn btn-outline-warning"><i class="bi bi-unlock"></i> Release stuck mounts</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
   <div class="modal fade" id="editUnmountedVolumeModal{{ forloop.counter }}" tabindex="-1" aria-labelledby="editUnmountedVolumeModal{{ forloop.counter }}Label" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
       <div class="modal-content backup-modal-shell">
@@ -363,10 +425,17 @@
                 </div>
               </div>
               <details class="volume-advanced-details">
-                <summary class="volume-inline-toggle"><i class="bi bi-key"></i> Use sudo password</summary>
-                <div class="mt-2">
-                  <label class="form-label" for="sudo-format-{{ forloop.counter }}">Sudo password</label>
-                  <input id="sudo-format-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                <summary class="volume-inline-toggle"><i class="bi bi-sliders"></i> Advanced format options</summary>
+                <div class="volume-advanced-grid mt-2">
+                  <div>
+                    <label class="form-label" for="sudo-format-{{ forloop.counter }}">Sudo password</label>
+                    <input id="sudo-format-{{ forloop.counter }}" type="password" name="sudo_password" class="form-control" autocomplete="current-password">
+                  </div>
+                  <div class="form-check volume-danger-check">
+                    <input id="force-namespace-format-{{ forloop.counter }}" type="checkbox" name="force_namespace_unmount" class="form-check-input">
+                    <label class="form-check-label" for="force-namespace-format-{{ forloop.counter }}">Lazy unmount stuck namespaces first</label>
+                    <div class="form-text text-secondary">Use when this volume is listed as unmounted but a container or app still holds a private mount.</div>
+                  </div>
                 </div>
               </details>
               <div class="d-flex justify-content-end gap-2 flex-wrap">
