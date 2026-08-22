@@ -481,6 +481,21 @@ body.app-shell {
   gap: 0.75rem;
 }
 
+.mounted-device-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.mounted-device-actions .btn,
+.volume-card-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .mounted-device-stat {
   padding: 0.75rem 0.8rem;
   border-radius: 0.9rem;
@@ -653,6 +668,15 @@ body.app-shell {
 
   .mounted-device-footer {
     grid-template-columns: 1fr;
+  }
+
+  .mounted-device-actions {
+    justify-content: stretch;
+  }
+
+  .mounted-device-actions .btn {
+    width: 100%;
+    justify-content: center;
   }
 
   .volume-action-form .btn {
@@ -2858,6 +2882,10 @@ body.app-shell {
   cursor: default;
 }
 
+.file-manager-page.is-single-click-open .file-manager-item {
+  cursor: pointer;
+}
+
 .file-manager-item:hover,
 .file-manager-item:focus-visible {
   background: rgba(93, 198, 255, 0.08);
@@ -2953,8 +2981,7 @@ body.app-shell {
   opacity: 0;
 }
 
-.file-manager-page.is-selecting .file-manager-tile .file-manager-checkbox,
-.file-manager-tile.is-selected .file-manager-checkbox {
+.file-manager-page.is-selecting .file-manager-tile .file-manager-checkbox {
   opacity: 1;
 }
 

@@ -33,6 +33,11 @@
               <i class="bi bi-check2-square me-2"></i>Multiple select
             </button>
           </li>
+          <li>
+            <button type="button" class="dropdown-item" data-single-click-toggle aria-pressed="false">
+              <i class="bi bi-cursor me-2"></i>Single click open
+            </button>
+          </li>
         </ul>
       </div>
       <a href="{% url 'monitor:file-manager-operations' %}" class="btn btn-outline-light">
@@ -313,5 +318,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260822-information"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260822-click-open-mode"></script>
 {% endblock %}

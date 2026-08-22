@@ -212,6 +212,11 @@
                 <strong>{% if disk.is_mounted and disk.free_percent is not None %}{{ disk.free_percent }}%{% else %}Idle{% endif %}</strong>
               </div>
             </div>
+            <div class="mounted-device-actions">
+              <a href="{{ disk.mountpoint|file_manager_path_url }}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-folder2-open"></i> Files
+              </a>
+            </div>
           </article>
         {% empty %}
           <div class="text-secondary">No disk detail available.</div>

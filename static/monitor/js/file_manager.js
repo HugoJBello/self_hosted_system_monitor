@@ -15,6 +15,7 @@
   const viewModeToggle = page.querySelector("[data-view-mode-toggle]");
   const viewModeLabel = page.querySelector("[data-view-mode-label]");
   const multipleSelectToggle = page.querySelector("[data-multiple-select-toggle]");
+  const singleClickToggle = page.querySelector("[data-single-click-toggle]");
   const selectedInputs = page.querySelector("[data-selected-paths-inputs]");
   const selectionActions = page.querySelectorAll("[data-selection-action]");
   const actionsToggle = page.querySelector("[data-actions-toggle]");
@@ -80,6 +81,7 @@
   let currentPath = page.dataset.currentPath || "/";
   let parentPath = page.dataset.parentPath || "";
   let multipleSelectEnabled = false;
+  let singleClickOpenEnabled = false;
   let destinationPath = "/";
   let destinationParentPath = "";
   let destinationAction = "copy";
@@ -94,12 +96,18 @@
   const actionsMenuParent = actionsMenu?.parentElement || null;
   const uploadChunkSize = 16 * 1024 * 1024;
   let informationPollTimer = null;
+  const preferenceKeys = {
+    viewMode: "fileManager.viewMode",
+    multipleSelect: "fileManager.multipleSelect",
+    singleClickOpen: "fileManager.singleClickOpen"
+  };
 
   formatVisibleValues();
   renderBreadcrumbs(currentBreadcrumbs, currentPath, navigateTo);
   insertInitialParentRow();
   renderInitialGrid();
   bindRows();
+  restoreSessionPreferences();
   syncSelectionState();
 
   parentButton?.addEventListener("click", () => {
@@ -132,6 +140,9 @@
 
   multipleSelectToggle?.addEventListener("click", () => {
     setMultipleSelectEnabled(!multipleSelectEnabled);
+  });
+  singleClickToggle?.addEventListener("click", () => {
+    setSingleClickOpenEnabled(!singleClickOpenEnabled);
   });
   createFolderTrigger?.addEventListener("click", openCreateFolderModal);
   uploadTrigger?.addEventListener("click", openUploadModal);
@@ -170,31 +181,52 @@
     page.querySelectorAll(".file-manager-item[data-path]").forEach((row) => {
       if (row.dataset.bound === "1" || row.dataset.parentRow) return;
       row.dataset.bound = "1";
-      row.addEventListener("click", () => {
-        if (multipleSelectEnabled) {
-          toggleSelection(row);
-        } else if (row.dataset.kind !== "folder" && row.dataset.previewUrl) {
-          openPreviewModal(row);
-        }
-      });
+      row.addEventListener("click", () => handleItemClick(row));
       row.addEventListener("dblclick", () => {
-        if (row.dataset.kind === "folder") navigateTo(row.dataset.path);
+        if (!singleClickOpenEnabled) openItem(row);
       });
       row.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
           if (multipleSelectEnabled) {
             toggleSelection(row);
-          } else if (row.dataset.kind === "folder") {
-            navigateTo(row.dataset.path);
+          } else {
+            openItem(row);
           }
         }
-        if (event.key === " " && multipleSelectEnabled) {
+        if (event.key === " ") {
           event.preventDefault();
-          toggleSelection(row);
+          if (multipleSelectEnabled) {
+            toggleSelection(row);
+          } else {
+            selectSingleItem(row);
+          }
         }
       });
     });
+  }
+
+  function handleItemClick(item) {
+    if (multipleSelectEnabled) {
+      toggleSelection(item);
+      return;
+    }
+    if (singleClickOpenEnabled) {
+      openItem(item);
+      return;
+    }
+    selectSingleItem(item);
+  }
+
+  function openItem(item) {
+    if (!item || item.dataset.parentRow) return;
+    if (item.dataset.kind === "folder") {
+      navigateTo(item.dataset.path);
+      return;
+    }
+    if (item.dataset.previewUrl) {
+      openPreviewModal(item);
+    }
   }
 
   function handleFileAreaContextMenu(event) {
@@ -540,6 +572,7 @@
     if (viewModeLabel) viewModeLabel.textContent = viewMode === "grid" ? "List" : "Grid";
     const icon = viewModeToggle?.querySelector("i");
     if (icon) icon.className = `bi ${viewMode === "grid" ? "bi-list-ul" : "bi-grid-3x3-gap"}`;
+    saveSessionPreference(preferenceKeys.viewMode, viewMode);
   }
 
   function setMultipleSelectEnabled(enabled) {
@@ -548,6 +581,48 @@
     multipleSelectToggle?.setAttribute("aria-pressed", multipleSelectEnabled ? "true" : "false");
     multipleSelectToggle?.classList.toggle("active", multipleSelectEnabled);
     if (!multipleSelectEnabled) clearSelection();
+    saveSessionPreference(preferenceKeys.multipleSelect, multipleSelectEnabled ? "1" : "0");
+    syncSelectionState();
+  }
+
+  function setSingleClickOpenEnabled(enabled) {
+    singleClickOpenEnabled = Boolean(enabled);
+    page.classList.toggle("is-single-click-open", singleClickOpenEnabled);
+    singleClickToggle?.setAttribute("aria-pressed", singleClickOpenEnabled ? "true" : "false");
+    singleClickToggle?.classList.toggle("active", singleClickOpenEnabled);
+    if (singleClickOpenEnabled && !multipleSelectEnabled) clearSelection();
+    saveSessionPreference(preferenceKeys.singleClickOpen, singleClickOpenEnabled ? "1" : "0");
+  }
+
+  function restoreSessionPreferences() {
+    const storedViewMode = loadSessionPreference(preferenceKeys.viewMode);
+    if (storedViewMode === "grid" || storedViewMode === "list") {
+      setViewMode(storedViewMode);
+    }
+    setMultipleSelectEnabled(loadSessionPreference(preferenceKeys.multipleSelect) === "1");
+    setSingleClickOpenEnabled(loadSessionPreference(preferenceKeys.singleClickOpen) === "1");
+  }
+
+  function saveSessionPreference(key, value) {
+    try {
+      window.sessionStorage.setItem(key, value);
+    } catch (_) {
+    }
+  }
+
+  function loadSessionPreference(key) {
+    try {
+      return window.sessionStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function selectSingleItem(row) {
+    const path = row.dataset.path || "";
+    if (!path) return;
+    selectedPaths.clear();
+    selectedPaths.add(path);
     syncSelectionState();
   }
 
@@ -677,7 +752,7 @@
     setInformationStatus(`Scanning folders... ${aggregate.scanned_entries || 0} entries read.`);
     setInformationScanning(true);
     stopInformationPolling();
-    informationPollTimer = window.setTimeout(() => pollInformation(payload.session_id), 450);
+    informationPollTimer = window.setTimeout(() => pollInformation(payload.session_id), 120);
   }
 
   function stopInformationPolling() {

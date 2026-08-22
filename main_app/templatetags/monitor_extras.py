@@ -1,4 +1,6 @@
 from django import template
+from django.urls import reverse
+from urllib.parse import urlencode
 
 
 register = template.Library()
@@ -14,6 +16,14 @@ def get_item(mapping, key):
 @register.filter
 def get_attr(obj, attr_name):
     return getattr(obj, attr_name, None)
+
+
+@register.filter
+def file_manager_path_url(path):
+    value = str(path or "/")
+    if not value.startswith("/"):
+        value = f"/{value}"
+    return f"{reverse('monitor:file-manager')}?{urlencode({'path': value})}"
 
 
 def _platform_key(value):

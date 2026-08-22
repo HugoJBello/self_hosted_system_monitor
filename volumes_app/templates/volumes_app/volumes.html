@@ -1,5 +1,5 @@
 {% extends "main_app/base.html" %}
-{% load static %}
+{% load static monitor_extras %}
 
 {% block title %}Volumes | System Monitor{% endblock %}
 
@@ -82,6 +82,7 @@
               </div>
             {% endif %}
             <div class="volume-card-actions">
+              <a href="{{ volume.mountpoint|file_manager_path_url }}" class="btn btn-outline-light btn-sm"><i class="bi bi-folder2-open"></i> Files</a>
               <button type="button" class="btn btn-outline-light btn-sm" data-bs-toggle="modal" data-bs-target="#editMountedVolumeModal{{ forloop.counter }}"><i class="bi bi-pencil-square"></i> Edit</button>
               {% if volume.mountpoint != "/" %}
                 <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#unmountVolumeModal{{ forloop.counter }}"><i class="bi bi-eject"></i> Unmount</button>

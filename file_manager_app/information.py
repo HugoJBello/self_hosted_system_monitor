@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 from volumes_app.path_browser import hostfs_path, normalize_host_path
 
 
-INFO_BATCH_SIZE = 300
+INFO_BATCH_SIZE = 2500
+INFO_BATCH_SECONDS = 0.35
 INFO_SESSION_TTL_SECONDS = 15 * 60
 _INFO_SESSIONS = {}
 
@@ -50,7 +51,8 @@ def continue_file_information(session_id):
         raise ValueError("Information session not found.")
 
     processed = 0
-    while session["queue"] and processed < INFO_BATCH_SIZE:
+    deadline = time.monotonic() + INFO_BATCH_SECONDS
+    while session["queue"] and processed < INFO_BATCH_SIZE and time.monotonic() < deadline:
         current_path, offset = session["queue"].popleft()
         absolute_path = hostfs_path(current_path)
         try:
@@ -66,7 +68,7 @@ def continue_file_information(session_id):
                     processed += 1
                     if child_info["kind"] == "folder" and child_info["scan_available"]:
                         session["queue"].append((child_path, 0))
-                    if processed >= INFO_BATCH_SIZE:
+                    if processed >= INFO_BATCH_SIZE or time.monotonic() >= deadline:
                         session["queue"].appendleft((current_path, index + 1))
                         break
         except OSError as exc:

@@ -250,6 +250,7 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "data-information-trigger")
         self.assertContains(response, "data-information-modal")
         self.assertContains(response, "data-multiple-select-toggle")
+        self.assertContains(response, "data-single-click-toggle")
         self.assertContains(response, "data-preview-trigger")
         self.assertContains(response, "data-preview-modal")
         self.assertContains(response, "data-destination-modal")
@@ -801,6 +802,31 @@ class MonitorViewsTests(TestCase):
         self.assertNotContains(response, "All job runs")
         self.assertNotContains(response, "Latest finished runs")
 
+    def test_system_monitor_volume_cards_link_to_file_manager(self):
+        self._create_snapshot(
+            timezone.now(),
+            disk_devices=[
+                {
+                    "device": "/dev/sdb1",
+                    "mountpoint": "/media/USB Disk",
+                    "fstype": "ext4",
+                    "status_label": "Mounted",
+                    "is_mounted": True,
+                    "percent": 42,
+                    "total_gb": 100,
+                    "used_gb": 42,
+                    "free_gb": 58,
+                    "free_percent": 58,
+                }
+            ],
+        )
+
+        response = self.client.get(self._path("monitor:system-monitor"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Files")
+        self.assertContains(response, f"{reverse('monitor:file-manager')}?path=%2Fmedia%2FUSB+Disk")
+
     @patch("volumes_app.views.list_path_browser_roots", return_value=[{"path": "/media", "name": "media"}])
     @patch("volumes_app.views.list_volumes")
     def test_volumes_page_loads(self, mock_list_volumes, _mock_browser_roots):
@@ -843,6 +869,8 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "Volumes")
         self.assertContains(response, "/dev/sdb1")
         self.assertContains(response, "Mount")
+        self.assertContains(response, "Files")
+        self.assertContains(response, f"{reverse('monitor:file-manager')}?path=%2F")
 
     @patch("volumes_app.views.remember_mount_preference")
     @patch("volumes_app.views.mount_volume")
