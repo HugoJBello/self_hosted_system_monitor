@@ -247,6 +247,8 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "data-file-manager-area")
         self.assertContains(response, "data-view-mode-toggle")
         self.assertContains(response, "data-actions-toggle")
+        self.assertContains(response, "data-information-trigger")
+        self.assertContains(response, "data-information-modal")
         self.assertContains(response, "data-multiple-select-toggle")
         self.assertContains(response, "data-preview-trigger")
         self.assertContains(response, "data-preview-modal")
@@ -261,6 +263,7 @@ class MonitorViewsTests(TestCase):
         self.assertNotContains(response, "data-confirm-submit=\"Delete selected files and folders?\"")
         self.assertContains(response, reverse("monitor:file-manager-operations"))
         self.assertContains(response, reverse("monitor:file-manager-list"))
+        self.assertContains(response, reverse("monitor:file-manager-information"))
 
     def test_file_manager_list_api_returns_items(self):
         response = self.client.get(self._path("monitor:file-manager-list"), {"path": "/"})
@@ -270,6 +273,39 @@ class MonitorViewsTests(TestCase):
         self.assertIn("items", payload)
         if payload["items"]:
             self.assertIn("kind", payload["items"][0])
+
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_information_api_scans_selected_paths(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            Path(root, "folder").mkdir()
+            Path(root, "folder", "nested.txt").write_text("nested", encoding="utf-8")
+            Path(root, "file.txt").write_text("hello", encoding="utf-8")
+
+            response = self.client.post(
+                self._path("monitor:file-manager-information"),
+                {"selected_paths": [str(root)]},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["items"][0]["path"], str(root))
+            self.assertEqual(payload["aggregate"]["selected_folders"], 1)
+            self.assertIn("session_id", payload)
+
+            while not payload["complete"]:
+                response = self.client.post(
+                    self._path("monitor:file-manager-information"),
+                    {"session_id": payload["session_id"]},
+                    HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+                )
+                self.assertEqual(response.status_code, 200)
+                payload = response.json()
+
+            self.assertGreaterEqual(payload["aggregate"]["files"], 2)
+            self.assertGreaterEqual(payload["aggregate"]["folders"], 2)
+            self.assertGreaterEqual(payload["aggregate"]["size_bytes"], 11)
 
     def test_file_manager_preview_serves_small_images_only(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -4,7 +4,7 @@
 {% block title %}Files | System Monitor{% endblock %}
 
 {% block content %}
-<form method="post" enctype="multipart/form-data" class="file-manager-page" id="file-manager-form" data-file-manager-page data-list-url="{% url 'monitor:file-manager-list' %}" data-current-path="{{ current_path }}" data-parent-path="{{ parent_path }}">
+<form method="post" enctype="multipart/form-data" class="file-manager-page" id="file-manager-form" data-file-manager-page data-list-url="{% url 'monitor:file-manager-list' %}" data-info-url="{% url 'monitor:file-manager-information' %}" data-current-path="{{ current_path }}" data-parent-path="{{ parent_path }}">
   {% csrf_token %}
   <input type="hidden" name="current_path" value="{{ current_path }}" data-current-path-input>
   <input type="hidden" name="return_path" value="{{ current_path }}" data-return-path-input>
@@ -43,6 +43,8 @@
           <i class="bi bi-lightning-charge"></i><span>Actions</span>
         </button>
         <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end shadow">
+          <li><button type="button" class="dropdown-item" data-information-trigger><i class="bi bi-info-circle me-2"></i>Information</button></li>
+          <li><hr class="dropdown-divider"></li>
           <li><button type="button" class="dropdown-item" data-create-folder-trigger><i class="bi bi-folder-plus me-2"></i>New folder</button></li>
           <li><button type="button" class="dropdown-item" data-upload-trigger><i class="bi bi-upload me-2"></i>Upload here</button></li>
           <li><button type="button" class="dropdown-item" data-preview-trigger disabled><i class="bi bi-eye me-2"></i>Preview</button></li>
@@ -260,7 +262,7 @@
   </div>
 
   <div class="modal fade" id="filePreviewModal" tabindex="-1" aria-hidden="true" data-preview-modal>
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable file-manager-info-modal">
       <div class="modal-content bg-dark text-light border-secondary">
         <div class="modal-header border-secondary">
           <div class="min-w-0">
@@ -278,9 +280,38 @@
       </div>
     </div>
   </div>
+
+  <div class="modal fade" id="fileInformationModal" tabindex="-1" aria-hidden="true" data-information-modal>
+    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content bg-dark text-light border-secondary">
+        <div class="modal-header border-secondary">
+          <div class="min-w-0">
+            <p class="eyebrow mb-1">Information</p>
+            <h2 class="h5 mb-0 text-truncate" data-information-title>File information</h2>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body vstack gap-3">
+          <div class="file-manager-status m-0" data-information-status>Waiting to load information.</div>
+          <div class="progress file-manager-upload-progress d-none" role="progressbar" aria-valuemin="0" aria-valuemax="100" data-information-progress-wrap>
+            <div class="progress-bar" style="width: 100%" data-information-progress-bar>Scanning</div>
+          </div>
+          <div class="file-manager-info-summary" data-information-summary></div>
+          <div class="file-manager-info-section">
+            <h3 class="h6 mb-2">Selected items</h3>
+            <div class="file-manager-info-items" data-information-items></div>
+          </div>
+          <div class="file-manager-info-section d-none" data-information-errors-section>
+            <h3 class="h6 mb-2">Read errors</h3>
+            <div class="file-manager-info-errors" data-information-errors></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
 </form>
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260821-process-back-path"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260822-information"></script>
 {% endblock %}

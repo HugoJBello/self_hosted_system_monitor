@@ -18,6 +18,7 @@ from file_manager_app.browser import (
     list_file_manager_entries,
     media_kind_for_content_type,
 )
+from file_manager_app.information import continue_file_information, start_file_information
 from file_manager_app.models import FileOperation
 from file_manager_app.services import (
     cancel_file_operation,
@@ -264,6 +265,20 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
         if media_kind not in {"image", "text", "video"}:
             raise Http404("Preview is not available.")
         return FileResponse(open(absolute_path, "rb"), content_type=content_type)
+
+
+class FileManagerInformationView(LoginRequiredMixin, View):
+    def post(self, request):
+        try:
+            session_id = request.POST.get("session_id") or ""
+            if session_id:
+                payload = continue_file_information(session_id)
+            else:
+                paths = request.POST.getlist("selected_paths") or [request.POST.get("current_path") or "/"]
+                payload = start_file_information(paths)
+        except ValueError as exc:
+            return JsonResponse({"ok": False, "error": str(exc)}, status=400)
+        return JsonResponse(payload)
 
 
 class FileManagerOperationsView(LoginRequiredMixin, View):
