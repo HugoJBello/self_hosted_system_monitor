@@ -33,6 +33,7 @@
   let mobileKeyboardMode = false;
   let mobileInputValue = "";
   let mobileViewportScrollTimer = null;
+  let restoreMobileScrollTimer = null;
   const pendingInputQueue = [];
 
   const PING_INTERVAL_MS = 30000;
@@ -626,8 +627,8 @@
     mobileInput.rows = 1;
     mobileInput.value = "";
     mobileInput.style.cssText = [
-      "position:absolute",
-      "bottom:0",
+      "position:fixed",
+      "top:0",
       "left:0",
       "width:1px",
       "height:1px",
@@ -645,7 +646,7 @@
       "pointer-events:none",
       "z-index:0"
     ].join(";");
-    container.appendChild(mobileInput);
+    document.body.appendChild(mobileInput);
 
     mobileInput.addEventListener("keydown", handleMobileInputKeydown);
     mobileInput.addEventListener("input", handleMobileInput);
@@ -656,6 +657,9 @@
 
   function focusMobileInput() {
     configureHelperTextarea();
+    positionMobileInputAnchor();
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
     if (document.activeElement !== mobileInput) {
       try {
         mobileInput.focus({ preventScroll: true });
@@ -663,7 +667,8 @@
         mobileInput.focus();
       }
     }
-    keepTerminalInputVisible();
+    keepMobileInputCaretAtEnd();
+    restoreWindowScroll(scrollX, scrollY);
   }
 
   function handleMobileInputKeydown(event) {
@@ -672,14 +677,14 @@
       event.preventDefault();
       sendTerminalInput("\r");
       resetMobileInputValue();
-      keepTerminalInputVisible();
+      stabilizeMobileInputViewport();
       return;
     }
     if (event.key === "Backspace" && !mobileInput.value) {
       event.preventDefault();
       sendTerminalInput("\x7f");
       resetMobileInputValue();
-      keepTerminalInputVisible();
+      stabilizeMobileInputViewport();
       return;
     }
     if (event.key === "Delete") {
@@ -702,7 +707,7 @@
     const consumedControl = sequence ? sendInteractiveInput(sequence) : false;
     if (consumedControl) resetMobileInputValue();
     keepMobileInputCaretAtEnd();
-    keepTerminalInputVisible();
+    stabilizeMobileInputViewport();
   }
 
   function inputDiffToTerminalSequence(previousValue, nextValue) {
@@ -740,12 +745,9 @@
     mobileInput.value = "";
   }
 
-  function keepTerminalInputVisible() {
+  function stabilizeMobileInputViewport() {
     if (!mobileKeyboardMode) return;
-    try {
-      terminal.scrollToBottom();
-    } catch (error) {
-    }
+    positionMobileInputAnchor();
     window.requestAnimationFrame(() => {
       try {
         terminal.refresh(0, Math.max(0, terminal.rows - 1));
@@ -757,8 +759,61 @@
   function scheduleMobileViewportAlignment() {
     window.clearTimeout(mobileViewportScrollTimer);
     mobileViewportScrollTimer = window.setTimeout(() => {
-      keepTerminalInputVisible();
+      positionMobileInputAnchor();
     }, 120);
+  }
+
+  function positionMobileInputAnchor() {
+    if (!mobileInput || !container) return;
+    const viewport = currentVisualViewport();
+    const cursorRect = visibleCursorRect();
+    const containerRect = container.getBoundingClientRect();
+    const fallbackTop = Math.max(containerRect.top + 12, viewport.top + 8);
+    const fallbackLeft = Math.max(containerRect.left + 12, viewport.left + 8);
+    const top = clamp((cursorRect ? cursorRect.top : fallbackTop), viewport.top + 8, viewport.bottom - 32);
+    const left = clamp((cursorRect ? cursorRect.left : fallbackLeft), viewport.left + 8, viewport.right - 32);
+    mobileInput.style.top = `${Math.max(0, top)}px`;
+    mobileInput.style.left = `${Math.max(0, left)}px`;
+  }
+
+  function visibleCursorRect() {
+    const cursor = container.querySelector(".xterm-cursor");
+    if (!cursor) return null;
+    const rect = cursor.getBoundingClientRect();
+    if (!rect.width && !rect.height) return null;
+    const viewport = currentVisualViewport();
+    const visible = rect.bottom >= viewport.top && rect.top <= viewport.bottom && rect.right >= viewport.left && rect.left <= viewport.right;
+    return visible ? rect : null;
+  }
+
+  function currentVisualViewport() {
+    const viewport = window.visualViewport;
+    const left = viewport ? viewport.offsetLeft : 0;
+    const top = viewport ? viewport.offsetTop : 0;
+    const width = viewport ? viewport.width : window.innerWidth;
+    const height = viewport ? viewport.height : window.innerHeight;
+    return {
+      left,
+      top,
+      right: left + width,
+      bottom: top + height
+    };
+  }
+
+  function restoreWindowScroll(scrollX, scrollY) {
+    window.clearTimeout(restoreMobileScrollTimer);
+    const restore = () => {
+      if (window.scrollX !== scrollX || window.scrollY !== scrollY) {
+        window.scrollTo(scrollX, scrollY);
+      }
+    };
+    restore();
+    restoreMobileScrollTimer = window.setTimeout(restore, 0);
+  }
+
+  function clamp(value, min, max) {
+    if (max < min) return min;
+    return Math.min(Math.max(value, min), max);
   }
 
   function refreshTerminal() {
