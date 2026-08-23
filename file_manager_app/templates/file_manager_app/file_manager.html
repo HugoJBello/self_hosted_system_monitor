@@ -9,6 +9,7 @@
   <input type="hidden" name="current_path" value="{{ current_path }}" data-current-path-input>
   <input type="hidden" name="return_path" value="{{ current_path }}" data-return-path-input>
   <input type="hidden" name="destination_path" value="" data-destination-path-input>
+  <input type="hidden" name="file_action" value="" data-file-action-input>
   <div data-selected-paths-inputs></div>
   <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end gap-3 mb-4">
     <div>
@@ -138,7 +139,7 @@
           <div class="file-manager-destination-list" data-destination-rows></div>
         </div>
         <div class="modal-footer border-secondary">
-          <button type="submit" name="file_action" value="copy" class="btn btn-accent" data-destination-submit>Copy here</button>
+          <button type="submit" value="copy" class="btn btn-accent" data-destination-submit>Copy here</button>
         </div>
       </div>
     </div>
@@ -163,7 +164,7 @@
         </div>
         <div class="modal-footer border-secondary">
           <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" name="file_action" value="delete" class="btn btn-danger" data-delete-confirm disabled>
+          <button type="submit" value="delete" class="btn btn-danger" data-delete-confirm disabled>
             <i class="bi bi-trash me-1"></i>Delete selected
           </button>
         </div>
@@ -184,10 +185,11 @@
         <div class="modal-body">
           <label class="form-label" for="newFolderName">Folder name</label>
           <input id="newFolderName" type="text" name="folder_name" class="form-control" autocomplete="off" data-create-folder-name>
+          <div class="file-manager-status d-none mt-3" data-create-folder-status></div>
         </div>
         <div class="modal-footer border-secondary">
           <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" name="file_action" value="mkdir" class="btn btn-accent">Create folder</button>
+          <button type="submit" value="mkdir" class="btn btn-accent" data-create-folder-submit>Create folder</button>
         </div>
       </div>
     </div>
@@ -318,5 +320,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260822-click-open-mode"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260823-file-action-authoritative"></script>
 {% endblock %}

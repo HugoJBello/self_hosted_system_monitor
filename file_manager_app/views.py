@@ -8,8 +8,10 @@ from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.decorators import method_decorator
 from django.utils import timezone
 from django.views import View
+from django.views.decorators.cache import never_cache
 
 from file_manager_app.browser import (
     MAX_IMAGE_PREVIEW_BYTES,
@@ -67,6 +69,7 @@ def _operations_url(return_path=""):
     return url
 
 
+@method_decorator(never_cache, name="dispatch")
 class FileManagerView(LoginRequiredMixin, View):
     template_name = "file_manager_app/file_manager.html"
 
@@ -90,7 +93,7 @@ class FileManagerView(LoginRequiredMixin, View):
     def post(self, request):
         current_path = normalize_host_path(request.POST.get("current_path") or "/")
         return_path = self._return_path(request, current_path)
-        action = request.POST.get("file_action") or ""
+        action = self._requested_action(request)
         selected_paths = request.POST.getlist("selected_paths")
         try:
             if action == "upload_start":
@@ -157,6 +160,8 @@ class FileManagerView(LoginRequiredMixin, View):
                 return redirect(f"{reverse('monitor:file-manager')}?path={current_path}")
             if action == "mkdir":
                 item = create_directory(current_path, request.POST.get("folder_name") or "")
+                if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                    return JsonResponse({"ok": True, "item": item})
                 messages.success(request, f"Folder '{item['name']}' created.")
                 return redirect(f"{reverse('monitor:file-manager')}?path={current_path}")
             if action == "download":
@@ -181,6 +186,25 @@ class FileManagerView(LoginRequiredMixin, View):
                 return JsonResponse({"ok": False, "error": str(exc)}, status=400)
             messages.error(request, str(exc))
         return redirect(f"{reverse('monitor:file-manager')}?path={current_path}")
+
+    def _requested_action(self, request):
+        if request.POST.get("folder_name"):
+            return "mkdir"
+        valid_actions = {
+            "upload_start",
+            "upload_chunk",
+            "upload_finish",
+            "upload",
+            "mkdir",
+            "download",
+            "copy",
+            "move",
+            "delete",
+        }
+        for action in reversed(request.POST.getlist("file_action")):
+            if action in valid_actions:
+                return action
+        return ""
 
     def _requested_path(self, request, settings_obj):
         requested_path = (request.GET.get("path") or "").strip()

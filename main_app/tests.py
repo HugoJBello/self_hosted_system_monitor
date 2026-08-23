@@ -10,6 +10,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import OperationalError
+from django.http import QueryDict
 from django.utils import timezone
 from django.test import TestCase, override_settings
 from django.urls import reverse
@@ -241,6 +242,7 @@ class MonitorViewsTests(TestCase):
     def test_file_manager_page_renders_folder_list(self):
         response = self.client.get(self._path("monitor:file-manager"))
         self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response["Cache-Control"])
         self.assertContains(response, "data-file-manager-page")
         self.assertContains(response, "data-file-manager-rows")
         self.assertContains(response, "data-file-manager-grid")
@@ -261,6 +263,9 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "data-upload-list")
         self.assertContains(response, "data-upload-clear-button")
         self.assertContains(response, "data-upload-chunk-toggle")
+        self.assertNotContains(response, 'name="file_action" value="copy"')
+        self.assertNotContains(response, 'name="file_action" value="delete"')
+        self.assertNotContains(response, 'name="file_action" value="mkdir"')
         self.assertNotContains(response, "data-confirm-submit=\"Delete selected files and folders?\"")
         self.assertContains(response, reverse("monitor:file-manager-operations"))
         self.assertContains(response, reverse("monitor:file-manager-list"))
@@ -369,6 +374,30 @@ class MonitorViewsTests(TestCase):
             )
             self.assertEqual(response.status_code, 302)
             self.assertTrue(os.path.isdir(os.path.join(tmpdir, "created-from-test")))
+
+    def test_file_manager_create_folder_falls_back_when_action_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            response = self.client.post(
+                self._path("monitor:file-manager"),
+                {
+                    "current_path": tmpdir,
+                    "folder_name": "created-with-enter",
+                },
+            )
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(os.path.isdir(os.path.join(tmpdir, "created-with-enter")))
+
+    def test_file_manager_create_folder_ignores_pending_action_values(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            data = QueryDict(mutable=True)
+            data.update({"current_path": tmpdir, "folder_name": "test_test"})
+            data.setlist("file_action", ["", "mkdir", "download"])
+            response = self.client.post(
+                self._path("monitor:file-manager"),
+                data,
+            )
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(os.path.isdir(os.path.join(tmpdir, "test_test")))
 
     def test_file_manager_chunked_upload_reassembles_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

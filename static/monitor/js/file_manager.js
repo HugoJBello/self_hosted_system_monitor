@@ -9,6 +9,7 @@
   const currentBreadcrumbs = page.querySelector("[data-current-breadcrumbs]");
   const currentPathInput = page.querySelector("[data-current-path-input]");
   const returnPathInput = page.querySelector("[data-return-path-input]");
+  const fileActionInput = page.querySelector("[data-file-action-input]");
   const itemCount = page.querySelector("[data-item-count]");
   const selectionCount = page.querySelector("[data-selection-count]");
   const parentButton = page.querySelector("[data-parent-button]");
@@ -28,6 +29,8 @@
   const createFolderTrigger = page.querySelector("[data-create-folder-trigger]");
   const createFolderModalElement = page.querySelector("[data-create-folder-modal]");
   const createFolderName = page.querySelector("[data-create-folder-name]");
+  const createFolderStatus = page.querySelector("[data-create-folder-status]");
+  const createFolderSubmit = page.querySelector("[data-create-folder-submit]");
   const uploadTrigger = page.querySelector("[data-upload-trigger]");
   const uploadModalElement = page.querySelector("[data-upload-modal]");
   const uploadBreadcrumbs = page.querySelector("[data-upload-breadcrumbs]");
@@ -166,9 +169,16 @@
   destinationUp?.addEventListener("click", () => {
     if (destinationParentPath) loadDestination(destinationParentPath);
   });
-  page.addEventListener("submit", (event) => {
-    const submitter = event.submitter;
-    if (submitter?.value === "mkdir" && currentPathInput) {
+  page.addEventListener("submit", async (event) => {
+    const action = submitAction(event.submitter);
+    page.querySelectorAll("[data-pending-submit-marker]").forEach((marker) => marker.remove());
+    if (action === "mkdir") {
+      event.preventDefault();
+      await submitCreateFolder();
+      return;
+    }
+    if (fileActionInput) fileActionInput.value = action;
+    if (action === "mkdir" && currentPathInput) {
       currentPathInput.value = activeActionTargetPath || currentPath;
     } else if (currentPathInput) {
       currentPathInput.value = currentPath;
@@ -176,6 +186,70 @@
     if (returnPathInput) returnPathInput.value = currentPath;
     syncSelectedInputs();
   });
+
+  function submitAction(submitter) {
+    if (submitter?.value) return submitter.value;
+    if (createFolderModalElement?.classList.contains("show")) return "mkdir";
+    if (deleteModalElement?.classList.contains("show")) return "delete";
+    if (destinationModalElement?.classList.contains("show")) return destinationAction;
+    return "";
+  }
+
+  async function submitCreateFolder() {
+    const folderName = (createFolderName?.value || "").trim();
+    const targetPath = activeActionTargetPath || currentPath || "/";
+    if (!folderName) {
+      setCreateFolderStatus("Folder name is required.", true);
+      createFolderName?.focus();
+      return;
+    }
+
+    const csrfInput = page.querySelector("input[name='csrfmiddlewaretoken']");
+    const body = new URLSearchParams();
+    body.set("csrfmiddlewaretoken", csrfInput?.value || "");
+    body.set("current_path", targetPath);
+    body.set("return_path", currentPath || "/");
+    body.set("folder_name", folderName);
+    body.set("file_action", "mkdir");
+    if (createFolderSubmit) createFolderSubmit.disabled = true;
+    setCreateFolderStatus("Creating folder...", false);
+    try {
+      const response = await fetch(page.action || window.location.href, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          "X-Requested-With": "XMLHttpRequest",
+        },
+        body,
+      });
+      let payload = {};
+      try {
+        payload = await response.json();
+      } catch (_) {
+        throw new Error(`Could not create folder (HTTP ${response.status}).`);
+      }
+      if (!response.ok || !payload.ok) {
+        throw new Error(payload.error || `Could not create folder (HTTP ${response.status}).`);
+      }
+      setCreateFolderStatus(`Created ${payload.item?.path || folderName}.`, false);
+      activeActionTargetPath = "";
+      if (window.bootstrap && createFolderModalElement) {
+        window.bootstrap.Modal.getOrCreateInstance(createFolderModalElement).hide();
+      }
+      await navigateTo(targetPath);
+    } catch (error) {
+      setCreateFolderStatus(error.message || "Could not create folder.", true);
+      if (createFolderSubmit) createFolderSubmit.disabled = false;
+    }
+  }
+
+  function setCreateFolderStatus(message, isError) {
+    if (!createFolderStatus) return;
+    createFolderStatus.textContent = message || "";
+    createFolderStatus.classList.toggle("d-none", !message);
+    createFolderStatus.classList.toggle("is-error", Boolean(isError));
+  }
 
   function bindRows() {
     page.querySelectorAll(".file-manager-item[data-path]").forEach((row) => {
