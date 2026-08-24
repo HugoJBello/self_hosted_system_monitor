@@ -2921,6 +2921,31 @@ body.app-shell {
   text-transform: uppercase;
 }
 
+.file-manager-sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.file-manager-sort-header:hover,
+.file-manager-sort-header:focus-visible {
+  color: #dff4ff;
+  outline: none;
+}
+
+.file-manager-sort-header i {
+  color: #7dd3fc;
+  font-size: 0.8rem;
+}
+
 .file-manager-item {
   cursor: default;
 }

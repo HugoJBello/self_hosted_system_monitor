@@ -44,7 +44,7 @@
       <a href="{% url 'monitor:file-manager-operations' %}" class="btn btn-outline-light">
         <i class="bi bi-list-task"></i><span>Processes</span>
       </a>
-      <a href="{% url 'monitor:file-manager-search' %}?path={{ current_path|urlencode }}" class="btn btn-outline-light">
+      <a href="{% url 'monitor:file-manager-search' %}?path={{ current_path|urlencode }}" class="btn btn-outline-light" data-file-search-link>
         <i class="bi bi-search"></i><span>Search</span>
       </a>
       <div class="dropdown">
@@ -100,12 +100,12 @@
       <div data-file-manager-table>
         <div class="file-manager-row file-manager-row-head" role="row">
           <div role="columnheader" class="file-manager-select-cell"></div>
-          <div role="columnheader">Name</div>
-          <div role="columnheader">Type</div>
-          <div role="columnheader">Size</div>
-          <div role="columnheader">Modified</div>
-          <div role="columnheader">Owner</div>
-          <div role="columnheader">Permissions</div>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="name" aria-sort="none">Name <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="kind" aria-sort="none">Type <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="size" aria-sort="none">Size <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="modified" aria-sort="none">Modified <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="owner" aria-sort="none">Owner <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="permissions" aria-sort="none">Permissions <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
         </div>
         <div data-file-manager-rows>
           {% for entry in entries %}
@@ -409,5 +409,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-file-search-sort"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-file-sort-persistence"></script>
 {% endblock %}

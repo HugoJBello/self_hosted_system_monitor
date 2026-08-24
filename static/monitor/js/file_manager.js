@@ -14,6 +14,8 @@
   const selectionCount = page.querySelector("[data-selection-count]");
   const sortField = page.querySelector("[data-sort-field]");
   const sortDirection = page.querySelector("[data-sort-direction]");
+  const sortHeaders = page.querySelectorAll("[data-sort-header]");
+  const fileSearchLink = page.querySelector("[data-file-search-link]");
   const parentButton = page.querySelector("[data-parent-button]");
   const viewModeToggle = page.querySelector("[data-view-mode-toggle]");
   const viewModeLabel = page.querySelector("[data-view-mode-label]");
@@ -127,18 +129,22 @@
   const preferenceKeys = {
     viewMode: "fileManager.viewMode",
     multipleSelect: "fileManager.multipleSelect",
-    singleClickOpen: "fileManager.singleClickOpen"
+    singleClickOpen: "fileManager.singleClickOpen",
+    sortField: "fileManager.sortField",
+    sortDirection: "fileManager.sortDirection"
   };
 
   page.dataset.previousPath = currentPath;
   formatVisibleValues();
   renderBreadcrumbs(currentBreadcrumbs, currentPath, navigateTo);
   window.history.replaceState({ ...(window.history.state || {}), fileManagerPath: currentPath }, "", window.location.href);
+  restoreSessionPreferences();
   currentItems = Array.from(rowsContainer?.querySelectorAll(".file-manager-item[data-path]:not([data-parent-row])") || []).map(itemFromElement);
   renderItems(currentItems);
   bindRows();
-  restoreSessionPreferences();
   updateSortDirectionButton(sortDirection, currentSortDirection());
+  updateSortHeaders();
+  updateFileSearchLink(currentPath);
   syncSelectionState();
 
   parentButton?.addEventListener("click", () => {
@@ -147,6 +153,7 @@
   viewModeToggle?.addEventListener("click", () => setViewMode(viewMode === "list" ? "grid" : "list"));
   sortField?.addEventListener("change", () => applyFileSort());
   sortDirection?.addEventListener("click", () => toggleSortDirection());
+  sortHeaders.forEach((header) => header.addEventListener("click", () => sortByHeader(header.dataset.sortHeader)));
   destinationSortField?.addEventListener("change", () => reloadDestinationWithSort());
   destinationSortDirection?.addEventListener("click", () => {
     destinationSort.direction = destinationSort.direction === "asc" ? "desc" : "asc";
@@ -488,6 +495,7 @@
       renderItems(currentItems);
       renderBreadcrumbs(currentBreadcrumbs, currentPath, navigateTo);
       renderBreadcrumbs(uploadBreadcrumbs, currentPath, navigateTo);
+      updateFileSearchLink(currentPath);
       if (itemCount) itemCount.textContent = String((payload.items || []).length);
       if (parentButton) parentButton.disabled = !parentPath;
       if (updateHistory && currentPath !== page.dataset.previousPath) {
@@ -559,15 +567,40 @@
   }
 
   function applyFileSort() {
+    saveSortPreferences();
     updateSortDirectionButton(sortDirection, currentSortDirection());
+    updateSortHeaders();
     renderItems(currentItems);
   }
 
   function toggleSortDirection() {
     const nextDirection = currentSortDirection() === "asc" ? "desc" : "asc";
     if (sortDirection) sortDirection.dataset.direction = nextDirection;
-    updateSortDirectionButton(sortDirection, nextDirection);
-    renderItems(currentItems);
+    applyFileSort();
+  }
+
+  function sortByHeader(field) {
+    if (!sortField || !sortDirection) return;
+    const nextDirection = sortField.value === field && currentSortDirection() === "asc" ? "desc" : "asc";
+    sortField.value = field;
+    sortDirection.dataset.direction = nextDirection;
+    applyFileSort();
+  }
+
+  function updateSortHeaders() {
+    const activeField = sortField?.value || "name";
+    const activeDirection = currentSortDirection();
+    sortHeaders.forEach((header) => {
+      const isActive = header.dataset.sortHeader === activeField;
+      header.setAttribute("aria-sort", isActive ? (activeDirection === "desc" ? "descending" : "ascending") : "none");
+      const icon = header.querySelector("i");
+      if (icon) icon.className = `bi ${isActive ? (activeDirection === "desc" ? "bi-arrow-down" : "bi-arrow-up") : "bi-arrow-down-up"}`;
+    });
+  }
+
+  function saveSortPreferences() {
+    saveSessionPreference(preferenceKeys.sortField, sortField?.value || "name");
+    saveSessionPreference(preferenceKeys.sortDirection, currentSortDirection());
   }
 
   function reloadDestinationWithSort() {
@@ -805,12 +838,24 @@
   }
 
   function restoreSessionPreferences() {
+    const storedSortField = loadSessionPreference(preferenceKeys.sortField);
+    const storedSortDirection = loadSessionPreference(preferenceKeys.sortDirection);
+    if (sortField && storedSortField) sortField.value = storedSortField;
+    if (sortDirection && ["asc", "desc"].includes(storedSortDirection)) sortDirection.dataset.direction = storedSortDirection;
     const storedViewMode = loadSessionPreference(preferenceKeys.viewMode);
     if (storedViewMode === "grid" || storedViewMode === "list") {
       setViewMode(storedViewMode);
     }
     setMultipleSelectEnabled(loadSessionPreference(preferenceKeys.multipleSelect) === "1");
     setSingleClickOpenEnabled(loadSessionPreference(preferenceKeys.singleClickOpen) === "1");
+    saveSortPreferences();
+  }
+
+  function updateFileSearchLink(path) {
+    if (!fileSearchLink) return;
+    const url = new URL(fileSearchLink.href, window.location.origin);
+    url.searchParams.set("path", path || "/");
+    fileSearchLink.href = url.toString();
   }
 
   function saveSessionPreference(key, value) {

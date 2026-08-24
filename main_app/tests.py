@@ -311,6 +311,7 @@ class MonitorViewsTests(TestCase):
             self.assertContains(response, "report-final.txt")
             self.assertContains(response, "report-draft.txt")
             self.assertContains(response, "Search from")
+            self.assertContains(response, f'value="{root}"')
 
     @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
     def test_file_manager_information_api_scans_selected_paths(self):
