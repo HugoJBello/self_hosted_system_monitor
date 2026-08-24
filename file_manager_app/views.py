@@ -21,8 +21,15 @@ from file_manager_app.browser import (
     media_kind_for_content_type,
 )
 from file_manager_app.information import continue_file_information, start_file_information
-from file_manager_app.models import FileOperation
-from file_manager_app.search import SEARCH_RESULT_LIMIT, search_file_manager
+from file_manager_app.models import FileOperation, FileSearch
+from file_manager_app.search import (
+    SEARCH_DEFAULT_TIMEOUT,
+    SEARCH_RESULT_LIMIT,
+    SEARCH_TIMEOUT_OPTIONS,
+    create_search_operation,
+    search_operation_url,
+    search_result_items,
+)
 from file_manager_app.services import (
     cancel_file_operation,
     create_file_operation,
@@ -297,27 +304,35 @@ class FileManagerSearchView(LoginRequiredMixin, View):
 
     def get(self, request):
         settings_obj = MonitoringSettings.load()
-        root_path = request.GET.get("path") or settings_obj.file_manager_start_path or "/"
-        try:
-            root_path = normalize_host_path(root_path)
-        except ValueError:
-            root_path = "/"
-        query = (request.GET.get("q") or "").strip()
-        recursive = request.GET.get("recursive", "1") == "1"
-        sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
-        search_error = ""
-        results = []
-        truncated = False
-        timed_out = False
-        if query:
+        operation = None
+        search = None
+        operation_id = request.GET.get("operation_id") or ""
+        if operation_id:
+            operation = get_object_or_404(FileOperation, pk=operation_id, action="search")
+            search = get_object_or_404(FileSearch, operation=operation)
+            root_path = search.root_path
+            query = search.query
+            recursive = search.recursive
+            timeout_seconds = search.timeout_seconds
+            results = search_result_items(search)
+            truncated = search.truncated
+            timed_out = search.timed_out
+            search_error = operation.summary if operation.status == "failed" else ""
+        else:
+            root_path = request.GET.get("path") or settings_obj.file_manager_start_path or "/"
             try:
-                search_result = search_file_manager(root_path, query, recursive=recursive)
-                results = sort_entries(search_result.items, sort_field, sort_direction)
-                truncated = search_result.truncated
-                timed_out = search_result.timed_out
-                search_error = search_result.error
-            except (ValueError, RuntimeError) as exc:
-                search_error = str(exc)
+                root_path = normalize_host_path(root_path)
+            except ValueError:
+                root_path = "/"
+            query = ""
+            recursive = True
+            timeout_seconds = SEARCH_DEFAULT_TIMEOUT
+            results = []
+            truncated = False
+            timed_out = False
+            search_error = ""
+        sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
+        results = sort_entries(results, sort_field, sort_direction)
         return render(
             request,
             self.template_name,
@@ -326,6 +341,8 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 "root_path": root_path,
                 "query": query,
                 "recursive": recursive,
+                "timeout_seconds": timeout_seconds,
+                "timeout_options": SEARCH_TIMEOUT_OPTIONS,
                 "results": results,
                 "result_limit": SEARCH_RESULT_LIMIT,
                 "truncated": truncated,
@@ -335,8 +352,47 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 "sort_direction": sort_direction,
                 "sort_fields": SORT_FIELDS,
                 "sort_directions": SORT_DIRECTIONS,
+                "operation": operation,
+                "search": search,
             },
         )
+
+    def post(self, request):
+        if request.POST.get("operation_id"):
+            operation = get_object_or_404(FileOperation, pk=request.POST.get("operation_id"), action="search")
+            if request.POST.get("cancel_search"):
+                cancel_file_operation(operation)
+            return redirect(search_operation_url(operation))
+        root_path = request.POST.get("path") or MonitoringSettings.load().file_manager_start_path or "/"
+        try:
+            operation = create_search_operation(
+                root_path,
+                request.POST.get("q") or "",
+                recursive=request.POST.get("recursive") == "1",
+                timeout_seconds=request.POST.get("timeout") or SEARCH_DEFAULT_TIMEOUT,
+            )
+        except ValueError as exc:
+            return render(request, self.template_name, {
+                "settings_obj": MonitoringSettings.load(),
+                "root_path": root_path,
+                "query": request.POST.get("q") or "",
+                "recursive": request.POST.get("recursive") == "1",
+                "timeout_seconds": request.POST.get("timeout") or SEARCH_DEFAULT_TIMEOUT,
+                "timeout_options": SEARCH_TIMEOUT_OPTIONS,
+                "results": [],
+                "result_limit": SEARCH_RESULT_LIMIT,
+                "truncated": False,
+                "timed_out": False,
+                "search_error": str(exc),
+                "sort_field": "name",
+                "sort_direction": "asc",
+                "sort_fields": SORT_FIELDS,
+                "sort_directions": SORT_DIRECTIONS,
+            }, status=400)
+        from file_manager_app.services import start_background_file_operation
+
+        start_background_file_operation(operation)
+        return redirect(search_operation_url(operation))
 
 
 class FileManagerPreviewView(LoginRequiredMixin, View):
@@ -411,6 +467,7 @@ class FileManagerOperationDetailView(LoginRequiredMixin, View):
     def get(self, request, operation_id):
         operation = get_object_or_404(FileOperation, pk=operation_id)
         return_path = _return_path_from_request(request, "")
+        search = getattr(operation, "search", None)
         return render(
             request,
             self.template_name,
@@ -420,6 +477,8 @@ class FileManagerOperationDetailView(LoginRequiredMixin, View):
                 "file_manager_back_url": _file_manager_url(return_path),
                 "file_manager_operations_url": _operations_url(return_path),
                 "settings_obj": MonitoringSettings.load(),
+                "search": search,
+                "search_url": search_operation_url(operation) if search else "",
             },
         )
 
@@ -437,6 +496,8 @@ class FileManagerOperationDetailView(LoginRequiredMixin, View):
 class FileManagerOperationStatusView(LoginRequiredMixin, View):
     def get(self, request, operation_id):
         operation = get_object_or_404(FileOperation, pk=operation_id)
+        search = getattr(operation, "search", None)
+        search_items = search_result_items(search) if search else []
         return JsonResponse(
             {
                 "id": operation.id,
@@ -463,6 +524,11 @@ class FileManagerOperationStatusView(LoginRequiredMixin, View):
                 "finished_at": operation.finished_at.isoformat() if operation.finished_at else None,
                 "updated_at": timezone.now().isoformat(),
                 "download_url": reverse("monitor:file-manager-operation-download", args=[operation.id]) if operation.action == "download" and operation.status == "success" else "",
+                "search_result_count": search.result_count if search else None,
+                "search_results": search_items if search else [],
+                "search_truncated": search.truncated if search else False,
+                "search_timed_out": search.timed_out if search else False,
+                "search_url": search_operation_url(operation) if search else "",
             }
         )
 

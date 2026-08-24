@@ -296,22 +296,38 @@ class MonitorViewsTests(TestCase):
             self.assertEqual(payload["sort_direction"], "desc")
             self.assertEqual([item["name"] for item in payload["items"]], ["zeta.txt", "alpha.txt"])
 
+    @patch("file_manager_app.services.start_background_file_operation")
     @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
-    def test_file_manager_search_uses_selected_root_and_sorting(self):
+    def test_file_manager_search_uses_selected_root_and_sorting(self, mock_start_background):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             (root / "nested").mkdir()
             (root / "nested" / "report-final.txt").write_text("report", encoding="utf-8")
             (root / "report-draft.txt").write_text("draft", encoding="utf-8")
-            response = self.client.get(
+            response = self.client.post(
                 self._path("monitor:file-manager-search"),
-                {"path": str(root), "q": "report", "recursive": "1", "sort": "name", "direction": "asc"},
+                {"path": str(root), "q": "report", "recursive": "1", "timeout": "30"},
             )
-            self.assertEqual(response.status_code, 200)
-            self.assertContains(response, "report-final.txt")
-            self.assertContains(response, "report-draft.txt")
-            self.assertContains(response, "Search from")
-            self.assertContains(response, f'value="{root}"')
+            self.assertEqual(response.status_code, 302)
+            operation = FileOperation.objects.get(action="search")
+            self.assertRedirects(response, f"{reverse('monitor:file-manager-search')}?operation_id={operation.id}", fetch_redirect_response=False)
+            self.assertEqual(operation.search.root_path, str(root))
+            self.assertEqual(operation.search.timeout_seconds, 30)
+
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_search_worker_records_incremental_results(self):
+        from file_manager_app.search import create_search_operation, execute_search_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "nested").mkdir()
+            (root / "nested" / "report.txt").write_text("report", encoding="utf-8")
+            operation = create_search_operation(str(root), "report", timeout_seconds=30)
+            execute_search_operation(operation)
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            self.assertEqual(operation.search.result_count, 1)
+            self.assertEqual(operation.search.result_paths, [str(root / "nested" / "report.txt")])
 
     @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
     def test_file_manager_information_api_scans_selected_paths(self):

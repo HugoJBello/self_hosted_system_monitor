@@ -198,6 +198,11 @@ def execute_file_operation(operation):
     operation.heartbeat_at = timezone.now()
     _append_log(operation, f"Starting {operation.get_action_display().lower()} operation on {_runner_label()}.")
     operation.save(update_fields=["process_pid", "runner_label", "status", "heartbeat_at", "log_output"])
+    if operation.action == "search":
+        from file_manager_app.search import execute_search_operation
+
+        execute_search_operation(operation)
+        return
     if operation.action == "download":
         _execute_download_operation(operation)
         return

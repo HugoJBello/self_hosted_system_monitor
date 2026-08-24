@@ -12,46 +12,85 @@
   </div>
   <div class="file-manager-actions">
     <a href="{% url 'monitor:file-manager' %}?path={{ root_path|urlencode }}" class="btn btn-outline-light"><i class="bi bi-folder2-open"></i><span>Files</span></a>
+    {% if operation %}<a href="{% url 'monitor:file-manager-operation-detail' operation.id %}" class="btn btn-outline-light"><i class="bi bi-list-task"></i><span>Process</span></a>{% endif %}
   </div>
 </div>
 
-<section class="panel-card file-search-panel">
-  <form method="get" class="file-search-form">
+<section class="panel-card file-search-panel" {% if operation %}data-file-search-process data-status-url="{% url 'monitor:file-manager-operation-status' operation.id %}" data-operation-status="{{ operation.status }}"{% endif %}>
+  <form method="post" class="file-search-form">
+    {% csrf_token %}
+    {% if operation %}<input type="hidden" name="operation_id" value="{{ operation.id }}">{% endif %}
     <div class="file-search-input-wrap">
       <label class="form-label file-manager-option-label" for="fileSearchQuery"><i class="bi bi-search" aria-hidden="true"></i><span>Name contains</span></label>
-      <input id="fileSearchQuery" name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="e.g. report, .pdf, backup" autocomplete="off" autofocus>
+      <input id="fileSearchQuery" name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="e.g. report, .pdf, backup" autocomplete="off" {% if operation %}readonly{% endif %}>
     </div>
     <div class="file-search-root">
       <label class="form-label file-manager-option-label" for="fileSearchRoot"><i class="bi bi-folder2-open" aria-hidden="true"></i><span>Search from</span></label>
-      <input id="fileSearchRoot" name="path" value="{{ root_path }}" class="form-control" spellcheck="false">
+      <input id="fileSearchRoot" name="path" value="{{ root_path }}" class="form-control" spellcheck="false" {% if operation %}readonly{% endif %}>
     </div>
     <div class="file-search-options">
       <div class="form-check form-switch">
-        <input class="form-check-input" type="checkbox" role="switch" id="fileSearchRecursive" name="recursive" value="1" {% if recursive %}checked{% endif %}>
+        <input class="form-check-input" type="checkbox" role="switch" id="fileSearchRecursive" name="recursive" value="1" {% if recursive %}checked{% endif %} {% if operation %}disabled{% endif %}>
         <label class="form-check-label" for="fileSearchRecursive">Include subfolders</label>
       </div>
-      <button type="submit" class="btn btn-accent"><i class="bi bi-search"></i>Search</button>
+      <div>
+        <label class="form-label file-manager-option-label" for="fileSearchTimeout"><i class="bi bi-stopwatch" aria-hidden="true"></i><span>Timeout</span></label>
+        <select id="fileSearchTimeout" name="timeout" class="form-select" {% if operation %}disabled{% endif %}>
+          {% for value in timeout_options %}<option value="{{ value }}" {% if timeout_seconds == value %}selected{% endif %}>{{ value }} seconds</option>{% endfor %}
+          <option value="none" {% if not timeout_seconds %}selected{% endif %}>No timeout</option>
+        </select>
+      </div>
+      {% if operation %}
+        {% if operation.status == "running" or operation.status == "paused" %}
+          <button type="submit" name="cancel_search" value="1" class="btn btn-outline-danger"><i class="bi bi-stop-circle"></i>Stop search</button>
+        {% else %}
+          <a href="{% url 'monitor:file-manager-search' %}?path={{ root_path|urlencode }}" class="btn btn-accent"><i class="bi bi-search"></i>New search</a>
+        {% endif %}
+      {% else %}
+        <button type="submit" class="btn btn-accent"><i class="bi bi-search"></i>Start search</button>
+      {% endif %}
     </div>
   </form>
-  <div class="file-search-help text-secondary small">Results are limited to {{ result_limit }} items and each search has a safety timeout.</div>
+  <div class="file-search-help text-secondary small">Results are limited to {{ result_limit }} items. A timeout protects mounted disks; choose No timeout only when you can monitor and stop the process manually.</div>
 </section>
 
-{% if query %}
+{% if search_error %}<div class="file-manager-status is-error mt-3">{{ search_error }}</div>{% endif %}
+
+{% if operation %}
+<section class="panel-card mt-4 file-search-progress">
+  <div class="file-search-results-header">
+    <div>
+      <p class="eyebrow mb-1">Search process</p>
+      <h2 class="h5 mb-0" data-search-summary>{{ operation.summary }}</h2>
+    </div>
+    <span class="file-manager-summary" data-search-count>{{ search.result_count }} found</span>
+  </div>
+  <div class="progress mt-3" role="progressbar" aria-label="Search progress"><div class="progress-bar" data-search-progress style="width: {% if operation.status == 'success' %}100{% else %}100{% endif %}%"></div></div>
+  <div class="d-flex flex-wrap justify-content-between gap-2 mt-2 small text-secondary">
+    <span data-search-current>{{ operation.current_path|default:search.root_path }}</span>
+    <span data-search-status>{{ operation.get_status_display }}</span>
+  </div>
+  <pre class="command-modal-block backup-run-output-log mt-3 mb-0" data-search-log>{{ operation.log_output|default:"Search is starting." }}</pre>
+</section>
+{% endif %}
+
+{% if operation or query %}
 <section class="panel-card mt-4 file-search-results" data-file-search-results>
   <div class="file-search-results-header">
     <div>
       <p class="eyebrow mb-1">Results</p>
       <h2 class="h5 mb-0">Matches for <code>{{ query }}</code></h2>
     </div>
-    <span class="file-manager-summary">{{ results|length }} result{{ results|length|pluralize }}</span>
+    <span class="file-manager-summary" data-search-result-summary>{{ results|length }} result{{ results|length|pluralize }}</span>
   </div>
-  {% if timed_out %}<div class="file-manager-status mt-3">Search stopped at the safety timeout. Narrow the folder or query.</div>{% endif %}
-  {% if truncated %}<div class="file-manager-status mt-3">Only the first {{ result_limit }} results are shown. Narrow the query for a complete list.</div>{% endif %}
-  {% if search_error %}<div class="file-manager-status is-error mt-3">{{ search_error }}</div>{% endif %}
+  <div class="file-search-statuses" data-search-statuses>
+    {% if timed_out %}<div class="file-manager-status mt-3">Search stopped at the safety timeout. Narrow the folder or query.</div>{% endif %}
+    {% if truncated %}<div class="file-manager-status mt-3">Only the first {{ result_limit }} results are shown. Narrow the query for a complete list.</div>{% endif %}
+  </div>
   <form method="get" class="file-search-sort-bar mt-3">
+    <input type="hidden" name="operation_id" value="{{ operation.id }}" data-search-operation-input>
     <input type="hidden" name="q" value="{{ query }}">
     <input type="hidden" name="path" value="{{ root_path }}">
-    <input type="hidden" name="recursive" value="{% if recursive %}1{% endif %}">
     <label class="file-manager-option-label" for="fileSearchSort"><i class="bi bi-sort-down" aria-hidden="true"></i><span>Sort results</span></label>
     <select id="fileSearchSort" name="sort" class="form-select form-select-sm">
       {% for value, label in sort_fields.items %}<option value="{{ value }}" {% if sort_field == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
@@ -61,7 +100,7 @@
     </select>
     <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-repeat"></i>Apply</button>
   </form>
-  <div class="file-search-result-list mt-3">
+  <div class="file-search-result-list mt-3" data-search-result-list>
     {% for item in results %}
       <a class="file-search-result" href="{% url 'monitor:file-manager' %}?path={{ item.browse_path|urlencode }}">
         <span class="file-manager-icon file-manager-icon-{{ item.kind }}"><i class="bi {% if item.kind == 'folder' %}bi-folder-fill{% else %}bi-file-earmark{% endif %}"></i></span>
@@ -69,9 +108,65 @@
         <span class="file-search-result-meta">{{ item.kind|title }} · {{ item.modified_at|default:"-" }}</span>
       </a>
     {% empty %}
-      {% if not search_error %}<div class="file-manager-empty">No matching files or folders.</div>{% endif %}
+      <div class="file-manager-empty" data-search-empty>No matching files or folders yet.</div>
     {% endfor %}
   </div>
 </section>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if operation %}
+<script>
+  const searchProcess = document.querySelector("[data-file-search-process]");
+  const searchResults = document.querySelector("[data-search-result-list]");
+  if (searchProcess) {
+    const escapeSearchHtml = (value) => {
+      const node = document.createElement("span");
+      node.textContent = value || "";
+      return node.innerHTML;
+    };
+    const renderSearchResults = (items) => {
+      if (!searchResults) return;
+      searchResults.replaceChildren();
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "file-manager-empty";
+        empty.textContent = "No matching files or folders yet.";
+        searchResults.appendChild(empty);
+        return;
+      }
+      items.forEach((item) => {
+        const link = document.createElement("a");
+        link.className = "file-search-result";
+        link.href = `{% url 'monitor:file-manager' %}?path=${encodeURIComponent(item.browse_path || "/")}`;
+        const icon = item.kind === "folder" ? "bi-folder-fill" : "bi-file-earmark";
+        link.innerHTML = `<span class="file-manager-icon file-manager-icon-${escapeSearchHtml(item.kind)}"><i class="bi ${icon}"></i></span><span class="file-search-result-main"><strong>${escapeSearchHtml(item.name)}</strong><small>${escapeSearchHtml(item.path)}</small></span><span class="file-search-result-meta">${escapeSearchHtml(item.kind || "Item")} · ${escapeSearchHtml(item.modified_at || "-")}</span>`;
+        searchResults.appendChild(link);
+      });
+    };
+    const pollSearch = async () => {
+      try {
+        const response = await fetch(searchProcess.dataset.statusUrl, { headers: { "X-Requested-With": "fetch" } });
+        if (!response.ok) return;
+        const payload = await response.json();
+        document.querySelector("[data-search-summary]").textContent = payload.summary || "";
+        document.querySelector("[data-search-count]").textContent = `${payload.search_result_count || 0} found`;
+        document.querySelector("[data-search-result-summary]").textContent = `${(payload.search_results || []).length} result${(payload.search_results || []).length === 1 ? "" : "s"}`;
+        document.querySelector("[data-search-current]").textContent = payload.current_path || "-";
+        document.querySelector("[data-search-status]").textContent = payload.status_label || payload.status;
+        document.querySelector("[data-search-log]").textContent = payload.log_output || "Search is running.";
+        renderSearchResults(payload.search_results || []);
+        if (!["running", "paused"].includes(payload.status)) searchProcess.dataset.pollingDone = "1";
+      } catch (_) {
+      }
+    };
+    pollSearch();
+    const searchTimer = window.setInterval(() => {
+      if (searchProcess.dataset.pollingDone === "1") return window.clearInterval(searchTimer);
+      pollSearch();
+    }, 1500);
+  }
+</script>
 {% endif %}
 {% endblock %}

@@ -23,6 +23,7 @@ class FileOperation(models.Model):
         ("delete", "Delete"),
         ("upload", "Upload"),
         ("download", "Download"),
+        ("search", "Search"),
     ]
     STATUS_CHOICES = [
         ("running", "Running"),
@@ -67,3 +68,24 @@ class FileOperation(models.Model):
 
     def __str__(self):
         return f"{self.get_action_display()} {self.status} @ {self.started_at:%Y-%m-%d %H:%M:%S}"
+
+
+class FileSearch(models.Model):
+    operation = models.OneToOneField(FileOperation, on_delete=models.CASCADE, related_name="search")
+    root_path = models.CharField(max_length=500)
+    query = models.CharField(max_length=500)
+    recursive = models.BooleanField(default=True)
+    timeout_seconds = models.PositiveIntegerField(blank=True, null=True)
+    result_paths = models.JSONField(default=list, blank=True)
+    result_count = models.PositiveIntegerField(default=0)
+    truncated = models.BooleanField(default=False)
+    timed_out = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "monitor"
+        ordering = ("-created_at",)
+
+    @property
+    def timeout_label(self):
+        return f"{self.timeout_seconds}s" if self.timeout_seconds else "No timeout"

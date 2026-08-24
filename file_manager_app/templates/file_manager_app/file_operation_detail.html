@@ -12,6 +12,7 @@
   <div class="d-flex gap-2 flex-wrap">
     <span class="{% if operation.status == 'failed' %}severity-pill severity-critical{% elif operation.status == 'paused' %}severity-pill severity-warning{% elif operation.status == 'cancelled' %}resolved-pill{% else %}live-pill{% endif %}" data-file-operation-status-pill>{{ operation.status|upper }}</span>
     <a href="{{ file_manager_back_url }}" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
+    {% if search %}<a href="{{ search_url }}" class="btn btn-outline-light btn-sm"><i class="bi bi-search"></i> View search</a>{% endif %}
     {% if operation.status == "running" %}
       <form method="post">{% csrf_token %}<input type="hidden" name="return_path" value="{{ return_path }}"><button type="submit" name="pause_operation" value="1" class="btn btn-outline-light btn-sm">Pause</button></form>
       <form method="post">{% csrf_token %}<input type="hidden" name="return_path" value="{{ return_path }}"><button type="submit" name="cancel_operation" value="1" class="btn btn-outline-danger btn-sm">Cancel</button></form>
@@ -31,7 +32,7 @@
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Progress</p>
       <h2 class="h4 mb-1"><span data-file-operation-progress>{{ operation.progress_percent }}</span>%</h2>
-      <p class="text-secondary mb-0"><span data-file-operation-counts>{{ operation.processed_count }}/{{ operation.total_count }}</span> items</p>
+      <p class="text-secondary mb-0"><span data-file-operation-counts>{% if search %}{{ search.result_count }} found{% else %}{{ operation.processed_count }}/{{ operation.total_count }} items{% endif %}</span></p>
     </section>
   </div>
   <div class="col-12 col-md-6 col-xl-3">
@@ -43,8 +44,8 @@
   </div>
   <div class="col-12 col-md-6 col-xl-3">
     <section class="panel-card p-4">
-      <p class="eyebrow mb-2">Destination</p>
-      <h2 class="h6 mb-1">{{ operation.destination_path|default:"-" }}</h2>
+      <p class="eyebrow mb-2">{% if search %}Search root{% else %}Destination{% endif %}</p>
+      <h2 class="h6 mb-1">{% if search %}{{ search.root_path }}{% else %}{{ operation.destination_path|default:"-" }}{% endif %}</h2>
       <p class="text-secondary mb-0">Current <span data-file-operation-current>{{ operation.current_path|default:"-" }}</span></p>
     </section>
   </div>
@@ -68,6 +69,15 @@
       <p class="eyebrow mb-2">Transfer</p>
       <h2 class="h6 mb-1">{{ operation.get_transfer_method_display }}</h2>
       <p class="text-secondary mb-0">{% if operation.rsync_delete %}Rsync --delete enabled{% else %}Method used by the worker{% endif %}</p>
+    </section>
+  </div>
+  {% endif %}
+  {% if search %}
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Search</p>
+      <h2 class="h6 mb-1 text-break">{{ search.query }}</h2>
+      <p class="text-secondary mb-0">{% if search.recursive %}Recursive{% else %}Current folder only{% endif %} · {{ search.timeout_label }}</p>
     </section>
   </div>
   {% endif %}
@@ -100,7 +110,7 @@
         const payload = await response.json();
         document.querySelector("[data-file-operation-summary]").textContent = payload.summary || "";
         document.querySelector("[data-file-operation-progress]").textContent = payload.progress_percent;
-        document.querySelector("[data-file-operation-counts]").textContent = `${payload.processed_count}/${payload.total_count}`;
+        document.querySelector("[data-file-operation-counts]").textContent = payload.action === "search" ? `${payload.search_result_count || 0} found` : `${payload.processed_count}/${payload.total_count} items`;
         document.querySelector("[data-file-operation-status-label]").textContent = payload.status_label || payload.status;
         document.querySelector("[data-file-operation-current]").textContent = payload.current_path || "-";
         document.querySelector("[data-file-operation-runner]").textContent = payload.runner_label || "-";
