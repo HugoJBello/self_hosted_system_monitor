@@ -78,12 +78,18 @@ def _validated_destination(destination_path):
     return destination
 
 
+def _is_real_directory(path):
+    absolute_path = hostfs_path(path)
+    return os.path.isdir(absolute_path) and not os.path.islink(absolute_path)
+
+
 def create_file_operation(
     action,
     sources,
     *,
     destination_path="",
     transfer_method="standard",
+    rsync_delete=False,
     conflict_policy="overwrite",
     folder_conflict_policy="merge",
 ):
@@ -95,11 +101,21 @@ def create_file_operation(
         raise ValueError("Unsupported folder conflict policy.")
     if transfer_method not in {choice[0] for choice in FileOperation.TRANSFER_METHOD_CHOICES}:
         raise ValueError("Unsupported transfer method.")
+    if not isinstance(rsync_delete, bool):
+        raise ValueError("Invalid rsync delete option.")
+    normalized_sources = _validated_sources(sources)
     if action not in {"copy", "move"}:
         transfer_method = "standard"
+        rsync_delete = False
         conflict_policy = "overwrite"
         folder_conflict_policy = "merge"
-    normalized_sources = _validated_sources(sources)
+    if rsync_delete:
+        if transfer_method != "rsync":
+            raise ValueError("The rsync delete option requires Rsync differential.")
+        if conflict_policy != "overwrite" or folder_conflict_policy != "merge":
+            raise ValueError("Rsync delete requires overwrite files and merge folders policies.")
+        if not all(_is_real_directory(source) for source in normalized_sources):
+            raise ValueError("Rsync delete is available only when all selected items are folders.")
     destination = _validated_destination(destination_path) if action in {"copy", "move"} else ""
     operation = FileOperation.objects.create(
         action=action,
@@ -107,6 +123,7 @@ def create_file_operation(
         sources=normalized_sources,
         destination_path=destination,
         transfer_method=transfer_method,
+        rsync_delete=rsync_delete,
         conflict_policy=conflict_policy,
         folder_conflict_policy=folder_conflict_policy,
         total_count=len(normalized_sources),
@@ -268,6 +285,11 @@ def _transfer_path(operation, source, target, display_source):
         target_is_folder = os.path.isdir(target) and not os.path.islink(target)
         if source_is_folder and target_is_folder:
             if operation.folder_conflict_policy == "merge":
+                if operation.transfer_method == "rsync" and operation.rsync_delete:
+                    _rsync_directory(operation, source, target, display_source)
+                    if operation.action == "move":
+                        _delete_path(source)
+                    return "transferred"
                 return _merge_directory(operation, source, target, display_source)
             policy = operation.folder_conflict_policy
         elif source_is_folder:
@@ -396,7 +418,7 @@ def rsync_available():
     return shutil.which("rsync") is not None
 
 
-def _rsync_command(source, target, *, directory):
+def _rsync_command(source, target, *, directory, delete=False):
     source_arg = f"{source}{os.sep}" if directory else source
     target_arg = f"{target}{os.sep}" if directory else target
     return [
@@ -404,7 +426,9 @@ def _rsync_command(source, target, *, directory):
         "--archive",
         "--no-owner",
         "--no-group",
+        "--checksum",
         "--partial",
+        *(["--delete"] if directory and delete else []),
         "--human-readable",
         "--info=progress2",
         "--out-format=%i %n%L",
@@ -415,8 +439,9 @@ def _rsync_command(source, target, *, directory):
 
 
 def _rsync_transfer(operation, source, target, display_source, *, directory):
-    command = _rsync_command(source, target, directory=directory)
-    _append_log(operation, f"Rsync differential {operation.get_action_display().lower()}: {display_source}")
+    command = _rsync_command(source, target, directory=directory, delete=operation.rsync_delete)
+    delete_note = " with --delete" if directory and operation.rsync_delete else ""
+    _append_log(operation, f"Rsync differential{delete_note} {operation.get_action_display().lower()}: {display_source}")
     operation.summary = f"Rsync {operation.get_action_display().lower()} in progress: {display_source}"
     operation.save(update_fields=["summary", "log_output", "heartbeat_at"])
     process = subprocess.Popen(

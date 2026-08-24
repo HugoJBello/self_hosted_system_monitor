@@ -133,6 +133,7 @@
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
+          <div data-destination-picker-ui>
           <div class="file-manager-destination-topbar mb-3">
             <div class="file-manager-path file-manager-destination-path">
               <i class="bi bi-folder2-open"></i>
@@ -153,7 +154,20 @@
               </select>
             </div>
             <div class="form-text">
-              Rsync keeps partial transfers for easier resume and is useful for large or cross-volume transfers. {% if rsync_available %}It is available on this server.{% else %}It is unavailable on this server; use Standard or install rsync.{% endif %}
+              Rsync keeps partial transfers for easier resume and compares file content to avoid missing changes with identical timestamps. {% if rsync_available %}It is available on this server.{% else %}It is unavailable on this server; use Standard or install rsync.{% endif %}
+            </div>
+          </div>
+          <div class="file-manager-rsync-options mt-3 d-none" data-rsync-options>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch" id="fileRsyncDelete" name="rsync_delete" value="1" data-rsync-delete>
+              <label class="form-check-label" for="fileRsyncDelete">Delete destination items not present in source (<code>--delete</code>)</label>
+            </div>
+            <div class="form-text" data-rsync-delete-help>
+              This reconciles folders by deleting destination files and folders that do not exist in the selected source. It is only available for folder-only selections with overwrite files and merge folders policies.
+            </div>
+            <div class="file-manager-rsync-warning d-none" data-rsync-delete-warning role="alert">
+              <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+              <span>Dangerous option: items that exist only in the destination will be permanently deleted. This does not affect the source, but it can remove unrelated destination data.</span>
             </div>
           </div>
           <div class="file-manager-conflict-policies mt-3">
@@ -175,9 +189,28 @@
             </div>
             <div class="form-text">These policies apply when an item with the same name already exists in the destination.</div>
           </div>
+          </div>
+          <div class="file-manager-transfer-plan d-none" data-destination-plan>
+            <div class="file-manager-transfer-plan-header">
+              <div>
+                <p class="eyebrow mb-1">Confirmation</p>
+                <h3 class="h5 mb-0">Review transfer plan</h3>
+              </div>
+              <span class="file-manager-transfer-plan-method" data-destination-plan-method></span>
+            </div>
+            <div class="file-manager-transfer-plan-items" data-destination-plan-items></div>
+            <div class="file-manager-transfer-plan-options" data-destination-plan-options></div>
+            <div class="file-manager-rsync-warning d-none" data-destination-plan-warning role="alert">
+              <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+              <span data-destination-plan-warning-text></span>
+            </div>
+            <button type="button" class="btn btn-outline-light btn-sm mt-3" data-destination-plan-edit>
+              <i class="bi bi-pencil"></i> Edit selection and options
+            </button>
+          </div>
         </div>
         <div class="modal-footer border-secondary">
-          <button type="submit" value="copy" class="btn btn-accent" data-destination-submit>Copy here</button>
+          <button type="submit" value="copy" class="btn btn-accent" data-destination-submit>Review copy plan</button>
         </div>
       </div>
     </div>
@@ -358,5 +391,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-rsync-transfer"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-rsync-plan"></script>
 {% endblock %}

@@ -67,7 +67,7 @@
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Transfer</p>
       <h2 class="h6 mb-1">{{ operation.get_transfer_method_display }}</h2>
-      <p class="text-secondary mb-0">Method used by the worker</p>
+      <p class="text-secondary mb-0">{% if operation.rsync_delete %}Rsync --delete enabled{% else %}Method used by the worker{% endif %}</p>
     </section>
   </div>
   {% endif %}

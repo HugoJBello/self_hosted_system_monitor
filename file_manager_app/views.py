@@ -180,6 +180,7 @@ class FileManagerView(LoginRequiredMixin, View):
                     selected_paths,
                     destination_path=request.POST.get("destination_path") or "",
                     transfer_method=request.POST.get("transfer_method") or "standard",
+                    rsync_delete=request.POST.get("rsync_delete") == "1",
                     conflict_policy=request.POST.get("conflict_policy") or "overwrite",
                     folder_conflict_policy=request.POST.get("folder_conflict_policy") or "merge",
                 )
@@ -388,6 +389,7 @@ class FileManagerOperationStatusView(LoginRequiredMixin, View):
                 "current_path": operation.current_path,
                 "transfer_method": operation.transfer_method,
                 "transfer_method_label": operation.get_transfer_method_display(),
+                "rsync_delete": operation.rsync_delete,
                 "conflict_policy": operation.conflict_policy,
                 "conflict_policy_label": operation.get_conflict_policy_display(),
                 "folder_conflict_policy": operation.folder_conflict_policy,

@@ -529,6 +529,8 @@ class MonitorViewsTests(TestCase):
         self.assertIn("--partial", command)
         self.assertIn("--", command)
         self.assertEqual(command[-2:], ["/source folder/", "/destination folder/"])
+        delete_command = _rsync_command("/source", "/destination", directory=True, delete=True)
+        self.assertIn("--delete", delete_command)
 
     def test_file_operation_rsync_copy_and_move_complete_safely(self):
         from file_manager_app.services import execute_file_operation
@@ -565,6 +567,38 @@ class MonitorViewsTests(TestCase):
 
             self.assertEqual(Path(destination, "source.txt").read_text(encoding="utf-8"), "copy me")
             self.assertEqual(Path(destination, "source-folder", "nested.txt").read_text(encoding="utf-8"), "move me")
+
+    def test_file_operation_rsync_delete_reconciles_destination_folders(self):
+        from file_manager_app.services import execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir, "source")
+            destination = Path(tmpdir, "destination")
+            target = destination / "source"
+            source.mkdir()
+            target.mkdir(parents=True)
+            (source / "kept.txt").write_text("new", encoding="utf-8")
+            (target / "kept.txt").write_text("old", encoding="utf-8")
+            (target / "remove.txt").write_text("remove", encoding="utf-8")
+            operation = FileOperation.objects.create(
+                action="copy",
+                status="running",
+                sources=["/source"],
+                destination_path="/destination",
+                transfer_method="rsync",
+                rsync_delete=True,
+                conflict_policy="overwrite",
+                folder_conflict_policy="merge",
+                total_count=1,
+            )
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            self.assertEqual((target / "kept.txt").read_text(encoding="utf-8"), "new")
+            self.assertFalse((target / "remove.txt").exists())
+            self.assertIn("--delete", operation.log_output)
 
     def test_file_manager_chunked_upload_reassembles_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

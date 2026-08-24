@@ -38,6 +38,7 @@ class FileOperation(models.Model):
     completed_sources = models.JSONField(default=list, blank=True)
     destination_path = models.CharField(max_length=500, blank=True, default="")
     transfer_method = models.CharField(max_length=16, choices=TRANSFER_METHOD_CHOICES, default="standard")
+    rsync_delete = models.BooleanField(default=False)
     conflict_policy = models.CharField(max_length=16, choices=CONFLICT_POLICY_CHOICES, default="overwrite")
     folder_conflict_policy = models.CharField(max_length=16, choices=FOLDER_CONFLICT_POLICY_CHOICES, default="merge")
     current_path = models.CharField(max_length=500, blank=True, default="")

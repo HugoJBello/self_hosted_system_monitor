@@ -63,6 +63,17 @@
   const destinationUp = page.querySelector("[data-destination-up]");
   const destinationSubmit = page.querySelector("[data-destination-submit]");
   const transferMethod = page.querySelector("[data-transfer-method]");
+  const destinationPickerUi = page.querySelector("[data-destination-picker-ui]");
+  const destinationPlan = page.querySelector("[data-destination-plan]");
+  const destinationPlanMethod = page.querySelector("[data-destination-plan-method]");
+  const destinationPlanItems = page.querySelector("[data-destination-plan-items]");
+  const destinationPlanOptions = page.querySelector("[data-destination-plan-options]");
+  const destinationPlanWarning = page.querySelector("[data-destination-plan-warning]");
+  const destinationPlanWarningText = page.querySelector("[data-destination-plan-warning-text]");
+  const destinationPlanEdit = page.querySelector("[data-destination-plan-edit]");
+  const rsyncOptions = page.querySelector("[data-rsync-options]");
+  const rsyncDelete = page.querySelector("[data-rsync-delete]");
+  const rsyncDeleteWarning = page.querySelector("[data-rsync-delete-warning]");
   const conflictPolicy = page.querySelector("[data-conflict-policy]");
   const folderConflictPolicy = page.querySelector("[data-folder-conflict-policy]");
   const deleteTrigger = page.querySelector("[data-delete-trigger]");
@@ -93,6 +104,7 @@
   let singleClickOpenEnabled = false;
   let destinationPath = "/";
   let destinationParentPath = "";
+  let destinationPlanConfirmed = false;
   let destinationAction = "copy";
   let viewMode = "list";
   let uploadFiles = [];
@@ -175,6 +187,11 @@
   page.querySelectorAll("[data-destination-action]").forEach((button) => {
     button.addEventListener("click", () => openDestinationModal(button.dataset.destinationAction || "copy"));
   });
+  transferMethod?.addEventListener("change", updateRsyncOptions);
+  conflictPolicy?.addEventListener("change", updateRsyncOptions);
+  folderConflictPolicy?.addEventListener("change", updateRsyncOptions);
+  rsyncDelete?.addEventListener("change", updateRsyncOptions);
+  destinationPlanEdit?.addEventListener("click", showDestinationPicker);
   deleteTrigger?.addEventListener("click", openDeleteModal);
   destinationUp?.addEventListener("click", () => {
     if (destinationParentPath) loadDestination(destinationParentPath);
@@ -185,6 +202,11 @@
     if (action === "mkdir") {
       event.preventDefault();
       await submitCreateFolder();
+      return;
+    }
+    if ((action === "copy" || action === "move") && destinationModalElement?.classList.contains("show") && !destinationPlanConfirmed) {
+      event.preventDefault();
+      showDestinationPlan();
       return;
     }
     if (fileActionInput) fileActionInput.value = action;
@@ -1133,10 +1155,10 @@
     if (conflictPolicy) conflictPolicy.value = "overwrite";
     if (folderConflictPolicy) folderConflictPolicy.value = "merge";
     if (transferMethod) transferMethod.value = "standard";
-    if (destinationSubmit) {
-      destinationSubmit.value = destinationAction;
-      destinationSubmit.textContent = destinationAction === "move" ? "Move here" : "Copy here";
-    }
+    if (rsyncDelete) rsyncDelete.checked = false;
+    destinationPlanConfirmed = false;
+    showDestinationPicker();
+    if (destinationSubmit) destinationSubmit.value = destinationAction;
     if (destinationTitle) {
       destinationTitle.textContent = destinationAction === "move" ? "Move selected items" : "Copy selected items";
     }
@@ -1145,6 +1167,97 @@
     if (window.bootstrap && destinationModalElement) {
       window.bootstrap.Modal.getOrCreateInstance(destinationModalElement).show();
     }
+  }
+
+  function showDestinationPicker() {
+    destinationPlanConfirmed = false;
+    destinationPickerUi?.classList.remove("d-none");
+    destinationPlan?.classList.add("d-none");
+    if (destinationSubmit) {
+      destinationSubmit.textContent = destinationAction === "move" ? "Review move plan" : "Review copy plan";
+    }
+    updateRsyncOptions();
+  }
+
+  function updateRsyncOptions() {
+    const isRsync = transferMethod?.value === "rsync";
+    const items = selectedItems();
+    const foldersOnly = items.length > 0 && items.every((item) => item.kind === "folder");
+    const compatiblePolicies = conflictPolicy?.value === "overwrite" && folderConflictPolicy?.value === "merge";
+    const canDelete = isRsync && foldersOnly && compatiblePolicies;
+    rsyncOptions?.classList.toggle("d-none", !isRsync);
+    if (rsyncDelete) {
+      rsyncDelete.disabled = !canDelete;
+      if (!canDelete) rsyncDelete.checked = false;
+    }
+    rsyncDeleteWarning?.classList.toggle("d-none", !Boolean(rsyncDelete?.checked));
+  }
+
+  function showDestinationPlan() {
+    const items = selectedItems();
+    if (!items.length || !destinationPath) return;
+    updateRsyncOptions();
+    const isRsync = transferMethod?.value === "rsync";
+    if (isRsync && rsyncDelete?.disabled && rsyncDelete?.checked) {
+      return;
+    }
+    if (destinationPickerUi) destinationPickerUi.classList.add("d-none");
+    if (destinationPlan) destinationPlan.classList.remove("d-none");
+    if (destinationSubmit) {
+      destinationSubmit.textContent = destinationAction === "move" ? "Confirm move" : "Confirm copy";
+    }
+    if (destinationPlanMethod) {
+      destinationPlanMethod.textContent = transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard";
+    }
+    renderDestinationPlanItems(items);
+    renderDestinationPlanOptions(isRsync);
+    const hasDeleteWarning = Boolean(rsyncDelete?.checked);
+    destinationPlanWarning?.classList.toggle("d-none", !hasDeleteWarning);
+    if (destinationPlanWarningText) {
+      destinationPlanWarningText.textContent = hasDeleteWarning
+        ? "Dangerous option enabled: destination-only files and folders inside the selected folders will be permanently deleted before the operation completes. Review the destination carefully."
+        : "";
+    }
+    destinationPlanConfirmed = true;
+  }
+
+  function renderDestinationPlanItems(items) {
+    if (!destinationPlanItems) return;
+    destinationPlanItems.replaceChildren();
+    items.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "file-manager-transfer-plan-item";
+      const source = document.createElement("span");
+      source.className = "file-manager-transfer-plan-path";
+      source.textContent = item.path;
+      source.title = item.path;
+      const arrow = document.createElement("i");
+      arrow.className = "bi bi-arrow-right";
+      arrow.setAttribute("aria-hidden", "true");
+      const target = document.createElement("span");
+      target.className = "file-manager-transfer-plan-path";
+      const targetPath = joinPath(destinationPath, item.name || basename(item.path));
+      target.textContent = targetPath;
+      target.title = targetPath;
+      row.append(source, arrow, target);
+      destinationPlanItems.appendChild(row);
+    });
+  }
+
+  function renderDestinationPlanOptions(isRsync) {
+    if (!destinationPlanOptions) return;
+    const options = [
+      `Method: ${transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard"}`,
+      `Files: ${conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"}`,
+      `Folders: ${folderConflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Merge"}`
+    ];
+    if (isRsync && rsyncDelete?.checked) options.push("Rsync: --delete enabled");
+    destinationPlanOptions.textContent = options.join(" · ");
+  }
+
+  function joinPath(parent, name) {
+    const base = String(parent || "/").replace(/\/+$/, "") || "/";
+    return base === "/" ? `/${name}` : `${base}/${name}`;
   }
 
   function openDeleteModal() {
@@ -1591,6 +1704,7 @@
   async function loadDestination(path, { updateHistory = true } = {}) {
     if (!destinationRows) return;
     destinationModalElement?.setAttribute("aria-busy", "true");
+    if (destinationSubmit) destinationSubmit.disabled = true;
     destinationLoading?.classList.remove("d-none");
     destinationRows.innerHTML = '<div class="file-manager-empty"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading folders...</div>';
     try {
@@ -1619,6 +1733,7 @@
     } finally {
       destinationModalElement?.setAttribute("aria-busy", "false");
       destinationLoading?.classList.add("d-none");
+      if (destinationSubmit) destinationSubmit.disabled = false;
     }
   }
 
