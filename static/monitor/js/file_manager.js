@@ -43,6 +43,7 @@
   const uploadClearButton = page.querySelector("[data-upload-clear-button]");
   const uploadFilesInput = page.querySelector("[data-upload-files-input]");
   const uploadFolderInput = page.querySelector("[data-upload-folder-input]");
+  const uploadDropzone = page.querySelector("[data-upload-dropzone]");
   const uploadWorkers = page.querySelector("[data-upload-workers]");
   const uploadChunkToggle = page.querySelector("[data-upload-chunk-toggle]");
   const uploadSelection = page.querySelector("[data-upload-selection]");
@@ -114,6 +115,7 @@
   let destinationAction = "copy";
   let viewMode = "list";
   let uploadFiles = [];
+  let uploadDragDepth = 0;
   let downloadPollTimer = null;
   let downloadAutoStarted = false;
   let actionsContextMode = false;
@@ -203,6 +205,16 @@
   });
   uploadFilesInput?.addEventListener("change", () => addUploadFiles(uploadFilesInput.files, uploadFilesInput));
   uploadFolderInput?.addEventListener("change", () => addUploadFiles(uploadFolderInput.files, uploadFolderInput));
+  uploadDropzone?.addEventListener("dragenter", handleUploadDragEnter);
+  uploadDropzone?.addEventListener("dragover", handleUploadDragOver);
+  uploadDropzone?.addEventListener("dragleave", handleUploadDragLeave);
+  uploadDropzone?.addEventListener("drop", handleUploadDrop);
+  uploadDropzone?.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      uploadFilesInput?.click();
+    }
+  });
   uploadStart?.addEventListener("click", () => {
     if (uploadFiles.length) startUpload();
   });
@@ -619,14 +631,24 @@
   }
 
   function sortFileEntries(items, field, direction) {
-    const sorted = Array.from(items || []).sort((left, right) => {
+    const descending = direction === "desc";
+    return Array.from(items || []).sort((left, right) => {
+      const leftFolder = Boolean(left.is_dir || left.kind === "folder");
+      const rightFolder = Boolean(right.is_dir || right.kind === "folder");
+      if (leftFolder !== rightFolder) return leftFolder ? -1 : 1;
+
       const leftValue = sortValue(left, field);
       const rightValue = sortValue(right, field);
-      if (leftValue < rightValue) return direction === "desc" ? 1 : -1;
-      if (leftValue > rightValue) return direction === "desc" ? -1 : 1;
-      return String(left.name || "").localeCompare(String(right.name || ""), undefined, { sensitivity: "base" });
+      if (leftValue < rightValue) return descending ? 1 : -1;
+      if (leftValue > rightValue) return descending ? -1 : 1;
+
+      const nameComparison = String(left.name || "").localeCompare(
+        String(right.name || ""),
+        undefined,
+        { sensitivity: "base" },
+      );
+      return descending ? -nameComparison : nameComparison;
     });
-    return sorted.sort((left, right) => Number(Boolean(right.is_dir || right.kind === "folder")) - Number(Boolean(left.is_dir || left.kind === "folder")));
   }
 
   function sortValue(item, field) {
@@ -1506,6 +1528,77 @@
     setUploadProgress(0, true);
   }
 
+  function handleUploadDragEnter(event) {
+    event.preventDefault();
+    uploadDragDepth += 1;
+    uploadDropzone?.classList.add("is-dragover");
+  }
+
+  function handleUploadDragOver(event) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    uploadDropzone?.classList.add("is-dragover");
+  }
+
+  function handleUploadDragLeave(event) {
+    event.preventDefault();
+    uploadDragDepth = Math.max(0, uploadDragDepth - 1);
+    if (!uploadDragDepth) uploadDropzone?.classList.remove("is-dragover");
+  }
+
+  async function handleUploadDrop(event) {
+    event.preventDefault();
+    uploadDragDepth = 0;
+    uploadDropzone?.classList.remove("is-dragover");
+    const dataTransfer = event.dataTransfer;
+    if (!dataTransfer) return;
+
+    try {
+      setUploadStatus("Reading dropped files and folders...");
+      const entries = Array.from(dataTransfer.items || [])
+        .map((item) => (typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null))
+        .filter(Boolean);
+      if (entries.length) {
+        const files = (await Promise.all(entries.map((entry) => readUploadEntry(entry)))).flat();
+        addUploadFiles(files);
+      } else {
+        addUploadFiles(dataTransfer.files);
+      }
+      setUploadStatus("");
+    } catch (error) {
+      setUploadStatus(error.message || "Could not read the dropped items.", true);
+    }
+  }
+
+  async function readUploadEntry(entry, parentPath = "") {
+    const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
+    if (entry.isFile) {
+      const file = await new Promise((resolve, reject) => entry.file(resolve, reject));
+      Object.defineProperty(file, "uploadRelativePath", { value: relativePath, configurable: true });
+      return [file];
+    }
+    if (!entry.isDirectory) return [];
+
+    const entries = await readUploadDirectory(entry.createReader());
+    const nestedFiles = await Promise.all(entries.map((child) => readUploadEntry(child, relativePath)));
+    return nestedFiles.flat();
+  }
+
+  function readUploadDirectory(reader) {
+    return new Promise((resolve, reject) => {
+      const entries = [];
+      const readBatch = () => reader.readEntries((batch) => {
+        if (!batch.length) {
+          resolve(entries);
+          return;
+        }
+        entries.push(...batch);
+        readBatch();
+      }, reject);
+      readBatch();
+    });
+  }
+
   function renderUploadFiles() {
     const groups = groupedUploadFiles();
     if (uploadSelection) {
@@ -1569,7 +1662,7 @@
   }
 
   function uploadFileName(file) {
-    return file.webkitRelativePath || file.name;
+    return file.uploadRelativePath || file.webkitRelativePath || file.name;
   }
 
   function uploadFileKey(file) {

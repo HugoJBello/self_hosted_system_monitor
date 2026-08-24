@@ -3396,6 +3396,42 @@ body.app-shell {
   min-height: 1.25rem;
 }
 
+.file-manager-upload-dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+  padding: 1rem;
+  border: 1px dashed rgba(93, 198, 255, 0.4);
+  border-radius: 0.65rem;
+  background: rgba(93, 198, 255, 0.045);
+  color: #dfe9f5;
+  text-align: center;
+  cursor: copy;
+  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+
+.file-manager-upload-dropzone i {
+  color: #7dd3fc;
+  font-size: 1.35rem;
+}
+
+.file-manager-upload-dropzone span {
+  max-width: 38rem;
+  color: #8ea3b9;
+  font-size: 0.82rem;
+}
+
+.file-manager-upload-dropzone:focus-visible,
+.file-manager-upload-dropzone.is-dragover {
+  border-color: #5dc6ff;
+  background: rgba(93, 198, 255, 0.12);
+  outline: none;
+}
+
+.file-manager-upload-dropzone.is-dragover {
+  transform: translateY(-1px);
+}
+
 .file-search-panel {
   padding: 1.15rem;
 }

@@ -313,6 +313,11 @@
             <button type="button" class="btn btn-outline-light" data-upload-folder-button><i class="bi bi-folder-plus"></i> Choose folder</button>
             <button type="button" class="btn btn-outline-light" data-upload-clear-button disabled><i class="bi bi-x-circle"></i> Clear</button>
           </div>
+          <div class="file-manager-upload-dropzone" data-upload-dropzone tabindex="0" role="button" aria-label="Drop files or folders to upload">
+            <i class="bi bi-cloud-arrow-up" aria-hidden="true"></i>
+            <strong>Drop files or folders here</strong>
+            <span>Multiple files and folders are supported. You can add more items before starting the upload.</span>
+          </div>
           <input type="file" class="d-none" multiple data-upload-files-input>
           <input type="file" class="d-none" multiple webkitdirectory directory data-upload-folder-input>
           <div class="file-manager-upload-selection text-secondary small" data-upload-selection>No files selected.</div>
