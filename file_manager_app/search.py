@@ -1,4 +1,5 @@
 import os
+import re
 import select
 import shutil
 import subprocess
@@ -28,7 +29,7 @@ class FileSearchResult:
     error: str = ""
 
 
-def create_search_operation(root_path, query, *, recursive=True, timeout_seconds=SEARCH_DEFAULT_TIMEOUT):
+def create_search_operation(root_path, query, *, recursive=True, timeout_seconds=SEARCH_DEFAULT_TIMEOUT, case_sensitive=False, use_regex=False):
     root_path = normalize_host_path(root_path or "/")
     absolute_root = hostfs_path(root_path)
     query = (query or "").strip()
@@ -38,6 +39,11 @@ def create_search_operation(root_path, query, *, recursive=True, timeout_seconds
         raise ValueError("Enter a name or pattern to search for.")
     if "\0" in query:
         raise ValueError("Search text contains an invalid character.")
+    if use_regex:
+        try:
+            re.compile(query, 0 if case_sensitive else re.IGNORECASE)
+        except re.error as exc:
+            raise ValueError(f"Invalid regular expression: {exc}") from exc
     if timeout_seconds in {"", "none", None, 0, "0"}:
         timeout_seconds = None
     else:
@@ -62,6 +68,8 @@ def create_search_operation(root_path, query, *, recursive=True, timeout_seconds
         root_path=root_path,
         query=query,
         recursive=bool(recursive),
+        case_sensitive=bool(case_sensitive),
+        use_regex=bool(use_regex),
         timeout_seconds=timeout_seconds,
     )
     return operation
@@ -102,7 +110,10 @@ def execute_search_operation(operation):
     command = [executable, absolute_root]
     if not search.recursive:
         command.extend(["-maxdepth", "1"])
-    command.extend(["-iname", f"*{search.query}*", "-print0"])
+    if not search.use_regex:
+        command.extend(["-name" if search.case_sensitive else "-iname", f"*{search.query}*"])
+    command.append("-print0")
+    matcher = re.compile(search.query, 0 if search.case_sensitive else re.IGNORECASE) if search.use_regex else None
     process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     operation.process_pid = process.pid
     operation.runner_label = os.uname().nodename
@@ -145,7 +156,7 @@ def execute_search_operation(operation):
                             search.truncated = True
                             continue
                         decoded_path = _decode_path(raw_path)
-                        if decoded_path:
+                        if decoded_path and (not matcher or matcher.search(os.path.basename(decoded_path))):
                             result_paths.append(_host_path_from_absolute(decoded_path))
                 elif process.poll() is not None:
                     break
@@ -157,7 +168,7 @@ def execute_search_operation(operation):
                 last_progress_at = time.monotonic()
         if buffer and len(result_paths) < SEARCH_RESULT_LIMIT:
             decoded_path = _decode_path(buffer)
-            if decoded_path:
+            if decoded_path and (not matcher or matcher.search(os.path.basename(decoded_path))):
                 result_paths.append(_host_path_from_absolute(decoded_path))
     finally:
         if process.stdout:
@@ -224,14 +235,20 @@ def _host_path_from_absolute(absolute_path):
     root = os.path.normpath(path_browser.HOST_ROOT_PATH)
     absolute_path = os.path.normpath(absolute_path)
     if root == "/":
-        return normalize_host_path(absolute_path)
+        try:
+            return normalize_host_path(absolute_path)
+        except ValueError:
+            return ""
     try:
         relative = os.path.relpath(absolute_path, root)
     except ValueError:
         return ""
     if relative == ".." or relative.startswith(f"..{os.sep}"):
         return ""
-    return normalize_host_path("/" + relative.replace(os.sep, "/"))
+    try:
+        return normalize_host_path("/" + relative.replace(os.sep, "/"))
+    except ValueError:
+        return ""
 
 
 def search_file_manager(root_path, query, *, recursive=True):

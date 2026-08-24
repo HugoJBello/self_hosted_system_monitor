@@ -21,7 +21,7 @@
     {% csrf_token %}
     {% if operation %}<input type="hidden" name="operation_id" value="{{ operation.id }}">{% endif %}
     <div class="file-search-input-wrap">
-      <label class="form-label file-manager-option-label" for="fileSearchQuery"><i class="bi bi-search" aria-hidden="true"></i><span>Name contains</span></label>
+      <label class="form-label file-manager-option-label" for="fileSearchQuery"><i class="bi bi-search" aria-hidden="true"></i><span>Name or pattern</span></label>
       <input id="fileSearchQuery" name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="e.g. report, .pdf, backup" autocomplete="off" {% if operation %}readonly{% endif %}>
     </div>
     <div class="file-search-root">
@@ -32,6 +32,16 @@
       <div class="form-check form-switch">
         <input class="form-check-input" type="checkbox" role="switch" id="fileSearchRecursive" name="recursive" value="1" {% if recursive %}checked{% endif %} {% if operation %}disabled{% endif %}>
         <label class="form-check-label" for="fileSearchRecursive">Include subfolders</label>
+      </div>
+      <div class="file-search-toggle-group">
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="fileSearchCase" name="case_sensitive" value="1" {% if case_sensitive %}checked{% endif %} {% if operation %}disabled{% endif %}>
+          <label class="form-check-label" for="fileSearchCase">Match case</label>
+        </div>
+        <div class="form-check form-switch">
+          <input class="form-check-input" type="checkbox" role="switch" id="fileSearchRegex" name="use_regex" value="1" {% if use_regex %}checked{% endif %} {% if operation %}disabled{% endif %}>
+          <label class="form-check-label" for="fileSearchRegex">Regular expression</label>
+        </div>
       </div>
       <div>
         <label class="form-label file-manager-option-label" for="fileSearchTimeout"><i class="bi bi-stopwatch" aria-hidden="true"></i><span>Timeout</span></label>
@@ -51,7 +61,7 @@
       {% endif %}
     </div>
   </form>
-  <div class="file-search-help text-secondary small">Results are limited to {{ result_limit }} items. A timeout protects mounted disks; choose No timeout only when you can monitor and stop the process manually.</div>
+  <div class="file-search-help text-secondary small">Results are limited to {{ result_limit }} items. By default matching ignores case; Regular expression applies the pattern to each file or folder name. A timeout protects mounted disks; choose No timeout only when you can monitor and stop the process manually.</div>
 </section>
 
 {% if search_error %}<div class="file-manager-status is-error mt-3">{{ search_error }}</div>{% endif %}
@@ -98,9 +108,21 @@
     <select name="direction" class="form-select form-select-sm">
       {% for value, label in sort_directions.items %}<option value="{{ value }}" {% if sort_direction == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
+    <label class="file-manager-option-label" for="fileSearchKind"><i class="bi bi-funnel" aria-hidden="true"></i><span>Type</span></label>
+    <select id="fileSearchKind" name="kind" class="form-select form-select-sm">
+      <option value="all" {% if kind_filter == "all" %}selected{% endif %}>All items</option>
+      <option value="file" {% if kind_filter == "file" %}selected{% endif %}>Files only</option>
+      <option value="folder" {% if kind_filter == "folder" %}selected{% endif %}>Folders only</option>
+    </select>
+    <label class="file-manager-option-label" for="fileSearchPageSize"><i class="bi bi-list-ol" aria-hidden="true"></i><span>Per page</span></label>
+    <select id="fileSearchPageSize" name="page_size" class="form-select form-select-sm">
+      <option value="25" {% if page_size == 25 %}selected{% endif %}>25</option>
+      <option value="50" {% if page_size == 50 %}selected{% endif %}>50</option>
+      <option value="100" {% if page_size == 100 %}selected{% endif %}>100</option>
+    </select>
     <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-repeat"></i>Apply</button>
   </form>
-  <div class="file-search-result-list mt-3" data-search-result-list>
+  <div class="file-search-result-list mt-3" data-search-result-list data-search-page="{{ page_obj.number|default:1 }}" data-search-page-size="{{ page_size }}" data-search-kind="{{ kind_filter }}">
     {% for item in results %}
       <a class="file-search-result" href="{% url 'monitor:file-manager' %}?path={{ item.browse_path|urlencode }}">
         <span class="file-manager-icon file-manager-icon-{{ item.kind }}"><i class="bi {% if item.kind == 'folder' %}bi-folder-fill{% else %}bi-file-earmark{% endif %}"></i></span>
@@ -111,6 +133,15 @@
       <div class="file-manager-empty" data-search-empty>No matching files or folders yet.</div>
     {% endfor %}
   </div>
+  <nav class="file-search-pagination mt-3" aria-label="Search results pages" data-search-pagination>
+    {% if page_obj.paginator.num_pages > 1 %}
+      <span class="small text-secondary">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+      <div class="btn-group" role="group">
+        {% if page_obj.has_previous %}<a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}" aria-label="Previous page"><i class="bi bi-chevron-left"></i><span>Previous</span></a>{% endif %}
+        {% if page_obj.has_next %}<a class="btn btn-outline-light btn-sm" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}" aria-label="Next page"><span>Next</span><i class="bi bi-chevron-right"></i></a>{% endif %}
+      </div>
+    {% endif %}
+  </nav>
 </section>
 {% endif %}
 {% endblock %}
@@ -120,23 +151,57 @@
 <script>
   const searchProcess = document.querySelector("[data-file-search-process]");
   const searchResults = document.querySelector("[data-search-result-list]");
+  const searchPagination = document.querySelector("[data-search-pagination]");
   if (searchProcess) {
     const escapeSearchHtml = (value) => {
       const node = document.createElement("span");
       node.textContent = value || "";
       return node.innerHTML;
     };
+    const renderSearchPagination = (page, totalPages) => {
+      if (!searchPagination) return;
+      searchPagination.replaceChildren();
+      if (totalPages <= 1) return;
+      const pageLabel = document.createElement("span");
+      pageLabel.className = "small text-secondary";
+      pageLabel.textContent = `Page ${page} of ${totalPages}`;
+      const controls = document.createElement("div");
+      controls.className = "btn-group";
+      controls.setAttribute("role", "group");
+      const currentUrl = new URL(window.location.href);
+      const addLink = (targetPage, label, icon, ariaLabel) => {
+        const link = document.createElement("a");
+        link.className = "btn btn-outline-light btn-sm";
+        currentUrl.searchParams.set("page", targetPage);
+        link.href = currentUrl.toString();
+        link.setAttribute("aria-label", ariaLabel);
+        link.innerHTML = icon === "bi-chevron-left"
+          ? `<i class="bi ${icon}"></i><span>${label}</span>`
+          : `<span>${label}</span><i class="bi ${icon}"></i>`;
+        controls.appendChild(link);
+      };
+      if (page > 1) addLink(page - 1, "Previous", "bi-chevron-left", "Previous page");
+      if (page < totalPages) addLink(page + 1, "Next", "bi-chevron-right", "Next page");
+      searchPagination.append(pageLabel, controls);
+    };
     const renderSearchResults = (items) => {
       if (!searchResults) return;
+      const kind = searchResults.dataset.searchKind || "all";
+      const pageSize = Number(searchResults.dataset.searchPageSize) || 25;
+      const filteredItems = kind === "all" ? items : items.filter((item) => item.kind === kind);
+      const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+      const page = Math.min(Number(searchResults.dataset.searchPage) || 1, totalPages);
+      searchResults.dataset.searchPage = String(page);
+      const visibleItems = filteredItems.slice((page - 1) * pageSize, page * pageSize);
       searchResults.replaceChildren();
-      if (!items.length) {
+      if (!visibleItems.length) {
         const empty = document.createElement("div");
         empty.className = "file-manager-empty";
         empty.textContent = "No matching files or folders yet.";
         searchResults.appendChild(empty);
         return;
       }
-      items.forEach((item) => {
+      visibleItems.forEach((item) => {
         const link = document.createElement("a");
         link.className = "file-search-result";
         link.href = `{% url 'monitor:file-manager' %}?path=${encodeURIComponent(item.browse_path || "/")}`;
@@ -144,6 +209,8 @@
         link.innerHTML = `<span class="file-manager-icon file-manager-icon-${escapeSearchHtml(item.kind)}"><i class="bi ${icon}"></i></span><span class="file-search-result-main"><strong>${escapeSearchHtml(item.name)}</strong><small>${escapeSearchHtml(item.path)}</small></span><span class="file-search-result-meta">${escapeSearchHtml(item.kind || "Item")} · ${escapeSearchHtml(item.modified_at || "-")}</span>`;
         searchResults.appendChild(link);
       });
+      renderSearchPagination(page, totalPages);
+      return filteredItems.length;
     };
     const pollSearch = async () => {
       try {
@@ -152,11 +219,11 @@
         const payload = await response.json();
         document.querySelector("[data-search-summary]").textContent = payload.summary || "";
         document.querySelector("[data-search-count]").textContent = `${payload.search_result_count || 0} found`;
-        document.querySelector("[data-search-result-summary]").textContent = `${(payload.search_results || []).length} result${(payload.search_results || []).length === 1 ? "" : "s"}`;
         document.querySelector("[data-search-current]").textContent = payload.current_path || "-";
         document.querySelector("[data-search-status]").textContent = payload.status_label || payload.status;
         document.querySelector("[data-search-log]").textContent = payload.log_output || "Search is running.";
-        renderSearchResults(payload.search_results || []);
+        const visibleResultCount = renderSearchResults(payload.search_results || []);
+        document.querySelector("[data-search-result-summary]").textContent = `${visibleResultCount} result${visibleResultCount === 1 ? "" : "s"}`;
         if (!["running", "paused"].includes(payload.status)) searchProcess.dataset.pollingDone = "1";
       } catch (_) {
       }

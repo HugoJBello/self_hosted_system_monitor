@@ -313,8 +313,10 @@ class FileManagerSearchView(LoginRequiredMixin, View):
             root_path = search.root_path
             query = search.query
             recursive = search.recursive
+            case_sensitive = search.case_sensitive
+            use_regex = search.use_regex
             timeout_seconds = search.timeout_seconds
-            results = search_result_items(search)
+            all_results = search_result_items(search)
             truncated = search.truncated
             timed_out = search.timed_out
             search_error = operation.summary if operation.status == "failed" else ""
@@ -326,13 +328,23 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 root_path = "/"
             query = ""
             recursive = True
+            case_sensitive = False
+            use_regex = False
             timeout_seconds = SEARCH_DEFAULT_TIMEOUT
-            results = []
+            all_results = []
             truncated = False
             timed_out = False
             search_error = ""
         sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
-        results = sort_entries(results, sort_field, sort_direction)
+        kind_filter = request.GET.get("kind") if request.GET.get("kind") in {"all", "file", "folder"} else "all"
+        if kind_filter != "all":
+            all_results = [item for item in all_results if item.get("kind") == kind_filter]
+        all_results = sort_entries(all_results, sort_field, sort_direction)
+        raw_page_size = request.GET.get("page_size") or "25"
+        page_size = int(raw_page_size) if str(raw_page_size).isdigit() and int(raw_page_size) in {25, 50, 100} else 25
+        pagination_params = request.GET.copy()
+        pagination_params.pop("page", None)
+        page_obj = Paginator(all_results, page_size).get_page(request.GET.get("page"))
         return render(
             request,
             self.template_name,
@@ -341,9 +353,16 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 "root_path": root_path,
                 "query": query,
                 "recursive": recursive,
+                "case_sensitive": case_sensitive,
+                "use_regex": use_regex,
                 "timeout_seconds": timeout_seconds,
                 "timeout_options": SEARCH_TIMEOUT_OPTIONS,
-                "results": results,
+                "results": page_obj.object_list,
+                "all_result_count": len(all_results),
+                "page_obj": page_obj,
+                "kind_filter": kind_filter,
+                "page_size": page_size,
+                "pagination_query": pagination_params.urlencode(),
                 "result_limit": SEARCH_RESULT_LIMIT,
                 "truncated": truncated,
                 "timed_out": timed_out,
@@ -370,6 +389,8 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 request.POST.get("q") or "",
                 recursive=request.POST.get("recursive") == "1",
                 timeout_seconds=request.POST.get("timeout") or SEARCH_DEFAULT_TIMEOUT,
+                case_sensitive=request.POST.get("case_sensitive") == "1",
+                use_regex=request.POST.get("use_regex") == "1",
             )
         except ValueError as exc:
             return render(request, self.template_name, {
@@ -377,6 +398,8 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 "root_path": root_path,
                 "query": request.POST.get("q") or "",
                 "recursive": request.POST.get("recursive") == "1",
+                "case_sensitive": request.POST.get("case_sensitive") == "1",
+                "use_regex": request.POST.get("use_regex") == "1",
                 "timeout_seconds": request.POST.get("timeout") or SEARCH_DEFAULT_TIMEOUT,
                 "timeout_options": SEARCH_TIMEOUT_OPTIONS,
                 "results": [],
@@ -388,6 +411,9 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 "sort_direction": "asc",
                 "sort_fields": SORT_FIELDS,
                 "sort_directions": SORT_DIRECTIONS,
+                "kind_filter": "all",
+                "page_size": 25,
+                "pagination_query": "",
             }, status=400)
         from file_manager_app.services import start_background_file_operation
 

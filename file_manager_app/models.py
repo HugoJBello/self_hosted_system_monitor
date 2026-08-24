@@ -75,6 +75,8 @@ class FileSearch(models.Model):
     root_path = models.CharField(max_length=500)
     query = models.CharField(max_length=500)
     recursive = models.BooleanField(default=True)
+    case_sensitive = models.BooleanField(default=False)
+    use_regex = models.BooleanField(default=False)
     timeout_seconds = models.PositiveIntegerField(blank=True, null=True)
     result_paths = models.JSONField(default=list, blank=True)
     result_count = models.PositiveIntegerField(default=0)

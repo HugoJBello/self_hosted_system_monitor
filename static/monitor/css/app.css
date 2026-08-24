@@ -3416,10 +3416,17 @@ body.app-shell {
   align-items: center;
   gap: 0.75rem;
   min-height: 2.4rem;
+  flex-wrap: wrap;
 }
 
 .file-search-options .form-check {
   white-space: nowrap;
+}
+
+.file-search-toggle-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
 }
 
 .file-search-help {
@@ -3432,6 +3439,7 @@ body.app-shell {
 
 .file-search-results-header,
 .file-search-sort-bar {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -3439,6 +3447,16 @@ body.app-shell {
 
 .file-search-results-header {
   justify-content: space-between;
+}
+
+.file-search-results-header > * {
+  min-width: 0;
+}
+
+.file-search-results-header h2,
+.file-search-progress [data-search-current],
+.file-search-help {
+  overflow-wrap: anywhere;
 }
 
 .file-search-sort-bar {
@@ -3502,6 +3520,23 @@ body.app-shell {
 
 .file-search-result-meta {
   text-align: right;
+}
+
+.file-search-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.file-search-progress .progress {
+  min-height: 0.45rem;
+  overflow: hidden;
+}
+
+.file-search-progress .progress-bar {
+  background: #5dc6ff;
 }
 
 .file-manager-upload-list {
@@ -3838,7 +3873,27 @@ body.app-shell {
   }
 
   .file-search-options {
-    justify-content: space-between;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .file-search-options > *,
+  .file-search-toggle-group,
+  .file-search-toggle-group .form-check,
+  .file-search-options select,
+  .file-search-options button,
+  .file-search-options a {
+    width: 100%;
+  }
+
+  .file-search-options button,
+  .file-search-options a {
+    white-space: normal;
+  }
+
+  .file-search-toggle-group {
+    flex-direction: column;
+    gap: 0.35rem;
   }
 
   .file-search-results-header,
@@ -3850,6 +3905,19 @@ body.app-shell {
   .file-search-sort-bar .form-select,
   .file-search-sort-bar .btn {
     width: 100%;
+  }
+
+  .file-search-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .file-search-pagination .btn-group {
+    display: flex;
+  }
+
+  .file-search-pagination .btn {
+    flex: 1 1 50%;
   }
 
   .file-search-result {

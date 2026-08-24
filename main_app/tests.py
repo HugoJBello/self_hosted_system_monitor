@@ -313,6 +313,15 @@ class MonitorViewsTests(TestCase):
             self.assertRedirects(response, f"{reverse('monitor:file-manager-search')}?operation_id={operation.id}", fetch_redirect_response=False)
             self.assertEqual(operation.search.root_path, str(root))
             self.assertEqual(operation.search.timeout_seconds, 30)
+            self.assertFalse(operation.search.case_sensitive)
+            self.assertFalse(operation.search.use_regex)
+            page_response = self.client.get(
+                self._path("monitor:file-manager-search"),
+                {"operation_id": operation.id},
+            )
+            self.assertEqual(page_response.status_code, 200)
+            self.assertContains(page_response, "Match case")
+            self.assertContains(page_response, "Regular expression")
 
     @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
     def test_file_manager_search_worker_records_incremental_results(self):
@@ -322,10 +331,13 @@ class MonitorViewsTests(TestCase):
             root = Path(tmpdir)
             (root / "nested").mkdir()
             (root / "nested" / "report.txt").write_text("report", encoding="utf-8")
-            operation = create_search_operation(str(root), "report", timeout_seconds=30)
+            (root / "nested" / "Report.txt").write_text("report", encoding="utf-8")
+            operation = create_search_operation(str(root), "^report\\.txt$", timeout_seconds=30, case_sensitive=True, use_regex=True)
             execute_search_operation(operation)
             operation.refresh_from_db()
             self.assertEqual(operation.status, "success")
+            self.assertTrue(operation.search.case_sensitive)
+            self.assertTrue(operation.search.use_regex)
             self.assertEqual(operation.search.result_count, 1)
             self.assertEqual(operation.search.result_paths, [str(root / "nested" / "report.txt")])
 
