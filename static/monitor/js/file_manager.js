@@ -12,6 +12,8 @@
   const fileActionInput = page.querySelector("[data-file-action-input]");
   const itemCount = page.querySelector("[data-item-count]");
   const selectionCount = page.querySelector("[data-selection-count]");
+  const sortField = page.querySelector("[data-sort-field]");
+  const sortDirection = page.querySelector("[data-sort-direction]");
   const parentButton = page.querySelector("[data-parent-button]");
   const viewModeToggle = page.querySelector("[data-view-mode-toggle]");
   const viewModeLabel = page.querySelector("[data-view-mode-label]");
@@ -85,6 +87,8 @@
   const fileManagerLoading = page.querySelector("[data-file-manager-loading]");
   const fileManagerLoadingLabel = page.querySelector("[data-file-manager-loading-label]");
   const destinationLoading = page.querySelector("[data-destination-loading]");
+  const destinationSortField = page.querySelector("[data-destination-sort-field]");
+  const destinationSortDirection = page.querySelector("[data-destination-sort-direction]");
   const listUrl = page.dataset.listUrl;
   const infoUrl = page.dataset.infoUrl;
   const informationTrigger = page.querySelector("[data-information-trigger]");
@@ -115,6 +119,8 @@
   let activeActionTargetPath = "";
   let actionsMenuPlaceholder = null;
   let navigationRequestId = 0;
+  let currentItems = [];
+  let destinationSort = { field: "name", direction: "asc" };
   const actionsMenuParent = actionsMenu?.parentElement || null;
   const uploadChunkSize = 16 * 1024 * 1024;
   let informationPollTimer = null;
@@ -128,16 +134,26 @@
   formatVisibleValues();
   renderBreadcrumbs(currentBreadcrumbs, currentPath, navigateTo);
   window.history.replaceState({ ...(window.history.state || {}), fileManagerPath: currentPath }, "", window.location.href);
-  insertInitialParentRow();
-  renderInitialGrid();
+  currentItems = Array.from(rowsContainer?.querySelectorAll(".file-manager-item[data-path]:not([data-parent-row])") || []).map(itemFromElement);
+  renderItems(currentItems);
   bindRows();
   restoreSessionPreferences();
+  updateSortDirectionButton(sortDirection, currentSortDirection());
   syncSelectionState();
 
   parentButton?.addEventListener("click", () => {
     if (parentPath) navigateTo(parentPath);
   });
   viewModeToggle?.addEventListener("click", () => setViewMode(viewMode === "list" ? "grid" : "list"));
+  sortField?.addEventListener("change", () => applyFileSort());
+  sortDirection?.addEventListener("click", () => toggleSortDirection());
+  destinationSortField?.addEventListener("change", () => reloadDestinationWithSort());
+  destinationSortDirection?.addEventListener("click", () => {
+    destinationSort.direction = destinationSort.direction === "asc" ? "desc" : "asc";
+    updateSortDirectionButton(destinationSortDirection, destinationSort.direction);
+    reloadDestinationWithSort();
+  });
+  updateSortDirectionButton(destinationSortDirection, destinationSort.direction);
   fileArea?.addEventListener("contextmenu", handleFileAreaContextMenu);
   actionsToggle?.addEventListener("show.bs.dropdown", () => {
     restoreActionsMenu();
@@ -452,6 +468,8 @@
     try {
       const url = new URL(listUrl, window.location.origin);
       url.searchParams.set("path", path);
+      url.searchParams.set("sort", sortField?.value || "name");
+      url.searchParams.set("direction", currentSortDirection());
       const response = await fetch(url, {
         credentials: "same-origin",
         headers: { "X-Requested-With": "fetch" }
@@ -466,13 +484,14 @@
       page.dataset.currentPath = currentPath;
       page.dataset.parentPath = parentPath;
       if (currentPathInput) currentPathInput.value = currentPath;
-      renderItems(payload.items || []);
+      currentItems = payload.items || [];
+      renderItems(currentItems);
       renderBreadcrumbs(currentBreadcrumbs, currentPath, navigateTo);
       renderBreadcrumbs(uploadBreadcrumbs, currentPath, navigateTo);
       if (itemCount) itemCount.textContent = String((payload.items || []).length);
       if (parentButton) parentButton.disabled = !parentPath;
       if (updateHistory && currentPath !== page.dataset.previousPath) {
-        window.history.pushState({ fileManagerPath: currentPath }, "", `${window.location.pathname}?path=${encodeURIComponent(currentPath)}`);
+        window.history.pushState({ fileManagerPath: currentPath }, "", `${window.location.pathname}?path=${encodeURIComponent(currentPath)}&sort=${encodeURIComponent(sortField?.value || "name")}&direction=${encodeURIComponent(currentSortDirection())}`);
       }
       page.dataset.previousPath = currentPath;
     } catch (error) {
@@ -498,6 +517,9 @@
       return;
     }
     const url = new URL(window.location.href);
+    if (sortField && url.searchParams.has("sort")) sortField.value = url.searchParams.get("sort");
+    if (sortDirection && url.searchParams.has("direction")) sortDirection.dataset.direction = url.searchParams.get("direction");
+    updateSortDirectionButton(sortDirection, currentSortDirection());
     navigateTo(url.searchParams.get("path") || "/", { updateHistory: false });
   }
 
@@ -509,13 +531,14 @@
   }
 
   function renderItems(items) {
+    const sortedItems = sortFileEntries(items, sortField?.value || "name", currentSortDirection());
     rowsContainer.innerHTML = "";
     if (gridContainer) gridContainer.innerHTML = "";
     if (parentPath) {
       rowsContainer.appendChild(parentRow(parentPath, "file-manager-row file-manager-item file-manager-parent-row", () => navigateTo(parentPath)));
       gridContainer?.appendChild(parentTile(parentPath, () => navigateTo(parentPath)));
     }
-    if (!items.length) {
+    if (!sortedItems.length) {
       const empty = document.createElement("div");
       empty.className = "file-manager-empty";
       empty.textContent = "No items in this location.";
@@ -523,12 +546,61 @@
       return;
     }
 
-    items.forEach((item) => {
+    sortedItems.forEach((item) => {
       rowsContainer.appendChild(itemRow(item));
       gridContainer?.appendChild(itemTile(item));
     });
     bindRows();
     syncSelectionState();
+  }
+
+  function currentSortDirection() {
+    return sortDirection?.dataset.direction || "asc";
+  }
+
+  function applyFileSort() {
+    updateSortDirectionButton(sortDirection, currentSortDirection());
+    renderItems(currentItems);
+  }
+
+  function toggleSortDirection() {
+    const nextDirection = currentSortDirection() === "asc" ? "desc" : "asc";
+    if (sortDirection) sortDirection.dataset.direction = nextDirection;
+    updateSortDirectionButton(sortDirection, nextDirection);
+    renderItems(currentItems);
+  }
+
+  function reloadDestinationWithSort() {
+    destinationSort.field = destinationSortField?.value || "name";
+    loadDestination(destinationPath || "/", { updateHistory: false });
+  }
+
+  function updateSortDirectionButton(button, direction) {
+    if (!button) return;
+    const descending = direction === "desc";
+    button.dataset.direction = direction;
+    button.setAttribute("aria-label", descending ? "Sort descending" : "Sort ascending");
+    button.title = descending ? "Sort descending" : "Sort ascending";
+    const icon = button.querySelector("i");
+    if (icon) icon.className = `bi ${descending ? "bi-sort-alpha-up" : "bi-sort-alpha-down"}`;
+  }
+
+  function sortFileEntries(items, field, direction) {
+    const sorted = Array.from(items || []).sort((left, right) => {
+      const leftValue = sortValue(left, field);
+      const rightValue = sortValue(right, field);
+      if (leftValue < rightValue) return direction === "desc" ? 1 : -1;
+      if (leftValue > rightValue) return direction === "desc" ? -1 : 1;
+      return String(left.name || "").localeCompare(String(right.name || ""), undefined, { sensitivity: "base" });
+    });
+    return sorted.sort((left, right) => Number(Boolean(right.is_dir || right.kind === "folder")) - Number(Boolean(left.is_dir || left.kind === "folder")));
+  }
+
+  function sortValue(item, field) {
+    if (field === "size") return item.size_bytes == null || item.size_bytes === "" ? -1 : Number(item.size_bytes);
+    if (field === "modified") return item.modified_at || "";
+    if (field === "kind") return item.kind || (item.is_dir ? "folder" : "file");
+    return String(item[field] || "").toLowerCase();
   }
 
   function itemRow(item) {
@@ -1748,6 +1820,8 @@
       const url = new URL(listUrl, window.location.origin);
       url.searchParams.set("path", path || "/");
       url.searchParams.set("folders_only", "1");
+      url.searchParams.set("sort", destinationSort.field);
+      url.searchParams.set("direction", destinationSort.direction);
       const response = await fetch(url, {
         credentials: "same-origin",
         headers: { "X-Requested-With": "fetch" }
@@ -1757,6 +1831,7 @@
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
       destinationPath = payload.path || "/";
+      if (destinationSortField) destinationSortField.value = payload.sort_field || destinationSort.field;
       destinationParentPath = payload.parent_path || "";
       if (destinationPathInput) destinationPathInput.value = destinationPath;
       renderBreadcrumbs(destinationBreadcrumbs, destinationPath, loadDestination);

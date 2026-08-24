@@ -135,6 +135,22 @@ def list_directory_entries(host_path, *, include_files=False):
     return children
 
 
+def entry_metadata_for_path(host_path):
+    normalized_path = normalize_host_path(host_path)
+    if normalized_path == "/":
+        return None
+    parent_path, name = os.path.split(normalized_path.rstrip("/"))
+    parent_path = parent_path or "/"
+    try:
+        with os.scandir(hostfs_path(parent_path)) as entries:
+            for entry in entries:
+                if entry.name == name:
+                    return _entry_metadata(entry, normalized_path)
+    except (OSError, ValueError):
+        return None
+    return None
+
+
 def _entry_metadata(entry, host_path, *, is_mounted=False):
     try:
         stat_result = entry.stat(follow_symlinks=False)

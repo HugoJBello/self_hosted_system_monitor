@@ -22,6 +22,7 @@ from file_manager_app.browser import (
 )
 from file_manager_app.information import continue_file_information, start_file_information
 from file_manager_app.models import FileOperation
+from file_manager_app.search import SEARCH_RESULT_LIMIT, search_file_manager
 from file_manager_app.services import (
     cancel_file_operation,
     create_file_operation,
@@ -35,6 +36,7 @@ from file_manager_app.services import (
     start_chunked_upload,
     start_background_file_operation,
 )
+from file_manager_app.sorting import SORT_DIRECTIONS, SORT_FIELDS, normalize_sort, sort_entries
 from main_app.models import MonitoringSettings
 from volumes_app.path_browser import create_directory, hostfs_path, normalize_host_path
 
@@ -77,7 +79,8 @@ class FileManagerView(LoginRequiredMixin, View):
     def get(self, request):
         settings_obj = MonitoringSettings.load()
         current_path = self._requested_path(request, settings_obj)
-        entries, error = self._entries(current_path)
+        sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
+        entries, error = self._entries(current_path, sort_field, sort_direction)
         return render(
             request,
             self.template_name,
@@ -89,6 +92,10 @@ class FileManagerView(LoginRequiredMixin, View):
                 "file_manager_error": error,
                 "running_file_operations": FileOperation.objects.filter(status="running").order_by("-started_at")[:5],
                 "rsync_available": rsync_available(),
+                "sort_field": sort_field,
+                "sort_direction": sort_direction,
+                "sort_fields": SORT_FIELDS,
+                "sort_directions": SORT_DIRECTIONS,
             },
         )
 
@@ -224,9 +231,9 @@ class FileManagerView(LoginRequiredMixin, View):
         except ValueError:
             return "/"
 
-    def _entries(self, host_path):
+    def _entries(self, host_path, sort_field="name", sort_direction="asc"):
         try:
-            return list_file_manager_entries(host_path), ""
+            return list_file_manager_entries(host_path, sort_field=sort_field, sort_direction=sort_direction), ""
         except ValueError as exc:
             return [], str(exc)
 
@@ -257,9 +264,15 @@ class FileManagerListView(LoginRequiredMixin, View):
     def get(self, request):
         raw_path = request.GET.get("path") or "/"
         folders_only = request.GET.get("folders_only") == "1"
+        sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
         try:
             current_path = normalize_host_path(raw_path)
-            entries = list_file_manager_entries(current_path, folders_only=folders_only)
+            entries = list_file_manager_entries(
+                current_path,
+                folders_only=folders_only,
+                sort_field=sort_field,
+                sort_direction=sort_direction,
+            )
         except ValueError as exc:
             return JsonResponse({"items": [], "error": str(exc)}, status=400)
 
@@ -268,6 +281,8 @@ class FileManagerListView(LoginRequiredMixin, View):
                 "path": current_path,
                 "parent_path": self._parent_path(current_path),
                 "items": entries,
+                "sort_field": sort_field,
+                "sort_direction": sort_direction,
             }
         )
 
@@ -275,6 +290,53 @@ class FileManagerListView(LoginRequiredMixin, View):
         if host_path == "/":
             return ""
         return os.path.dirname(host_path.rstrip("/")) or "/"
+
+
+class FileManagerSearchView(LoginRequiredMixin, View):
+    template_name = "file_manager_app/file_search.html"
+
+    def get(self, request):
+        settings_obj = MonitoringSettings.load()
+        root_path = request.GET.get("path") or settings_obj.file_manager_start_path or "/"
+        try:
+            root_path = normalize_host_path(root_path)
+        except ValueError:
+            root_path = "/"
+        query = (request.GET.get("q") or "").strip()
+        recursive = request.GET.get("recursive", "1") == "1"
+        sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
+        search_error = ""
+        results = []
+        truncated = False
+        timed_out = False
+        if query:
+            try:
+                search_result = search_file_manager(root_path, query, recursive=recursive)
+                results = sort_entries(search_result.items, sort_field, sort_direction)
+                truncated = search_result.truncated
+                timed_out = search_result.timed_out
+                search_error = search_result.error
+            except (ValueError, RuntimeError) as exc:
+                search_error = str(exc)
+        return render(
+            request,
+            self.template_name,
+            {
+                "settings_obj": settings_obj,
+                "root_path": root_path,
+                "query": query,
+                "recursive": recursive,
+                "results": results,
+                "result_limit": SEARCH_RESULT_LIMIT,
+                "truncated": truncated,
+                "timed_out": timed_out,
+                "search_error": search_error,
+                "sort_field": sort_field,
+                "sort_direction": sort_direction,
+                "sort_fields": SORT_FIELDS,
+                "sort_directions": SORT_DIRECTIONS,
+            },
+        )
 
 
 class FileManagerPreviewView(LoginRequiredMixin, View):

@@ -282,6 +282,37 @@ class MonitorViewsTests(TestCase):
             self.assertIn("kind", payload["items"][0])
 
     @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_list_api_supports_sorting(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "zeta.txt").write_text("z", encoding="utf-8")
+            Path(tmpdir, "alpha.txt").write_text("alpha", encoding="utf-8")
+            response = self.client.get(
+                self._path("monitor:file-manager-list"),
+                {"path": tmpdir, "sort": "name", "direction": "desc"},
+            )
+            self.assertEqual(response.status_code, 200)
+            payload = response.json()
+            self.assertEqual(payload["sort_field"], "name")
+            self.assertEqual(payload["sort_direction"], "desc")
+            self.assertEqual([item["name"] for item in payload["items"]], ["zeta.txt", "alpha.txt"])
+
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_search_uses_selected_root_and_sorting(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "nested").mkdir()
+            (root / "nested" / "report-final.txt").write_text("report", encoding="utf-8")
+            (root / "report-draft.txt").write_text("draft", encoding="utf-8")
+            response = self.client.get(
+                self._path("monitor:file-manager-search"),
+                {"path": str(root), "q": "report", "recursive": "1", "sort": "name", "direction": "asc"},
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertContains(response, "report-final.txt")
+            self.assertContains(response, "report-draft.txt")
+            self.assertContains(response, "Search from")
+
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
     def test_file_manager_information_api_scans_selected_paths(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

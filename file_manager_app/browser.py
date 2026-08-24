@@ -3,7 +3,8 @@ from urllib.parse import urlencode
 
 from django.urls import reverse
 
-from volumes_app.path_browser import list_directory_entries
+from volumes_app.path_browser import entry_metadata_for_path, list_directory_entries
+from .sorting import sort_entries
 
 
 MAX_IMAGE_PREVIEW_BYTES = 15 * 1024 * 1024
@@ -19,11 +20,12 @@ TEXT_CONTENT_TYPES = {
 }
 
 
-def list_file_manager_entries(host_path, *, folders_only=False):
+def list_file_manager_entries(host_path, *, folders_only=False, sort_field="name", sort_direction="asc"):
     entries = list_directory_entries(host_path, include_files=not folders_only)
     if folders_only:
-        return [entry for entry in entries if entry.get("is_dir")]
-    return [enrich_file_entry(entry) for entry in entries]
+        entries = [entry for entry in entries if entry.get("is_dir")]
+        return sort_entries(entries, sort_field, sort_direction)
+    return sort_entries([enrich_file_entry(entry) for entry in entries], sort_field, sort_direction)
 
 
 def enrich_file_entry(entry):
@@ -40,6 +42,11 @@ def enrich_file_entry(entry):
     if preview_is_available(enriched):
         enriched["preview_url"] = f"{reverse('monitor:file-manager-preview')}?{urlencode({'path': enriched['path']})}"
     return enriched
+
+
+def file_entry_for_path(host_path):
+    entry = entry_metadata_for_path(host_path)
+    return enrich_file_entry(entry) if entry else None
 
 
 def media_kind_for_content_type(content_type):

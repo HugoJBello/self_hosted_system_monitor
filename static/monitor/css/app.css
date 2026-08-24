@@ -2749,6 +2749,29 @@ body.app-shell {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.file-manager-toolbar-controls,
+.file-manager-sort-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.file-manager-toolbar-controls {
+  flex: 0 0 auto;
+}
+
+.file-manager-sort-controls .file-manager-option-label {
+  margin: 0;
+}
+
+.file-manager-sort-controls select {
+  min-width: 7.5rem;
+}
+
+.file-manager-destination-sort {
+  justify-content: flex-end;
+}
+
 .file-manager-path {
   min-width: 0;
   display: inline-flex;
@@ -3348,6 +3371,114 @@ body.app-shell {
   min-height: 1.25rem;
 }
 
+.file-search-panel {
+  padding: 1.15rem;
+}
+
+.file-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(14rem, 0.8fr) auto;
+  align-items: end;
+  gap: 0.85rem;
+}
+
+.file-search-form .form-label {
+  margin-bottom: 0.4rem;
+}
+
+.file-search-options {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 2.4rem;
+}
+
+.file-search-options .form-check {
+  white-space: nowrap;
+}
+
+.file-search-help {
+  margin-top: 0.85rem;
+}
+
+.file-search-results {
+  padding: 1.15rem;
+}
+
+.file-search-results-header,
+.file-search-sort-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.file-search-results-header {
+  justify-content: space-between;
+}
+
+.file-search-sort-bar {
+  padding: 0.7rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-search-sort-bar .form-select {
+  width: auto;
+  min-width: 8.5rem;
+}
+
+.file-search-result-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.file-search-result {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: inherit;
+  text-decoration: none;
+}
+
+.file-search-result:hover,
+.file-search-result:focus-visible {
+  border-color: rgba(93, 198, 255, 0.35);
+  background: rgba(93, 198, 255, 0.08);
+  outline: none;
+}
+
+.file-search-result-main,
+.file-search-result-meta {
+  min-width: 0;
+}
+
+.file-search-result-main {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.file-search-result-main strong,
+.file-search-result-main small {
+  overflow-wrap: anywhere;
+}
+
+.file-search-result-main small,
+.file-search-result-meta {
+  color: #8ea3b9;
+  font-size: 0.78rem;
+}
+
+.file-search-result-meta {
+  text-align: right;
+}
+
 .file-manager-upload-list {
   max-height: 8rem;
   overflow: auto;
@@ -3650,6 +3781,20 @@ body.app-shell {
     padding: 0.65rem 0.75rem;
   }
 
+  .file-manager-toolbar-controls,
+  .file-manager-sort-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .file-manager-sort-controls select {
+    flex: 1 1 auto;
+  }
+
+  .file-manager-destination-sort {
+    justify-content: flex-start;
+  }
+
   .file-manager-destination-topbar {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 0.5rem;
@@ -3661,6 +3806,34 @@ body.app-shell {
 
   .file-manager-destination-up {
     padding-inline: 0.6rem;
+  }
+
+  .file-search-form {
+    grid-template-columns: 1fr;
+  }
+
+  .file-search-options {
+    justify-content: space-between;
+  }
+
+  .file-search-results-header,
+  .file-search-sort-bar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .file-search-sort-bar .form-select,
+  .file-search-sort-bar .btn {
+    width: 100%;
+  }
+
+  .file-search-result {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .file-search-result-meta {
+    grid-column: 2;
+    text-align: left;
   }
 
   .file-manager-row {

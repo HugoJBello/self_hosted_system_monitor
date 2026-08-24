@@ -44,6 +44,9 @@
       <a href="{% url 'monitor:file-manager-operations' %}" class="btn btn-outline-light">
         <i class="bi bi-list-task"></i><span>Processes</span>
       </a>
+      <a href="{% url 'monitor:file-manager-search' %}?path={{ current_path|urlencode }}" class="btn btn-outline-light">
+        <i class="bi bi-search"></i><span>Search</span>
+      </a>
       <div class="dropdown">
         <button class="btn btn-accent dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-actions-toggle>
           <i class="bi bi-lightning-charge"></i><span>Actions</span>
@@ -74,9 +77,18 @@
         <i class="bi bi-hdd-stack"></i>
         <nav class="file-manager-breadcrumbs" data-current-breadcrumbs aria-label="Current path"></nav>
       </div>
-      <div class="file-manager-summary">
-        <span data-item-count>{{ entries|length }}</span> items
-        <span class="file-manager-selection-count d-none" data-selection-count></span>
+      <div class="file-manager-toolbar-controls">
+        <div class="file-manager-sort-controls" data-file-sort-controls>
+          <label class="file-manager-option-label" for="fileSortField"><i class="bi bi-sort-down" aria-hidden="true"></i><span>Sort</span></label>
+          <select id="fileSortField" class="form-select form-select-sm" data-sort-field>
+            {% for value, label in sort_fields.items %}<option value="{{ value }}" {% if sort_field == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+          </select>
+          <button type="button" class="btn btn-outline-light btn-sm" data-sort-direction data-direction="{{ sort_direction }}" aria-label="Sort ascending" title="Sort ascending"><i class="bi bi-sort-alpha-down"></i></button>
+        </div>
+        <div class="file-manager-summary">
+          <span data-item-count>{{ entries|length }}</span> items
+          <span class="file-manager-selection-count d-none" data-selection-count></span>
+        </div>
       </div>
     </div>
 
@@ -143,6 +155,13 @@
           </div>
           <div class="file-manager-status d-none mb-3" data-destination-loading role="status" aria-live="polite">
             <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading destination folders...
+          </div>
+          <div class="file-manager-sort-controls file-manager-destination-sort mb-2" data-destination-sort-controls>
+            <label class="file-manager-option-label" for="destinationSortField"><i class="bi bi-sort-down" aria-hidden="true"></i><span>Sort folders</span></label>
+            <select id="destinationSortField" class="form-select form-select-sm" data-destination-sort-field>
+              {% for value, label in sort_fields.items %}<option value="{{ value }}" {% if value == "name" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select>
+            <button type="button" class="btn btn-outline-light btn-sm" data-destination-sort-direction aria-label="Sort ascending" title="Sort ascending"><i class="bi bi-sort-alpha-down"></i></button>
           </div>
           <div class="file-manager-destination-list file-manager-destination-browser" data-destination-rows></div>
           <div class="file-manager-transfer-method mt-3">
@@ -390,5 +409,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-rsync-plan"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-file-search-sort"></script>
 {% endblock %}

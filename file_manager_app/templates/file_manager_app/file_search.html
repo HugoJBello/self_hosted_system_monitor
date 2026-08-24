@@ -1,0 +1,77 @@
+{% extends "main_app/base.html" %}
+{% load static %}
+
+{% block title %}Search Files | System Monitor{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end gap-3 mb-4">
+  <div>
+    <p class="eyebrow mb-2">File manager</p>
+    <h1 class="display-6 mb-1">Search files</h1>
+    <p class="text-secondary mb-0">Search by name from the selected folder using the Linux <code>find</code> command.</p>
+  </div>
+  <div class="file-manager-actions">
+    <a href="{% url 'monitor:file-manager' %}?path={{ root_path|urlencode }}" class="btn btn-outline-light"><i class="bi bi-folder2-open"></i><span>Files</span></a>
+  </div>
+</div>
+
+<section class="panel-card file-search-panel">
+  <form method="get" class="file-search-form">
+    <div class="file-search-input-wrap">
+      <label class="form-label file-manager-option-label" for="fileSearchQuery"><i class="bi bi-search" aria-hidden="true"></i><span>Name contains</span></label>
+      <input id="fileSearchQuery" name="q" value="{{ query }}" class="form-control form-control-lg" placeholder="e.g. report, .pdf, backup" autocomplete="off" autofocus>
+    </div>
+    <div class="file-search-root">
+      <label class="form-label file-manager-option-label" for="fileSearchRoot"><i class="bi bi-folder2-open" aria-hidden="true"></i><span>Search from</span></label>
+      <input id="fileSearchRoot" name="path" value="{{ root_path }}" class="form-control" spellcheck="false">
+    </div>
+    <div class="file-search-options">
+      <div class="form-check form-switch">
+        <input class="form-check-input" type="checkbox" role="switch" id="fileSearchRecursive" name="recursive" value="1" {% if recursive %}checked{% endif %}>
+        <label class="form-check-label" for="fileSearchRecursive">Include subfolders</label>
+      </div>
+      <button type="submit" class="btn btn-accent"><i class="bi bi-search"></i>Search</button>
+    </div>
+  </form>
+  <div class="file-search-help text-secondary small">Results are limited to {{ result_limit }} items and each search has a safety timeout.</div>
+</section>
+
+{% if query %}
+<section class="panel-card mt-4 file-search-results" data-file-search-results>
+  <div class="file-search-results-header">
+    <div>
+      <p class="eyebrow mb-1">Results</p>
+      <h2 class="h5 mb-0">Matches for <code>{{ query }}</code></h2>
+    </div>
+    <span class="file-manager-summary">{{ results|length }} result{{ results|length|pluralize }}</span>
+  </div>
+  {% if timed_out %}<div class="file-manager-status mt-3">Search stopped at the safety timeout. Narrow the folder or query.</div>{% endif %}
+  {% if truncated %}<div class="file-manager-status mt-3">Only the first {{ result_limit }} results are shown. Narrow the query for a complete list.</div>{% endif %}
+  {% if search_error %}<div class="file-manager-status is-error mt-3">{{ search_error }}</div>{% endif %}
+  <form method="get" class="file-search-sort-bar mt-3">
+    <input type="hidden" name="q" value="{{ query }}">
+    <input type="hidden" name="path" value="{{ root_path }}">
+    <input type="hidden" name="recursive" value="{% if recursive %}1{% endif %}">
+    <label class="file-manager-option-label" for="fileSearchSort"><i class="bi bi-sort-down" aria-hidden="true"></i><span>Sort results</span></label>
+    <select id="fileSearchSort" name="sort" class="form-select form-select-sm">
+      {% for value, label in sort_fields.items %}<option value="{{ value }}" {% if sort_field == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="direction" class="form-select form-select-sm">
+      {% for value, label in sort_directions.items %}<option value="{{ value }}" {% if sort_direction == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-repeat"></i>Apply</button>
+  </form>
+  <div class="file-search-result-list mt-3">
+    {% for item in results %}
+      <a class="file-search-result" href="{% url 'monitor:file-manager' %}?path={{ item.browse_path|urlencode }}">
+        <span class="file-manager-icon file-manager-icon-{{ item.kind }}"><i class="bi {% if item.kind == 'folder' %}bi-folder-fill{% else %}bi-file-earmark{% endif %}"></i></span>
+        <span class="file-search-result-main"><strong>{{ item.name }}</strong><small>{{ item.path }}</small></span>
+        <span class="file-search-result-meta">{{ item.kind|title }} · {{ item.modified_at|default:"-" }}</span>
+      </a>
+    {% empty %}
+      {% if not search_error %}<div class="file-manager-empty">No matching files or folders.</div>{% endif %}
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{% endblock %}
