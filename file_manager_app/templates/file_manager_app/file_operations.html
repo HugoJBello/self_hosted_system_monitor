@@ -59,6 +59,8 @@
           <div class="d-flex align-items-center gap-2 flex-wrap mb-1">
             <span class="chip compact-chip">{{ operation.get_action_display }}</span>
             {% if operation.action == "copy" or operation.action == "move" %}<span class="chip compact-chip">{{ operation.get_conflict_policy_display }}</span>{% endif %}
+            {% if operation.action == "copy" or operation.action == "move" %}<span class="chip compact-chip">Folders: {{ operation.get_folder_conflict_policy_display }}</span>{% endif %}
+            {% if operation.action == "copy" or operation.action == "move" %}<span class="chip compact-chip">{{ operation.get_transfer_method_display }}</span>{% endif %}
             {% if operation.runner_label %}<span class="chip compact-chip">{{ operation.runner_label }}</span>{% endif %}
           </div>
           <h3 class="h6 mb-1">{{ operation.summary|default:"File operation" }}</h3>

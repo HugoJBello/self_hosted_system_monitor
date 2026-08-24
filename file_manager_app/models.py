@@ -3,8 +3,17 @@ from django.utils import timezone
 
 
 class FileOperation(models.Model):
+    TRANSFER_METHOD_CHOICES = [
+        ("standard", "Standard"),
+        ("rsync", "Rsync differential"),
+    ]
     CONFLICT_POLICY_CHOICES = [
         ("overwrite", "Overwrite"),
+        ("skip", "Skip"),
+        ("rename", "Rename"),
+    ]
+    FOLDER_CONFLICT_POLICY_CHOICES = [
+        ("merge", "Merge"),
         ("skip", "Skip"),
         ("rename", "Rename"),
     ]
@@ -28,7 +37,9 @@ class FileOperation(models.Model):
     sources = models.JSONField(default=list, blank=True)
     completed_sources = models.JSONField(default=list, blank=True)
     destination_path = models.CharField(max_length=500, blank=True, default="")
+    transfer_method = models.CharField(max_length=16, choices=TRANSFER_METHOD_CHOICES, default="standard")
     conflict_policy = models.CharField(max_length=16, choices=CONFLICT_POLICY_CHOICES, default="overwrite")
+    folder_conflict_policy = models.CharField(max_length=16, choices=FOLDER_CONFLICT_POLICY_CHOICES, default="merge")
     current_path = models.CharField(max_length=500, blank=True, default="")
     total_count = models.PositiveIntegerField(default=0)
     processed_count = models.PositiveIntegerField(default=0)

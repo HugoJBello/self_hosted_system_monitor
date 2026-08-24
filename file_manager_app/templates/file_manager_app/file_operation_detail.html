@@ -59,8 +59,15 @@
   <div class="col-12 col-md-6 col-xl-3">
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Conflicts</p>
-      <h2 class="h6 mb-1">{{ operation.get_conflict_policy_display }}</h2>
-      <p class="text-secondary mb-0">Existing destination items</p>
+      <h2 class="h6 mb-1">Files: {{ operation.get_conflict_policy_display }}</h2>
+      <p class="text-secondary mb-0">Folders: {{ operation.get_folder_conflict_policy_display }}</p>
+    </section>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Transfer</p>
+      <h2 class="h6 mb-1">{{ operation.get_transfer_method_display }}</h2>
+      <p class="text-secondary mb-0">Method used by the worker</p>
     </section>
   </div>
   {% endif %}

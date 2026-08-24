@@ -1,4 +1,6 @@
 import os
+import re
+import select
 import shutil
 import subprocess
 import sys
@@ -20,6 +22,12 @@ DOWNLOAD_ARCHIVE_DIR_NAME = "file_manager_downloads"
 UPLOAD_SESSION_DIR_NAME = "file_manager_uploads"
 SQLITE_LOCK_RETRY_SECONDS = 0.2
 SQLITE_LOCK_RETRY_ATTEMPTS = 5
+
+
+class FileOperationInterrupted(Exception):
+    def __init__(self, status):
+        super().__init__(status)
+        self.status = status
 
 
 @dataclass
@@ -70,13 +78,27 @@ def _validated_destination(destination_path):
     return destination
 
 
-def create_file_operation(action, sources, *, destination_path="", conflict_policy="overwrite"):
+def create_file_operation(
+    action,
+    sources,
+    *,
+    destination_path="",
+    transfer_method="standard",
+    conflict_policy="overwrite",
+    folder_conflict_policy="merge",
+):
     if action not in {"copy", "move", "delete", "download"}:
         raise ValueError("Unsupported file operation.")
     if conflict_policy not in {choice[0] for choice in FileOperation.CONFLICT_POLICY_CHOICES}:
         raise ValueError("Unsupported conflict policy.")
+    if folder_conflict_policy not in {choice[0] for choice in FileOperation.FOLDER_CONFLICT_POLICY_CHOICES}:
+        raise ValueError("Unsupported folder conflict policy.")
+    if transfer_method not in {choice[0] for choice in FileOperation.TRANSFER_METHOD_CHOICES}:
+        raise ValueError("Unsupported transfer method.")
     if action not in {"copy", "move"}:
+        transfer_method = "standard"
         conflict_policy = "overwrite"
+        folder_conflict_policy = "merge"
     normalized_sources = _validated_sources(sources)
     destination = _validated_destination(destination_path) if action in {"copy", "move"} else ""
     operation = FileOperation.objects.create(
@@ -84,7 +106,9 @@ def create_file_operation(action, sources, *, destination_path="", conflict_poli
         status="running",
         sources=normalized_sources,
         destination_path=destination,
+        transfer_method=transfer_method,
         conflict_policy=conflict_policy,
+        folder_conflict_policy=folder_conflict_policy,
         total_count=len(normalized_sources),
         summary=f"{action.title()} operation queued for {len(normalized_sources)} item(s).",
         heartbeat_at=timezone.now(),
@@ -187,6 +211,16 @@ def execute_file_operation(operation):
         operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
         try:
             item_result = _perform_item(operation, source)
+        except FileOperationInterrupted as exc:
+            if exc.status == "cancelled":
+                finalize_file_operation(operation, "cancelled", "File operation cancelled by operator.")
+            else:
+                operation.status = "paused"
+                operation.summary = "File operation paused. Partial transfers can be resumed."
+                operation.process_pid = None
+                _append_log(operation, "Paused during transfer; partial data was kept for resume.")
+                operation.save(update_fields=["status", "summary", "process_pid", "log_output", "heartbeat_at"])
+            return
         except Exception as exc:
             errors.append(f"{source}: {exc}")
             _append_log(operation, f"ERROR item {source_index}/{total_sources}: {source}: {exc}")
@@ -220,36 +254,105 @@ def _perform_item(operation, source):
 
     destination_root = hostfs_path(operation.destination_path)
     target = os.path.join(destination_root, os.path.basename(source.rstrip("/")))
-    if os.path.abspath(target) == os.path.abspath(absolute_source):
-        _append_log(operation, f"Skipped {source}: source and destination are the same path")
+    return _transfer_path(operation, absolute_source, target, source)
+
+
+def _transfer_path(operation, source, target, display_source):
+    source_is_folder = os.path.isdir(source) and not os.path.islink(source)
+    if os.path.abspath(target) == os.path.abspath(source):
+        _append_log(operation, f"Skipped {display_source}: source and destination are the same path")
         operation.save(update_fields=["log_output", "heartbeat_at"])
         return "skipped"
+
     if os.path.lexists(target):
-        if operation.conflict_policy == "skip":
-            _append_log(operation, f"Skipped {source}: destination already exists")
+        target_is_folder = os.path.isdir(target) and not os.path.islink(target)
+        if source_is_folder and target_is_folder:
+            if operation.folder_conflict_policy == "merge":
+                return _merge_directory(operation, source, target, display_source)
+            policy = operation.folder_conflict_policy
+        elif source_is_folder:
+            policy = operation.folder_conflict_policy
+            if policy == "merge":
+                _append_log(operation, f"Cannot merge folder {display_source} into a non-folder; overwriting destination")
+                policy = "overwrite"
+        else:
+            policy = operation.conflict_policy
+
+        if policy == "skip":
+            _append_log(operation, f"Skipped {display_source}: destination already exists")
             operation.save(update_fields=["log_output", "heartbeat_at"])
             return "skipped"
-        if operation.conflict_policy == "rename":
-            target = _available_conflict_target(destination_root, os.path.basename(source.rstrip("/")))
+        if policy == "rename":
+            target = _available_conflict_target(os.path.dirname(target), os.path.basename(target))
             _append_log(operation, f"Destination exists; using renamed target {target}")
             operation.save(update_fields=["log_output", "heartbeat_at"])
         else:
             _append_log(operation, f"Destination exists; overwriting {target}")
             _delete_path(target)
-    if operation.action == "copy":
-        if os.path.isdir(absolute_source) and not os.path.islink(absolute_source):
-            _copy_directory_with_progress(operation, absolute_source, target, source)
+
+    if source_is_folder:
+        if operation.action == "copy":
+            if operation.transfer_method == "rsync":
+                _rsync_directory(operation, source, target, display_source)
+            else:
+                _copy_directory_with_progress(operation, source, target, display_source)
+        elif operation.action == "move":
+            if operation.transfer_method == "rsync":
+                _rsync_directory(operation, source, target, display_source)
+                _delete_path(source)
+            else:
+                _append_log(operation, f"Moving folder {display_source} to {target}")
+                operation.save(update_fields=["log_output", "heartbeat_at"])
+                shutil.move(source, target)
         else:
-            _append_log(operation, f"Copying file {source}")
+            raise ValueError("Unsupported file operation.")
+        return "transferred"
+
+    if operation.action == "copy":
+        if operation.transfer_method == "rsync":
+            _rsync_file(operation, source, target, display_source)
+        else:
+            _append_log(operation, f"Copying file {display_source} to {target}")
             operation.save(update_fields=["log_output", "heartbeat_at"])
-            shutil.copy2(absolute_source, target, follow_symlinks=False)
-        return
+            shutil.copy2(source, target, follow_symlinks=False)
+        return "transferred"
     if operation.action == "move":
-        _append_log(operation, f"Moving {source} to {operation.destination_path}")
-        operation.save(update_fields=["log_output", "heartbeat_at"])
-        shutil.move(absolute_source, target)
-        return
+        if operation.transfer_method == "rsync":
+            _rsync_file(operation, source, target, display_source)
+            _delete_path(source)
+        else:
+            _append_log(operation, f"Moving file {display_source} to {target}")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+            shutil.move(source, target)
+        return "transferred"
     raise ValueError("Unsupported file operation.")
+
+
+def _merge_directory(operation, source, target, display_source):
+    _append_log(operation, f"Merging folder {display_source} into {target}")
+    operation.save(update_fields=["log_output", "heartbeat_at"])
+    transferred = False
+    entries = sorted(os.scandir(source), key=lambda entry: entry.name.lower())
+    for entry in entries:
+        child_display = f"{display_source.rstrip('/')}/{entry.name}"
+        child_result = _transfer_path(
+            operation,
+            entry.path,
+            os.path.join(target, entry.name),
+            child_display,
+        )
+        if child_result != "skipped":
+            transferred = True
+
+    if operation.action == "move":
+        try:
+            os.rmdir(source)
+            _append_log(operation, f"Removed empty source folder after merge: {display_source}")
+            transferred = True
+        except OSError:
+            _append_log(operation, f"Kept source folder because skipped items remain: {display_source}")
+    operation.save(update_fields=["log_output", "heartbeat_at"])
+    return "transferred" if transferred else "skipped"
 
 
 def _available_conflict_target(destination_root, name):
@@ -280,6 +383,109 @@ def _copy_directory_with_progress(operation, source, target, display_source):
     _append_log(operation, f"Copying directory tree {display_source}")
     operation.save(update_fields=["log_output", "heartbeat_at"])
     shutil.copytree(source, target, symlinks=True, copy_function=copy_with_progress)
+
+
+def _rsync_executable():
+    executable = shutil.which("rsync")
+    if not executable:
+        raise RuntimeError("Rsync is not available on the server.")
+    return executable
+
+
+def rsync_available():
+    return shutil.which("rsync") is not None
+
+
+def _rsync_command(source, target, *, directory):
+    source_arg = f"{source}{os.sep}" if directory else source
+    target_arg = f"{target}{os.sep}" if directory else target
+    return [
+        _rsync_executable(),
+        "--archive",
+        "--no-owner",
+        "--no-group",
+        "--partial",
+        "--human-readable",
+        "--info=progress2",
+        "--out-format=%i %n%L",
+        "--",
+        source_arg,
+        target_arg,
+    ]
+
+
+def _rsync_transfer(operation, source, target, display_source, *, directory):
+    command = _rsync_command(source, target, directory=directory)
+    _append_log(operation, f"Rsync differential {operation.get_action_display().lower()}: {display_source}")
+    operation.summary = f"Rsync {operation.get_action_display().lower()} in progress: {display_source}"
+    operation.save(update_fields=["summary", "log_output", "heartbeat_at"])
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        bufsize=0,
+        start_new_session=True,
+    )
+    output_buffer = ""
+    output_fd = process.stdout.fileno()
+    os.set_blocking(output_fd, False)
+
+    def record_output(chunk):
+        nonlocal output_buffer
+        output_buffer += chunk.decode("utf-8", errors="replace")
+        fragments = re.split(r"[\r\n]+", output_buffer)
+        output_buffer = fragments.pop()
+        for fragment in fragments:
+            message = " ".join(fragment.strip().split())
+            if not message:
+                continue
+            _append_log(operation, f"rsync: {message}")
+            operation.current_path = display_source
+            operation.summary = f"Rsync {operation.get_action_display().lower()} in progress: {display_source}"
+        operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
+
+    try:
+        while True:
+            operation.refresh_from_db()
+            requested_status = "cancelled" if operation.cancel_requested_at else "paused" if operation.pause_requested_at else ""
+            if requested_status:
+                process.terminate()
+                try:
+                    process.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                raise FileOperationInterrupted(requested_status)
+            ready, _, _ = select.select([process.stdout], [], [], 0.5)
+            if ready:
+                try:
+                    chunk = os.read(output_fd, 65536)
+                except BlockingIOError:
+                    chunk = b""
+                if chunk:
+                    record_output(chunk)
+                elif process.poll() is not None:
+                    break
+            if process.poll() is not None and not ready:
+                break
+        return_code = process.returncode
+        if output_buffer.strip():
+            message = " ".join(output_buffer.strip().split())
+            _append_log(operation, f"rsync: {message}")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+    finally:
+        if process.stdout:
+            process.stdout.close()
+    if return_code != 0:
+        raise RuntimeError(f"Rsync failed with exit code {return_code}.")
+
+
+def _rsync_file(operation, source, target, display_source):
+    _rsync_transfer(operation, source, target, display_source, directory=False)
+
+
+def _rsync_directory(operation, source, target, display_source):
+    _rsync_transfer(operation, source, target, display_source, directory=True)
 
 
 def _download_root():

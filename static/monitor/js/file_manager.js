@@ -62,7 +62,9 @@
   const destinationTitle = page.querySelector("[data-destination-title]");
   const destinationUp = page.querySelector("[data-destination-up]");
   const destinationSubmit = page.querySelector("[data-destination-submit]");
+  const transferMethod = page.querySelector("[data-transfer-method]");
   const conflictPolicy = page.querySelector("[data-conflict-policy]");
+  const folderConflictPolicy = page.querySelector("[data-folder-conflict-policy]");
   const deleteTrigger = page.querySelector("[data-delete-trigger]");
   const deleteModalElement = page.querySelector("[data-delete-modal]");
   const deleteSummary = page.querySelector("[data-delete-summary]");
@@ -1129,6 +1131,8 @@
     if (!selectedPaths.size) return;
     destinationAction = action === "move" ? "move" : "copy";
     if (conflictPolicy) conflictPolicy.value = "overwrite";
+    if (folderConflictPolicy) folderConflictPolicy.value = "merge";
+    if (transferMethod) transferMethod.value = "standard";
     if (destinationSubmit) {
       destinationSubmit.value = destinationAction;
       destinationSubmit.textContent = destinationAction === "move" ? "Move here" : "Copy here";
@@ -1652,7 +1656,7 @@
     parts.forEach((part, index) => {
       const button = document.createElement("button");
       button.type = "button";
-      button.className = "file-manager-breadcrumb";
+      button.className = `file-manager-breadcrumb${index === parts.length - 1 ? " is-current" : ""}`;
       button.textContent = part.label;
       button.title = part.path;
       button.addEventListener("click", () => onNavigate(part.path));

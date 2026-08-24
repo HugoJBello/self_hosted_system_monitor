@@ -31,6 +31,7 @@ from file_manager_app.services import (
     resume_file_operation,
     save_uploaded_files,
     save_upload_chunk,
+    rsync_available,
     start_chunked_upload,
     start_background_file_operation,
 )
@@ -87,6 +88,7 @@ class FileManagerView(LoginRequiredMixin, View):
                 "entries": entries,
                 "file_manager_error": error,
                 "running_file_operations": FileOperation.objects.filter(status="running").order_by("-started_at")[:5],
+                "rsync_available": rsync_available(),
             },
         )
 
@@ -177,7 +179,9 @@ class FileManagerView(LoginRequiredMixin, View):
                     action,
                     selected_paths,
                     destination_path=request.POST.get("destination_path") or "",
+                    transfer_method=request.POST.get("transfer_method") or "standard",
                     conflict_policy=request.POST.get("conflict_policy") or "overwrite",
+                    folder_conflict_policy=request.POST.get("folder_conflict_policy") or "merge",
                 )
                 start_background_file_operation(operation)
                 messages.success(request, f"{operation.get_action_display()} operation started.")
@@ -382,8 +386,12 @@ class FileManagerOperationStatusView(LoginRequiredMixin, View):
                 "total_count": operation.total_count,
                 "progress_percent": operation.progress_percent,
                 "current_path": operation.current_path,
+                "transfer_method": operation.transfer_method,
+                "transfer_method_label": operation.get_transfer_method_display(),
                 "conflict_policy": operation.conflict_policy,
                 "conflict_policy_label": operation.get_conflict_policy_display(),
+                "folder_conflict_policy": operation.folder_conflict_policy,
+                "folder_conflict_policy_label": operation.get_folder_conflict_policy_display(),
                 "log_output": operation.log_output,
                 "process_pid": operation.process_pid,
                 "runner_label": operation.runner_label,

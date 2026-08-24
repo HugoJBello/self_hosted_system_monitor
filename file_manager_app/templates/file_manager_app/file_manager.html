@@ -134,24 +134,46 @@
         </div>
         <div class="modal-body">
           <div class="file-manager-destination-topbar mb-3">
-            <div class="file-manager-path">
+            <div class="file-manager-path file-manager-destination-path">
               <i class="bi bi-folder2-open"></i>
               <nav class="file-manager-breadcrumbs" data-destination-breadcrumbs aria-label="Destination path"></nav>
             </div>
-            <button type="button" class="btn btn-outline-light btn-sm" data-destination-up disabled><i class="bi bi-arrow-up"></i> Up</button>
+            <button type="button" class="btn btn-outline-light btn-sm file-manager-destination-up" data-destination-up disabled><i class="bi bi-arrow-up"></i> Up</button>
           </div>
           <div class="file-manager-status d-none mb-3" data-destination-loading role="status" aria-live="polite">
             <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading destination folders...
           </div>
           <div class="file-manager-destination-list" data-destination-rows></div>
-          <div class="file-manager-conflict-policy mt-3">
-            <label class="form-label" for="fileConflictPolicy">If an item already exists</label>
-            <select id="fileConflictPolicy" name="conflict_policy" class="form-select" data-conflict-policy>
-              <option value="overwrite" selected>Overwrite existing item</option>
-              <option value="skip">Skip existing item</option>
-              <option value="rename">Rename incoming item (1), (2)...</option>
-            </select>
-            <div class="form-text">This applies to files and folders with the same name in the destination.</div>
+          <div class="file-manager-transfer-method mt-3">
+            <div>
+              <label class="form-label" for="fileTransferMethod">Transfer method</label>
+              <select id="fileTransferMethod" name="transfer_method" class="form-select" data-transfer-method>
+                <option value="standard" selected>Standard</option>
+                <option value="rsync" {% if not rsync_available %}disabled{% endif %}>Rsync differential{% if not rsync_available %} (unavailable){% endif %}</option>
+              </select>
+            </div>
+            <div class="form-text">
+              Rsync keeps partial transfers for easier resume and is useful for large or cross-volume transfers. {% if rsync_available %}It is available on this server.{% else %}It is unavailable on this server; use Standard or install rsync.{% endif %}
+            </div>
+          </div>
+          <div class="file-manager-conflict-policies mt-3">
+            <div class="file-manager-conflict-policy">
+              <label class="form-label" for="fileConflictPolicy">File conflicts</label>
+              <select id="fileConflictPolicy" name="conflict_policy" class="form-select" data-conflict-policy>
+                <option value="overwrite" selected>Overwrite existing file</option>
+                <option value="skip">Skip existing file</option>
+                <option value="rename">Rename incoming file (1), (2)...</option>
+              </select>
+            </div>
+            <div class="file-manager-conflict-policy">
+              <label class="form-label" for="folderConflictPolicy">Folder conflicts</label>
+              <select id="folderConflictPolicy" name="folder_conflict_policy" class="form-select" data-folder-conflict-policy>
+                <option value="merge" selected>Merge into existing folder</option>
+                <option value="skip">Skip existing folder</option>
+                <option value="rename">Rename incoming folder (1), (2)...</option>
+              </select>
+            </div>
+            <div class="form-text">These policies apply when an item with the same name already exists in the destination.</div>
           </div>
         </div>
         <div class="modal-footer border-secondary">
@@ -336,5 +358,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-conflict-policy"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-rsync-transfer"></script>
 {% endblock %}

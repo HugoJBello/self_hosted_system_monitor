@@ -460,6 +460,112 @@ class MonitorViewsTests(TestCase):
                 if policy == "rename":
                     self.assertIn("using renamed target", operation.log_output)
 
+    def test_file_operation_folder_conflict_policies(self):
+        from file_manager_app.services import execute_file_operation
+
+        for policy in ("merge", "skip", "rename"):
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as tmpdir:
+                source = Path(tmpdir, "source")
+                destination = Path(tmpdir, "destination")
+                source.mkdir()
+                destination.mkdir()
+                Path(source, "incoming.txt").write_text("incoming", encoding="utf-8")
+                existing = Path(destination, "source")
+                existing.mkdir()
+                Path(existing, "existing.txt").write_text("existing", encoding="utf-8")
+                operation = FileOperation.objects.create(
+                    action="copy",
+                    status="running",
+                    sources=["/source"],
+                    destination_path="/destination",
+                    conflict_policy="overwrite",
+                    folder_conflict_policy=policy,
+                    total_count=1,
+                )
+                with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                    execute_file_operation(operation)
+
+                operation.refresh_from_db()
+                self.assertEqual(operation.status, "success")
+                if policy == "merge":
+                    self.assertTrue(Path(existing, "incoming.txt").is_file())
+                    self.assertTrue(Path(existing, "existing.txt").is_file())
+                elif policy == "skip":
+                    self.assertFalse(Path(existing, "incoming.txt").exists())
+                    self.assertIn("Skipped /source", operation.log_output)
+                else:
+                    renamed = Path(destination, "source (1)")
+                    self.assertTrue(Path(renamed, "incoming.txt").is_file())
+
+    def test_file_operation_rsync_transfer_method_is_persisted(self):
+        from file_manager_app.services import create_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir, "source.txt")
+            destination = Path(tmpdir, "destination")
+            source.write_text("content", encoding="utf-8")
+            destination.mkdir()
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                operation = create_file_operation(
+                    "copy",
+                    ["/source.txt"],
+                    destination_path="/destination",
+                    transfer_method="rsync",
+                    conflict_policy="skip",
+                    folder_conflict_policy="merge",
+                )
+
+            self.assertEqual(operation.transfer_method, "rsync")
+            self.assertEqual(operation.conflict_policy, "skip")
+            self.assertEqual(operation.folder_conflict_policy, "merge")
+
+    def test_file_operation_rsync_command_is_argument_based(self):
+        from file_manager_app.services import _rsync_command
+
+        with patch("file_manager_app.services._rsync_executable", return_value="/usr/bin/rsync"):
+            command = _rsync_command("/source folder", "/destination folder", directory=True)
+
+        self.assertEqual(command[0], "/usr/bin/rsync")
+        self.assertIn("--partial", command)
+        self.assertIn("--", command)
+        self.assertEqual(command[-2:], ["/source folder/", "/destination folder/"])
+
+    def test_file_operation_rsync_copy_and_move_complete_safely(self):
+        from file_manager_app.services import execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_file = Path(tmpdir, "source.txt")
+            source_folder = Path(tmpdir, "source-folder")
+            destination = Path(tmpdir, "destination")
+            source_file.write_text("copy me", encoding="utf-8")
+            source_folder.mkdir()
+            Path(source_folder, "nested.txt").write_text("move me", encoding="utf-8")
+            destination.mkdir()
+            operations = (
+                ("copy", "/source.txt", Path(destination, "source.txt"), source_file),
+                ("move", "/source-folder", Path(destination, "source-folder"), source_folder),
+            )
+
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                for action, source_path, target, source in operations:
+                    operation = FileOperation.objects.create(
+                        action=action,
+                        status="running",
+                        sources=[source_path],
+                        destination_path="/destination",
+                        transfer_method="rsync",
+                        total_count=1,
+                    )
+                    execute_file_operation(operation)
+                    operation.refresh_from_db()
+                    self.assertEqual(operation.status, "success")
+                    self.assertTrue(target.exists())
+                    if action == "move":
+                        self.assertFalse(source.exists())
+
+            self.assertEqual(Path(destination, "source.txt").read_text(encoding="utf-8"), "copy me")
+            self.assertEqual(Path(destination, "source-folder", "nested.txt").read_text(encoding="utf-8"), "move me")
+
     def test_file_manager_chunked_upload_reassembles_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             start_response = self.client.post(
