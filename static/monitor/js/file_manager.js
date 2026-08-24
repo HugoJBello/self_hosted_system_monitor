@@ -258,10 +258,10 @@
   });
 
   function submitAction(submitter) {
-    if (submitter?.value) return submitter.value;
     if (createFolderModalElement?.classList.contains("show")) return "mkdir";
     if (deleteModalElement?.classList.contains("show")) return "delete";
     if (destinationModalElement?.classList.contains("show")) return destinationAction;
+    if (submitter?.value) return submitter.value;
     return "";
   }
 
@@ -1297,6 +1297,7 @@
   function openDestinationModal(action) {
     if (!selectedPaths.size) return;
     destinationAction = action === "move" ? "move" : "copy";
+    if (fileActionInput) fileActionInput.value = "";
     if (conflictPolicy) conflictPolicy.value = "overwrite";
     if (folderConflictPolicy) folderConflictPolicy.value = "merge";
     if (transferMethod) transferMethod.value = "standard";
@@ -1352,6 +1353,9 @@
     if (destinationSubmit) {
       destinationSubmit.textContent = destinationAction === "move" ? "Confirm move" : "Confirm copy";
     }
+    if (fileActionInput) fileActionInput.value = destinationAction;
+    if (destinationPathInput) destinationPathInput.value = destinationPath;
+    syncSelectedInputs();
     destinationPlanEdit?.classList.remove("d-none");
     if (destinationPlanMethod) {
       destinationPlanMethod.textContent = transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard";

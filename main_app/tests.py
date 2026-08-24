@@ -460,6 +460,39 @@ class MonitorViewsTests(TestCase):
             self.assertEqual(response.status_code, 302)
             self.assertTrue(os.path.isdir(os.path.join(tmpdir, "test_test")))
 
+    @patch("file_manager_app.views.start_background_file_operation")
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_transfer_submission_starts_copy_and_move(self, mock_start):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir, "source.txt")
+            destination = Path(tmpdir, "destination")
+            source.write_text("content", encoding="utf-8")
+            destination.mkdir()
+
+            for action in ("copy", "move"):
+                response = self.client.post(
+                    self._path("monitor:file-manager"),
+                    {
+                        "file_action": action,
+                        "current_path": tmpdir,
+                        "return_path": tmpdir,
+                        "destination_path": str(destination),
+                        "selected_paths": str(source),
+                        "conflict_policy": "overwrite",
+                        "folder_conflict_policy": "merge",
+                        "transfer_method": "standard",
+                    },
+                )
+                self.assertEqual(response.status_code, 302)
+                operation = FileOperation.objects.latest("id")
+                self.assertEqual(operation.action, action)
+                self.assertEqual(operation.sources, [str(source)])
+                self.assertEqual(operation.destination_path, str(destination))
+                self.assertTrue(response.url.startswith(reverse("monitor:file-manager-operation-detail", args=[operation.id])))
+                self.assertIn("return_path=", response.url)
+
+            self.assertEqual(mock_start.call_count, 2)
+
     def test_file_operation_copy_logs_item_and_directory_progress(self):
         from file_manager_app.services import execute_file_operation
 
