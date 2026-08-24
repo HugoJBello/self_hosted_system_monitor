@@ -3062,6 +3062,10 @@ body.app-shell {
 .file-manager-destination-path {
   width: 100%;
   min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.035);
 }
 
 .file-manager-destination-topbar .file-manager-breadcrumbs {
@@ -3088,13 +3092,17 @@ body.app-shell {
   white-space: nowrap;
 }
 
+.file-manager-destination-browser {
+  padding: 0.15rem;
+}
+
 .file-manager-destination-row {
   width: 100%;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 0.65rem;
-  padding: 0.72rem 0.85rem;
+  padding: 0.62rem 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 0.55rem;
   background: rgba(255, 255, 255, 0.035);
@@ -3110,6 +3118,13 @@ body.app-shell {
 }
 
 .file-manager-destination-row i {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 209, 102, 0.1);
   color: #ffd166;
 }
 
@@ -3117,6 +3132,30 @@ body.app-shell {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.85rem;
+}
+
+.file-manager-conflict-policy {
+  min-width: 0;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-option-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #c9d8e8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.file-manager-option-label i {
+  color: #7dd3fc;
+  font-size: 0.95rem;
 }
 
 .file-manager-transfer-method {
