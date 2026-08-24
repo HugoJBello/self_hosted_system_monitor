@@ -3,6 +3,11 @@ from django.utils import timezone
 
 
 class FileOperation(models.Model):
+    CONFLICT_POLICY_CHOICES = [
+        ("overwrite", "Overwrite"),
+        ("skip", "Skip"),
+        ("rename", "Rename"),
+    ]
     ACTION_CHOICES = [
         ("copy", "Copy"),
         ("move", "Move"),
@@ -23,6 +28,7 @@ class FileOperation(models.Model):
     sources = models.JSONField(default=list, blank=True)
     completed_sources = models.JSONField(default=list, blank=True)
     destination_path = models.CharField(max_length=500, blank=True, default="")
+    conflict_policy = models.CharField(max_length=16, choices=CONFLICT_POLICY_CHOICES, default="overwrite")
     current_path = models.CharField(max_length=500, blank=True, default="")
     total_count = models.PositiveIntegerField(default=0)
     processed_count = models.PositiveIntegerField(default=0)

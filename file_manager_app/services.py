@@ -70,9 +70,13 @@ def _validated_destination(destination_path):
     return destination
 
 
-def create_file_operation(action, sources, *, destination_path=""):
+def create_file_operation(action, sources, *, destination_path="", conflict_policy="overwrite"):
     if action not in {"copy", "move", "delete", "download"}:
         raise ValueError("Unsupported file operation.")
+    if conflict_policy not in {choice[0] for choice in FileOperation.CONFLICT_POLICY_CHOICES}:
+        raise ValueError("Unsupported conflict policy.")
+    if action not in {"copy", "move"}:
+        conflict_policy = "overwrite"
     normalized_sources = _validated_sources(sources)
     destination = _validated_destination(destination_path) if action in {"copy", "move"} else ""
     operation = FileOperation.objects.create(
@@ -80,6 +84,7 @@ def create_file_operation(action, sources, *, destination_path=""):
         status="running",
         sources=normalized_sources,
         destination_path=destination,
+        conflict_policy=conflict_policy,
         total_count=len(normalized_sources),
         summary=f"{action.title()} operation queued for {len(normalized_sources)} item(s).",
         heartbeat_at=timezone.now(),
@@ -158,7 +163,9 @@ def execute_file_operation(operation):
 
     completed = set(operation.completed_sources or [])
     errors = []
-    for source in operation.sources or []:
+    sources = operation.sources or []
+    total_sources = len(sources)
+    for source_index, source in enumerate(sources, start=1):
         operation.refresh_from_db()
         if source in completed:
             continue
@@ -174,20 +181,26 @@ def execute_file_operation(operation):
             return
 
         operation.current_path = source
-        operation.summary = f"Processing {source}"
+        operation.summary = f"Processing item {source_index}/{total_sources}: {source}"
         operation.heartbeat_at = timezone.now()
-        operation.save(update_fields=["current_path", "summary", "heartbeat_at"])
+        _append_log(operation, f"Starting item {source_index}/{total_sources}: {source}")
+        operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
         try:
-            _perform_item(operation, source)
+            item_result = _perform_item(operation, source)
         except Exception as exc:
             errors.append(f"{source}: {exc}")
-            _append_log(operation, f"ERROR {source}: {exc}")
+            _append_log(operation, f"ERROR item {source_index}/{total_sources}: {source}: {exc}")
         else:
             completed.add(source)
             operation.completed_sources = sorted(completed)
             operation.processed_count = len(completed)
-            _append_log(operation, f"Completed {source}.")
-        operation.save(update_fields=["completed_sources", "processed_count", "log_output", "heartbeat_at"])
+            if item_result == "skipped":
+                operation.summary = f"Skipped item {source_index}/{total_sources}: {source}"
+                _append_log(operation, f"Skipped item {source_index}/{total_sources}: {source}")
+            else:
+                operation.summary = f"Completed item {source_index}/{total_sources}: {source}"
+                _append_log(operation, f"Completed item {source_index}/{total_sources}: {source}")
+        operation.save(update_fields=["completed_sources", "processed_count", "summary", "log_output", "heartbeat_at"])
 
     if errors:
         finalize_file_operation(operation, "failed", f"File operation finished with {len(errors)} error(s).")
@@ -200,23 +213,73 @@ def _perform_item(operation, source):
     if not os.path.lexists(absolute_source):
         raise FileNotFoundError("Source no longer exists.")
     if operation.action == "delete":
+        _append_log(operation, f"Deleting {source}")
+        operation.save(update_fields=["log_output", "heartbeat_at"])
         _delete_path(absolute_source)
         return
 
     destination_root = hostfs_path(operation.destination_path)
     target = os.path.join(destination_root, os.path.basename(source.rstrip("/")))
+    if os.path.abspath(target) == os.path.abspath(absolute_source):
+        _append_log(operation, f"Skipped {source}: source and destination are the same path")
+        operation.save(update_fields=["log_output", "heartbeat_at"])
+        return "skipped"
     if os.path.lexists(target):
-        raise FileExistsError(f"Destination already exists: {operation.destination_path}/{os.path.basename(source.rstrip('/'))}")
+        if operation.conflict_policy == "skip":
+            _append_log(operation, f"Skipped {source}: destination already exists")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+            return "skipped"
+        if operation.conflict_policy == "rename":
+            target = _available_conflict_target(destination_root, os.path.basename(source.rstrip("/")))
+            _append_log(operation, f"Destination exists; using renamed target {target}")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+        else:
+            _append_log(operation, f"Destination exists; overwriting {target}")
+            _delete_path(target)
     if operation.action == "copy":
         if os.path.isdir(absolute_source) and not os.path.islink(absolute_source):
-            shutil.copytree(absolute_source, target, symlinks=True)
+            _copy_directory_with_progress(operation, absolute_source, target, source)
         else:
+            _append_log(operation, f"Copying file {source}")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
             shutil.copy2(absolute_source, target, follow_symlinks=False)
         return
     if operation.action == "move":
+        _append_log(operation, f"Moving {source} to {operation.destination_path}")
+        operation.save(update_fields=["log_output", "heartbeat_at"])
         shutil.move(absolute_source, target)
         return
     raise ValueError("Unsupported file operation.")
+
+
+def _available_conflict_target(destination_root, name):
+    stem, suffix = os.path.splitext(name)
+    index = 1
+    while True:
+        candidate_name = f"{stem} ({index}){suffix}"
+        candidate = os.path.join(destination_root, candidate_name)
+        if not os.path.lexists(candidate):
+            return candidate
+        index += 1
+
+
+def _copy_directory_with_progress(operation, source, target, display_source):
+    copied_files = 0
+
+    def copy_with_progress(source_file, target_file):
+        nonlocal copied_files
+        shutil.copy2(source_file, target_file, follow_symlinks=False)
+        copied_files += 1
+        if copied_files == 1 or copied_files % 25 == 0:
+            relative_file = os.path.relpath(source_file, source).replace("\\", "/")
+            operation.current_path = f"{display_source}/{relative_file}"
+            operation.summary = f"Copying {display_source}: {copied_files} file(s) copied"
+            _append_log(operation, f"Progress {display_source}: {copied_files} file(s) copied")
+            operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
+
+    _append_log(operation, f"Copying directory tree {display_source}")
+    operation.save(update_fields=["log_output", "heartbeat_at"])
+    shutil.copytree(source, target, symlinks=True, copy_function=copy_with_progress)
 
 
 def _download_root():
@@ -252,7 +315,9 @@ def _execute_download_operation(operation):
     operation.save(update_fields=["destination_path", "completed_sources", "processed_count", "log_output", "heartbeat_at"])
 
     with zipfile.ZipFile(tmp_archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zip_handle:
-        for source in operation.sources or []:
+        sources = operation.sources or []
+        total_sources = len(sources)
+        for source_index, source in enumerate(sources, start=1):
             operation.refresh_from_db()
             if source in completed:
                 continue
@@ -268,20 +333,22 @@ def _execute_download_operation(operation):
                 return
 
             operation.current_path = source
-            operation.summary = f"Adding {source} to ZIP"
+            operation.summary = f"Adding item {source_index}/{total_sources} to ZIP: {source}"
             operation.heartbeat_at = timezone.now()
-            operation.save(update_fields=["current_path", "summary", "heartbeat_at"])
+            _append_log(operation, f"Starting ZIP item {source_index}/{total_sources}: {source}")
+            operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
             try:
-                _write_source_to_zip(zip_handle, source)
+                _write_source_to_zip(zip_handle, source, operation)
             except Exception as exc:
                 errors.append(f"{source}: {exc}")
-                _append_log(operation, f"ERROR {source}: {exc}")
+                _append_log(operation, f"ERROR ZIP item {source_index}/{total_sources}: {source}: {exc}")
             else:
                 completed.add(source)
                 operation.completed_sources = sorted(completed)
                 operation.processed_count = len(completed)
-                _append_log(operation, f"Added {source}.")
-            operation.save(update_fields=["completed_sources", "processed_count", "log_output", "heartbeat_at"])
+                operation.summary = f"Completed ZIP item {source_index}/{total_sources}: {source}"
+                _append_log(operation, f"Completed ZIP item {source_index}/{total_sources}: {source}")
+            operation.save(update_fields=["completed_sources", "processed_count", "summary", "log_output", "heartbeat_at"])
 
     tmp_archive_path.replace(archive_path)
     if errors:
@@ -290,12 +357,13 @@ def _execute_download_operation(operation):
         finalize_file_operation(operation, "success", f"Download ZIP ready for {len(completed)} item(s).")
 
 
-def _write_source_to_zip(zip_handle, source):
+def _write_source_to_zip(zip_handle, source, operation=None):
     absolute_source = hostfs_path(source)
     if not os.path.lexists(absolute_source):
         raise FileNotFoundError("Source no longer exists.")
     archive_root = os.path.basename(source.rstrip("/")) or "root"
     if os.path.isdir(absolute_source) and not os.path.islink(absolute_source):
+        archived_files = 0
         for root, dirs, files in os.walk(absolute_source):
             dirs.sort()
             files.sort()
@@ -306,6 +374,12 @@ def _write_source_to_zip(zip_handle, source):
                 absolute_file = os.path.join(root, file_name)
                 relative_name = os.path.relpath(absolute_file, absolute_source)
                 zip_handle.write(absolute_file, os.path.join(archive_root, relative_name))
+                archived_files += 1
+                if operation and (archived_files == 1 or archived_files % 25 == 0):
+                    operation.current_path = f"{source}/{relative_name}".replace("//", "/")
+                    operation.summary = f"Adding {source} to ZIP: {archived_files} file(s)"
+                    _append_log(operation, f"ZIP progress {source}: {archived_files} file(s) added")
+                    operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
         return
     zip_handle.write(absolute_source, archive_root)
 

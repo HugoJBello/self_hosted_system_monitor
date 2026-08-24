@@ -177,6 +177,7 @@ class FileManagerView(LoginRequiredMixin, View):
                     action,
                     selected_paths,
                     destination_path=request.POST.get("destination_path") or "",
+                    conflict_policy=request.POST.get("conflict_policy") or "overwrite",
                 )
                 start_background_file_operation(operation)
                 messages.success(request, f"{operation.get_action_display()} operation started.")
@@ -381,6 +382,8 @@ class FileManagerOperationStatusView(LoginRequiredMixin, View):
                 "total_count": operation.total_count,
                 "progress_percent": operation.progress_percent,
                 "current_path": operation.current_path,
+                "conflict_policy": operation.conflict_policy,
+                "conflict_policy_label": operation.get_conflict_policy_display(),
                 "log_output": operation.log_output,
                 "process_pid": operation.process_pid,
                 "runner_label": operation.runner_label,

@@ -256,6 +256,7 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "data-preview-trigger")
         self.assertContains(response, "data-preview-modal")
         self.assertContains(response, "data-destination-modal")
+        self.assertContains(response, "data-conflict-policy")
         self.assertContains(response, "data-delete-modal")
         self.assertContains(response, "data-delete-trigger")
         self.assertContains(response, "data-create-folder-modal")
@@ -398,6 +399,66 @@ class MonitorViewsTests(TestCase):
             )
             self.assertEqual(response.status_code, 302)
             self.assertTrue(os.path.isdir(os.path.join(tmpdir, "test_test")))
+
+    def test_file_operation_copy_logs_item_and_directory_progress(self):
+        from file_manager_app.services import execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir, "source")
+            destination = Path(tmpdir, "destination")
+            source.mkdir()
+            destination.mkdir()
+            Path(source, "one.txt").write_text("one", encoding="utf-8")
+            Path(source, "two.txt").write_text("two", encoding="utf-8")
+            operation = FileOperation.objects.create(
+                action="copy",
+                status="running",
+                sources=["/source"],
+                destination_path="/destination",
+                total_count=1,
+            )
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            self.assertIn("Starting item 1/1: /source", operation.log_output)
+            self.assertIn("Copying directory tree /source", operation.log_output)
+            self.assertIn("Completed item 1/1: /source", operation.log_output)
+            self.assertTrue(Path(destination, "source", "one.txt").is_file())
+
+    def test_file_operation_conflict_policies(self):
+        from file_manager_app.services import execute_file_operation
+
+        for policy, expected_name, expected_content in (
+            ("overwrite", "source.txt", "new"),
+            ("skip", "source.txt", "old"),
+            ("rename", "source (1).txt", "new"),
+        ):
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as tmpdir:
+                source = Path(tmpdir, "source.txt")
+                destination = Path(tmpdir, "destination")
+                destination.mkdir()
+                source.write_text("new", encoding="utf-8")
+                Path(destination, "source.txt").write_text("old", encoding="utf-8")
+                operation = FileOperation.objects.create(
+                    action="copy",
+                    status="running",
+                    sources=["/source.txt"],
+                    destination_path="/destination",
+                    conflict_policy=policy,
+                    total_count=1,
+                )
+                with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                    execute_file_operation(operation)
+
+                operation.refresh_from_db()
+                self.assertEqual(operation.status, "success")
+                self.assertEqual(Path(destination, expected_name).read_text(encoding="utf-8"), expected_content)
+                if policy == "skip":
+                    self.assertIn("Skipped /source.txt", operation.log_output)
+                if policy == "rename":
+                    self.assertIn("using renamed target", operation.log_output)
 
     def test_file_manager_chunked_upload_reassembles_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

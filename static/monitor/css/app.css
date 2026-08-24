@@ -2714,9 +2714,29 @@ body.app-shell {
 }
 
 .file-manager-panel {
+  position: relative;
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
+}
+
+.file-manager-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.6rem;
+  padding: 5.5rem 1rem 1rem;
+  background: rgba(11, 20, 32, 0.72);
+  color: #edf2f7;
+  font-size: 0.9rem;
+  pointer-events: all;
+}
+
+.file-manager-loading.d-none {
+  display: none !important;
 }
 
 .file-manager-toolbar {
@@ -3307,6 +3327,10 @@ body.app-shell {
 
 .file-manager-page.is-loading .file-manager-panel {
   opacity: 0.72;
+}
+
+.file-manager-page.is-loading .file-manager-list {
+  pointer-events: none;
 }
 
 @media (max-width: 768px) {

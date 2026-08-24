@@ -65,6 +65,10 @@
   </div>
 
   <section class="panel-card file-manager-panel">
+    <div class="file-manager-loading d-none" data-file-manager-loading role="status" aria-live="polite">
+      <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+      <span data-file-manager-loading-label>Loading folder...</span>
+    </div>
     <div class="file-manager-toolbar">
       <div class="file-manager-path">
         <i class="bi bi-hdd-stack"></i>
@@ -136,7 +140,19 @@
             </div>
             <button type="button" class="btn btn-outline-light btn-sm" data-destination-up disabled><i class="bi bi-arrow-up"></i> Up</button>
           </div>
+          <div class="file-manager-status d-none mb-3" data-destination-loading role="status" aria-live="polite">
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading destination folders...
+          </div>
           <div class="file-manager-destination-list" data-destination-rows></div>
+          <div class="file-manager-conflict-policy mt-3">
+            <label class="form-label" for="fileConflictPolicy">If an item already exists</label>
+            <select id="fileConflictPolicy" name="conflict_policy" class="form-select" data-conflict-policy>
+              <option value="overwrite" selected>Overwrite existing item</option>
+              <option value="skip">Skip existing item</option>
+              <option value="rename">Rename incoming item (1), (2)...</option>
+            </select>
+            <div class="form-text">This applies to files and folders with the same name in the destination.</div>
+          </div>
         </div>
         <div class="modal-footer border-secondary">
           <button type="submit" value="copy" class="btn btn-accent" data-destination-submit>Copy here</button>
@@ -320,5 +336,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260823-file-action-authoritative"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260824-conflict-policy"></script>
 {% endblock %}

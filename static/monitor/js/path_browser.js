@@ -96,6 +96,7 @@
       return;
     }
     const treeUrl = modalElement.dataset.treeUrl;
+    targetNode.setAttribute("aria-busy", "true");
     childrenContainer.innerHTML = `
       <div class="backup-browser-message">
         <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
@@ -118,6 +119,8 @@
           <span>${escapeHtml(error.message || "Could not load this folder.")}</span>
         </div>
       `;
+    } finally {
+      targetNode.setAttribute("aria-busy", "false");
     }
   }
 

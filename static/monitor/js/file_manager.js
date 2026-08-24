@@ -62,12 +62,16 @@
   const destinationTitle = page.querySelector("[data-destination-title]");
   const destinationUp = page.querySelector("[data-destination-up]");
   const destinationSubmit = page.querySelector("[data-destination-submit]");
+  const conflictPolicy = page.querySelector("[data-conflict-policy]");
   const deleteTrigger = page.querySelector("[data-delete-trigger]");
   const deleteModalElement = page.querySelector("[data-delete-modal]");
   const deleteSummary = page.querySelector("[data-delete-summary]");
   const deleteList = page.querySelector("[data-delete-list]");
   const deleteConfirm = page.querySelector("[data-delete-confirm]");
   const errorBox = page.querySelector("[data-file-manager-error]");
+  const fileManagerLoading = page.querySelector("[data-file-manager-loading]");
+  const fileManagerLoadingLabel = page.querySelector("[data-file-manager-loading-label]");
+  const destinationLoading = page.querySelector("[data-destination-loading]");
   const listUrl = page.dataset.listUrl;
   const infoUrl = page.dataset.infoUrl;
   const informationTrigger = page.querySelector("[data-information-trigger]");
@@ -96,6 +100,7 @@
   let contextFolderPath = "";
   let activeActionTargetPath = "";
   let actionsMenuPlaceholder = null;
+  let navigationRequestId = 0;
   const actionsMenuParent = actionsMenu?.parentElement || null;
   const uploadChunkSize = 16 * 1024 * 1024;
   let informationPollTimer = null;
@@ -105,8 +110,10 @@
     singleClickOpen: "fileManager.singleClickOpen"
   };
 
+  page.dataset.previousPath = currentPath;
   formatVisibleValues();
   renderBreadcrumbs(currentBreadcrumbs, currentPath, navigateTo);
+  window.history.replaceState({ ...(window.history.state || {}), fileManagerPath: currentPath }, "", window.location.href);
   insertInitialParentRow();
   renderInitialGrid();
   bindRows();
@@ -133,6 +140,7 @@
   });
   document.addEventListener("pointerdown", handleDocumentPointerDown, true);
   document.addEventListener("keydown", handleDocumentKeyDown);
+  window.addEventListener("popstate", handleBrowserBack);
   informationTrigger?.addEventListener("click", openInformationModal);
   informationModalElement?.addEventListener("hidden.bs.modal", stopInformationPolling);
   previewTrigger?.addEventListener("click", () => {
@@ -408,13 +416,15 @@
     if (event.key === "Escape") closeContextActionsMenu();
   }
 
-  async function navigateTo(path) {
+  async function navigateTo(path, { updateHistory = true } = {}) {
     if (!path) return;
+    const requestId = ++navigationRequestId;
     setError("");
     clearSelection();
     activeActionTargetPath = "";
     contextFolderPath = "";
     page.classList.add("is-loading");
+    setFileManagerLoading(true, "Loading folder...");
     try {
       const url = new URL(listUrl, window.location.origin);
       url.searchParams.set("path", path);
@@ -426,6 +436,7 @@
       if (!response.ok) {
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
+      if (requestId !== navigationRequestId) return;
       currentPath = payload.path || "/";
       parentPath = payload.parent_path || "";
       page.dataset.currentPath = currentPath;
@@ -436,12 +447,41 @@
       renderBreadcrumbs(uploadBreadcrumbs, currentPath, navigateTo);
       if (itemCount) itemCount.textContent = String((payload.items || []).length);
       if (parentButton) parentButton.disabled = !parentPath;
-      window.history.replaceState(null, "", `${window.location.pathname}?path=${encodeURIComponent(currentPath)}`);
+      if (updateHistory && currentPath !== page.dataset.previousPath) {
+        window.history.pushState({ fileManagerPath: currentPath }, "", `${window.location.pathname}?path=${encodeURIComponent(currentPath)}`);
+      }
+      page.dataset.previousPath = currentPath;
     } catch (error) {
       setError(error.message || "Could not open this folder.");
     } finally {
-      page.classList.remove("is-loading");
+      if (requestId === navigationRequestId) {
+        page.classList.remove("is-loading");
+        setFileManagerLoading(false);
+      }
     }
+  }
+
+  function handleBrowserBack(event) {
+    if (event.state?.fileManagerDestinationPath) {
+      if (destinationModalElement && !destinationModalElement.classList.contains("show") && window.bootstrap) {
+        window.bootstrap.Modal.getOrCreateInstance(destinationModalElement).show();
+      }
+      loadDestination(event.state.fileManagerDestinationPath, { updateHistory: false });
+      return;
+    }
+    if (destinationModalElement?.classList.contains("show")) {
+      window.bootstrap?.Modal.getOrCreateInstance(destinationModalElement).hide();
+      return;
+    }
+    const url = new URL(window.location.href);
+    navigateTo(url.searchParams.get("path") || "/", { updateHistory: false });
+  }
+
+  function setFileManagerLoading(isLoading, label) {
+    if (!fileManagerLoading) return;
+    fileManagerLoading.classList.toggle("d-none", !isLoading);
+    fileManagerLoading.setAttribute("aria-busy", isLoading ? "true" : "false");
+    if (fileManagerLoadingLabel && label) fileManagerLoadingLabel.textContent = label;
   }
 
   function renderItems(items) {
@@ -1088,6 +1128,7 @@
   function openDestinationModal(action) {
     if (!selectedPaths.size) return;
     destinationAction = action === "move" ? "move" : "copy";
+    if (conflictPolicy) conflictPolicy.value = "overwrite";
     if (destinationSubmit) {
       destinationSubmit.value = destinationAction;
       destinationSubmit.textContent = destinationAction === "move" ? "Move here" : "Copy here";
@@ -1095,7 +1136,8 @@
     if (destinationTitle) {
       destinationTitle.textContent = destinationAction === "move" ? "Move selected items" : "Copy selected items";
     }
-    loadDestination(currentPath || "/");
+    window.history.pushState({ fileManagerDestinationPath: currentPath || "/" }, "", window.location.href);
+    loadDestination(currentPath || "/", { updateHistory: false });
     if (window.bootstrap && destinationModalElement) {
       window.bootstrap.Modal.getOrCreateInstance(destinationModalElement).show();
     }
@@ -1542,9 +1584,11 @@
     window.setTimeout(() => frame.remove(), 120000);
   }
 
-  async function loadDestination(path) {
+  async function loadDestination(path, { updateHistory = true } = {}) {
     if (!destinationRows) return;
-    destinationRows.innerHTML = '<div class="file-manager-empty">Loading folders...</div>';
+    destinationModalElement?.setAttribute("aria-busy", "true");
+    destinationLoading?.classList.remove("d-none");
+    destinationRows.innerHTML = '<div class="file-manager-empty"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading folders...</div>';
     try {
       const url = new URL(listUrl, window.location.origin);
       url.searchParams.set("path", path || "/");
@@ -1563,8 +1607,14 @@
       renderBreadcrumbs(destinationBreadcrumbs, destinationPath, loadDestination);
       if (destinationUp) destinationUp.disabled = !destinationParentPath;
       renderDestinationRows(payload.items || []);
+      if (updateHistory) {
+        window.history.pushState({ fileManagerDestinationPath: destinationPath }, "", window.location.href);
+      }
     } catch (error) {
       destinationRows.innerHTML = `<div class="file-manager-status">${escapeHtml(error.message || "Could not load folders.")}</div>`;
+    } finally {
+      destinationModalElement?.setAttribute("aria-busy", "false");
+      destinationLoading?.classList.add("d-none");
     }
   }
 
