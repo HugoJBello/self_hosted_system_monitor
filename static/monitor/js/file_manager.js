@@ -187,6 +187,9 @@
     if (item) openPreviewModal(item);
   });
   previewModalElement?.addEventListener("hidden.bs.modal", resetPreviewModal);
+  createFolderModalElement?.addEventListener("shown.bs.modal", () => {
+    createFolderName?.focus({ preventScroll: true });
+  });
 
   multipleSelectToggle?.addEventListener("click", () => {
     setMultipleSelectEnabled(!multipleSelectEnabled);
@@ -322,14 +325,14 @@
     page.querySelectorAll(".file-manager-item[data-path]").forEach((row) => {
       if (row.dataset.bound === "1" || row.dataset.parentRow) return;
       row.dataset.bound = "1";
-      row.addEventListener("click", () => handleItemClick(row));
-      row.addEventListener("dblclick", () => {
-        if (!singleClickOpenEnabled) openItem(row);
+      row.addEventListener("click", (event) => handleItemClick(row, event));
+      row.addEventListener("dblclick", (event) => {
+        if (!singleClickOpenEnabled && !selectionModifierPressed(event)) openItem(row);
       });
       row.addEventListener("keydown", (event) => {
         if (event.key === "Enter") {
           event.preventDefault();
-          if (multipleSelectEnabled) {
+          if (multipleSelectEnabled || selectionModifierPressed(event)) {
             toggleSelection(row);
           } else {
             openItem(row);
@@ -347,8 +350,12 @@
     });
   }
 
-  function handleItemClick(item) {
-    if (multipleSelectEnabled) {
+  function selectionModifierPressed(event) {
+    return Boolean(event?.ctrlKey || event?.metaKey);
+  }
+
+  function handleItemClick(item, event) {
+    if (multipleSelectEnabled || selectionModifierPressed(event)) {
       toggleSelection(item);
       return;
     }
@@ -933,7 +940,7 @@
     });
     if (selectionCount) {
       selectionCount.textContent = selectedCount ? `${selectedCount} selected` : "";
-      selectionCount.classList.toggle("d-none", !multipleSelectEnabled);
+      selectionCount.classList.toggle("d-none", !multipleSelectEnabled && selectedCount < 2);
     }
     if (previewTrigger) {
       previewTrigger.disabled = !selectedPreviewItem();
@@ -1172,7 +1179,6 @@
     activeActionTargetPath = actionTargetPath();
     if (!window.bootstrap || !createFolderModalElement) return;
     window.bootstrap.Modal.getOrCreateInstance(createFolderModalElement).show();
-    window.setTimeout(() => createFolderName?.focus(), 150);
   }
 
   function actionTargetPath() {
