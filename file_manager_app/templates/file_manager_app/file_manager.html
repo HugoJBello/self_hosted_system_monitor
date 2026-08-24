@@ -196,7 +196,6 @@
                 <p class="eyebrow mb-1">Confirmation</p>
                 <h3 class="h5 mb-0">Review transfer plan</h3>
               </div>
-              <span class="file-manager-transfer-plan-method" data-destination-plan-method></span>
             </div>
             <div class="file-manager-transfer-plan-items" data-destination-plan-items></div>
             <div class="file-manager-transfer-plan-options" data-destination-plan-options></div>
@@ -204,12 +203,12 @@
               <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
               <span data-destination-plan-warning-text></span>
             </div>
-            <button type="button" class="btn btn-outline-light btn-sm mt-3" data-destination-plan-edit>
-              <i class="bi bi-pencil"></i> Edit selection and options
-            </button>
           </div>
         </div>
         <div class="modal-footer border-secondary">
+          <button type="button" class="btn btn-outline-light d-none" data-destination-plan-edit>
+            <i class="bi bi-arrow-left"></i> Back
+          </button>
           <button type="submit" value="copy" class="btn btn-accent" data-destination-submit>Review copy plan</button>
         </div>
       </div>

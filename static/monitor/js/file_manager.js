@@ -1176,6 +1176,7 @@
     if (destinationSubmit) {
       destinationSubmit.textContent = destinationAction === "move" ? "Review move plan" : "Review copy plan";
     }
+    destinationPlanEdit?.classList.add("d-none");
     updateRsyncOptions();
   }
 
@@ -1206,6 +1207,7 @@
     if (destinationSubmit) {
       destinationSubmit.textContent = destinationAction === "move" ? "Confirm move" : "Confirm copy";
     }
+    destinationPlanEdit?.classList.remove("d-none");
     if (destinationPlanMethod) {
       destinationPlanMethod.textContent = transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard";
     }
@@ -1225,34 +1227,69 @@
     if (!destinationPlanItems) return;
     destinationPlanItems.replaceChildren();
     items.forEach((item) => {
-      const row = document.createElement("div");
-      row.className = "file-manager-transfer-plan-item";
-      const source = document.createElement("span");
-      source.className = "file-manager-transfer-plan-path";
-      source.textContent = item.path;
-      source.title = item.path;
-      const arrow = document.createElement("i");
-      arrow.className = "bi bi-arrow-right";
-      arrow.setAttribute("aria-hidden", "true");
-      const target = document.createElement("span");
-      target.className = "file-manager-transfer-plan-path";
       const targetPath = joinPath(destinationPath, item.name || basename(item.path));
-      target.textContent = targetPath;
-      target.title = targetPath;
-      row.append(source, arrow, target);
-      destinationPlanItems.appendChild(row);
+      const flow = document.createElement("div");
+      flow.className = "file-manager-transfer-plan-item";
+      const sourceCard = transferPlanCard(
+        "Source",
+        item.kind === "folder" ? "bi-folder-fill" : fileIconClass(item),
+        item.path,
+      );
+      const arrow = document.createElement("div");
+      arrow.className = "file-manager-transfer-plan-arrow";
+      arrow.innerHTML = '<i class="bi bi-arrow-right" aria-hidden="true"></i>';
+      const targetCard = transferPlanCard("Destination", "bi-folder2-open", targetPath);
+      flow.append(sourceCard, arrow, targetCard);
+      destinationPlanItems.appendChild(flow);
     });
   }
 
   function renderDestinationPlanOptions(isRsync) {
     if (!destinationPlanOptions) return;
+    destinationPlanOptions.replaceChildren();
     const options = [
-      `Method: ${transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard"}`,
-      `Files: ${conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"}`,
-      `Folders: ${folderConflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Merge"}`
+      ["Method", "bi-gear", transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard"],
+      ["Files", "bi-file-earmark-text", conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"],
+      ["Directories", "bi-folder-fill", folderConflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Merge"],
+      ["Rsync delete", "bi-trash3", isRsync && rsyncDelete?.checked ? "Enabled · --delete" : "Disabled"]
     ];
-    if (isRsync && rsyncDelete?.checked) options.push("Rsync: --delete enabled");
-    destinationPlanOptions.textContent = options.join(" · ");
+    options.forEach(([label, icon, value]) => {
+      const card = document.createElement("div");
+      card.className = `file-manager-transfer-option${label === "Rsync delete" && isRsync && rsyncDelete?.checked ? " is-danger" : ""}`;
+      const iconNode = document.createElement("i");
+      iconNode.className = `bi ${icon}`;
+      iconNode.setAttribute("aria-hidden", "true");
+      const body = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "file-manager-transfer-option-label";
+      title.textContent = label;
+      const detail = document.createElement("div");
+      detail.className = "file-manager-transfer-option-value";
+      detail.textContent = value;
+      body.append(title, detail);
+      card.append(iconNode, body);
+      destinationPlanOptions.appendChild(card);
+    });
+  }
+
+  function transferPlanCard(label, iconClass, path) {
+    const card = document.createElement("div");
+    card.className = "file-manager-transfer-plan-card";
+    const heading = document.createElement("div");
+    heading.className = "file-manager-transfer-plan-card-label";
+    heading.textContent = label;
+    const body = document.createElement("div");
+    body.className = "file-manager-transfer-plan-card-body";
+    const icon = document.createElement("i");
+    icon.className = `bi ${iconClass}`;
+    icon.setAttribute("aria-hidden", "true");
+    const value = document.createElement("span");
+    value.className = "file-manager-transfer-plan-path";
+    value.textContent = path;
+    value.title = path;
+    body.append(icon, value);
+    card.append(heading, body);
+    return card;
   }
 
   function joinPath(parent, name) {
