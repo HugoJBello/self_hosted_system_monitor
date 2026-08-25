@@ -374,6 +374,34 @@ class MonitorViewsTests(TestCase):
             self.assertGreaterEqual(payload["aggregate"]["folders"], 2)
             self.assertGreaterEqual(payload["aggregate"]["size_bytes"], 11)
 
+    @patch(
+        "file_manager_app.information.extract_file_metadata",
+        return_value=[
+            {
+                "label": "Tags",
+                "fields": [{"label": "Artist", "value": "Example Artist"}],
+            }
+        ],
+    )
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_information_includes_rich_metadata_for_selected_file(self, _metadata):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir, "song.mp3")
+            file_path.write_bytes(b"not media, metadata extractor is isolated")
+
+            response = self.client.post(
+                self._path("monitor:file-manager-information"),
+                {"selected_paths": [str(file_path)]},
+                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(
+                response.json()["items"][0]["metadata_groups"][0]["fields"][0]["value"],
+                "Example Artist",
+            )
+
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
     def test_file_manager_preview_serves_small_images_only(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             image_path = Path(tmpdir, "image.png")
@@ -397,6 +425,22 @@ class MonitorViewsTests(TestCase):
             text_response = self.client.get(self._path("monitor:file-manager-preview"), {"path": str(text_path)})
             self.assertEqual(text_response.status_code, 200)
             self.assertEqual(text_response["Content-Type"], "text/plain")
+
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_preview_serves_audio_files(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            audio_path = Path(tmpdir, "sample.flac")
+            audio_path.write_bytes(b"not a real flac stream")
+
+            list_response = self.client.get(self._path("monitor:file-manager-list"), {"path": tmpdir})
+            self.assertEqual(list_response.status_code, 200)
+            audio_item = next(item for item in list_response.json()["items"] if item["name"] == "sample.flac")
+            self.assertEqual(audio_item["media_kind"], "audio")
+            self.assertIn("preview_url", audio_item)
+
+            preview_response = self.client.get(self._path("monitor:file-manager-preview"), {"path": str(audio_path)})
+            self.assertEqual(preview_response.status_code, 200)
+            self.assertEqual(preview_response["Content-Type"], "audio/flac")
 
     def test_settings_page_exposes_file_manager_start_path(self):
         response = self.client.get(self._path("monitor:settings"))

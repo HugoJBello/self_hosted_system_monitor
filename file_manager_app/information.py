@@ -6,6 +6,7 @@ import uuid
 from collections import deque
 from datetime import datetime, timezone
 
+from file_manager_app.file_metadata import extract_file_metadata
 from volumes_app.path_browser import hostfs_path, normalize_host_path
 
 
@@ -100,7 +101,7 @@ def _path_metadata(path):
         stat_result = os.lstat(absolute_path)
     except OSError as exc:
         return _missing_item(path, str(exc))
-    return _metadata_from_stat(path, os.path.basename(path.rstrip("/")) or "/", stat_result)
+    return _metadata_from_stat(path, os.path.basename(path.rstrip("/")) or "/", stat_result, include_rich_metadata=True)
 
 
 def _entry_scan_metadata(entry, path):
@@ -111,7 +112,7 @@ def _entry_scan_metadata(entry, path):
     return _metadata_from_stat(path, entry.name, stat_result)
 
 
-def _metadata_from_stat(path, name, stat_result):
+def _metadata_from_stat(path, name, stat_result, *, include_rich_metadata=False):
     mode = stat_result.st_mode
     is_dir = stat.S_ISDIR(mode)
     is_file = stat.S_ISREG(mode)
@@ -139,6 +140,7 @@ def _metadata_from_stat(path, name, stat_result):
         "accessed_at": _timestamp(stat_result.st_atime),
         "changed_at": _timestamp(stat_result.st_ctime),
         "error": "",
+        "metadata_groups": extract_file_metadata(hostfs_path(path)) if include_rich_metadata and is_file else [],
     }
 
 
@@ -165,6 +167,7 @@ def _missing_item(path, message):
         "accessed_at": "",
         "changed_at": "",
         "error": message,
+        "metadata_groups": [],
     }
 
 

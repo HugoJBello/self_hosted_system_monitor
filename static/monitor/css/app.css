@@ -3669,6 +3669,10 @@ body.app-shell {
   background: #050914;
 }
 
+.file-manager-preview-audio {
+  width: min(100%, 42rem);
+}
+
 .file-manager-preview-text {
   width: 100%;
   min-height: 18rem;
@@ -3779,6 +3783,27 @@ body.app-shell {
   overflow-wrap: anywhere;
   color: #dce5f1;
   font-size: 0.82rem;
+}
+
+.file-manager-rich-metadata {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.file-manager-rich-metadata-group {
+  min-width: 0;
+}
+
+.file-manager-rich-metadata-group h4 {
+  margin: 0 0 0.35rem;
+  color: #b7c7d8;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .file-manager-info-error {

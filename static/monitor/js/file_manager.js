@@ -181,7 +181,14 @@
   document.addEventListener("keydown", handleDocumentKeyDown);
   window.addEventListener("popstate", handleBrowserBack);
   informationTrigger?.addEventListener("click", openInformationModal);
-  informationModalElement?.addEventListener("hidden.bs.modal", stopInformationPolling);
+  informationModalElement?.addEventListener("hidden.bs.modal", () => {
+    stopInformationPolling();
+    if (window.history.state?.fileManagerModal === "information") {
+      const nextState = { ...(window.history.state || {}) };
+      delete nextState.fileManagerModal;
+      window.history.replaceState(nextState, "", window.location.href);
+    }
+  });
   previewTrigger?.addEventListener("click", () => {
     const item = selectedPreviewItem();
     if (item) openPreviewModal(item);
@@ -541,6 +548,18 @@
     }
     if (destinationModalElement?.classList.contains("show")) {
       window.bootstrap?.Modal.getOrCreateInstance(destinationModalElement).hide();
+      return;
+    }
+    const openModal = [
+      informationModalElement,
+      previewModalElement,
+      createFolderModalElement,
+      uploadModalElement,
+      downloadModalElement,
+      deleteModalElement,
+    ].find((element) => element?.classList.contains("show"));
+    if (openModal) {
+      window.bootstrap?.Modal.getOrCreateInstance(openModal).hide();
       return;
     }
     const url = new URL(window.location.href);
@@ -963,6 +982,11 @@
     const paths = informationTargetPaths();
     if (!paths.length) return;
     resetInformationModal(paths);
+    window.history.pushState(
+      { ...(window.history.state || {}), fileManagerModal: "information" },
+      "",
+      window.location.href,
+    );
     if (window.bootstrap && informationModalElement) {
       window.bootstrap.Modal.getOrCreateInstance(informationModalElement).show();
     }
@@ -1014,12 +1038,22 @@
       credentials: "same-origin",
       headers: { "X-Requested-With": "XMLHttpRequest" },
       body: formData
-    }).then((response) => response.json().then((payload) => {
+    }).then(async (response) => {
+      const body = await response.text();
+      let payload;
+      try {
+        payload = JSON.parse(body);
+      } catch (_error) {
+        if (response.redirected || /<\s*!doctype|<html[\s>]/i.test(body)) {
+          throw new Error("The session may have expired. Reload the page and try again.");
+        }
+        throw new Error(`Information returned an invalid response (HTTP ${response.status}).`);
+      }
       if (!response.ok || payload.ok === false) {
         throw new Error(payload.error || `HTTP ${response.status}`);
       }
       return payload;
-    }));
+    });
   }
 
   function updateInformationModal(payload) {
@@ -1132,8 +1166,33 @@
     }
 
     body.append(name, path, details);
+    appendRichMetadata(body, item.metadata_groups);
     row.append(icon, body);
     return row;
+  }
+
+  function appendRichMetadata(container, groups) {
+    if (!Array.isArray(groups) || !groups.length) return;
+    const section = document.createElement("div");
+    section.className = "file-manager-rich-metadata";
+
+    groups.forEach((group) => {
+      if (!group || !Array.isArray(group.fields) || !group.fields.length) return;
+      const groupBlock = document.createElement("section");
+      groupBlock.className = "file-manager-rich-metadata-group";
+      const heading = document.createElement("h4");
+      heading.textContent = group.label || "Metadata";
+      const details = document.createElement("dl");
+      details.className = "file-manager-info-details";
+      group.fields.forEach((field) => {
+        if (!field || field.value === null || field.value === undefined || String(field.value).trim() === "") return;
+        appendInfoDetail(details, field.label || "Value", field.value);
+      });
+      if (details.children.length) groupBlock.append(heading, details);
+      if (groupBlock.children.length) section.appendChild(groupBlock);
+    });
+
+    if (section.children.length) container.appendChild(section);
   }
 
   function appendInfoDetail(container, label, value) {
@@ -1228,6 +1287,10 @@
       renderPreviewVideo(previewUrl, item.dataset.contentType || "video/mp4");
       return;
     }
+    if (mediaKind === "audio") {
+      renderPreviewAudio(previewUrl, item.dataset.contentType || "audio/mpeg");
+      return;
+    }
     if (mediaKind === "text") {
       await renderPreviewText(previewUrl);
       return;
@@ -1264,6 +1327,20 @@
     source.type = contentType;
     video.appendChild(source);
     previewStage.appendChild(video);
+  }
+
+  function renderPreviewAudio(url, contentType) {
+    if (!previewStage) return;
+    previewStage.innerHTML = "";
+    const audio = document.createElement("audio");
+    audio.className = "file-manager-preview-audio";
+    audio.controls = true;
+    audio.preload = "metadata";
+    const source = document.createElement("source");
+    source.src = url;
+    source.type = contentType;
+    audio.appendChild(source);
+    previewStage.appendChild(audio);
   }
 
   async function renderPreviewText(url) {

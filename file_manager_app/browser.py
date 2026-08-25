@@ -10,6 +10,7 @@ from .sorting import sort_entries
 MAX_IMAGE_PREVIEW_BYTES = 15 * 1024 * 1024
 MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
 MAX_VIDEO_PREVIEW_BYTES = 512 * 1024 * 1024
+MAX_AUDIO_PREVIEW_BYTES = 512 * 1024 * 1024
 
 TEXT_CONTENT_TYPES = {
     "application/json",
@@ -54,6 +55,8 @@ def media_kind_for_content_type(content_type):
         return "image"
     if content_type.startswith("video/"):
         return "video"
+    if content_type.startswith("audio/"):
+        return "audio"
     if content_type.startswith("text/") or content_type in TEXT_CONTENT_TYPES:
         return "text"
     return ""
@@ -70,4 +73,6 @@ def preview_is_available(entry):
         return size_bytes <= MAX_TEXT_PREVIEW_BYTES
     if media_kind == "video":
         return size_bytes <= MAX_VIDEO_PREVIEW_BYTES
+    if media_kind == "audio":
+        return size_bytes <= MAX_AUDIO_PREVIEW_BYTES
     return False

@@ -15,6 +15,7 @@ from django.views.decorators.cache import never_cache
 
 from file_manager_app.browser import (
     MAX_IMAGE_PREVIEW_BYTES,
+    MAX_AUDIO_PREVIEW_BYTES,
     MAX_TEXT_PREVIEW_BYTES,
     MAX_VIDEO_PREVIEW_BYTES,
     list_file_manager_entries,
@@ -436,7 +437,9 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
             raise Http404("Preview is too large.")
         if media_kind == "video" and size_bytes > MAX_VIDEO_PREVIEW_BYTES:
             raise Http404("Preview is too large.")
-        if media_kind not in {"image", "text", "video"}:
+        if media_kind == "audio" and size_bytes > MAX_AUDIO_PREVIEW_BYTES:
+            raise Http404("Preview is too large.")
+        if media_kind not in {"image", "text", "video", "audio"}:
             raise Http404("Preview is not available.")
         return FileResponse(open(absolute_path, "rb"), content_type=content_type)
 
