@@ -442,6 +442,24 @@ class MonitorViewsTests(TestCase):
             self.assertEqual(preview_response.status_code, 200)
             self.assertEqual(preview_response["Content-Type"], "audio/flac")
 
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    @patch(
+        "file_manager_app.views.extract_embedded_thumbnail",
+        return_value=(b"\xff\xd8\xffembedded-jpeg", "image/jpeg"),
+    )
+    def test_file_manager_serves_embedded_thumbnail(self, _extract_thumbnail):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            media_path = Path(tmpdir, "song.mp3")
+            media_path.write_bytes(b"media")
+
+            response = self.client.get(
+                self._path("monitor:file-manager-embedded-thumbnail"),
+                {"path": str(media_path)},
+            )
+
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response["Content-Type"], "image/jpeg")
+
     def test_settings_page_exposes_file_manager_start_path(self):
         response = self.client.get(self._path("monitor:settings"))
         self.assertEqual(response.status_code, 200)

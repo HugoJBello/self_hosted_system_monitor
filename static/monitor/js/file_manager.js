@@ -1166,33 +1166,65 @@
     }
 
     body.append(name, path, details);
-    appendRichMetadata(body, item.metadata_groups);
+    appendRichMetadata(body, item.metadata_groups, item.embedded_thumbnail_url);
     row.append(icon, body);
     return row;
   }
 
-  function appendRichMetadata(container, groups) {
-    if (!Array.isArray(groups) || !groups.length) return;
+  function appendRichMetadata(container, groups, thumbnailUrl) {
+    const metadataGroups = Array.isArray(groups) ? groups : [];
+    if (!metadataGroups.length && !thumbnailUrl) return;
     const section = document.createElement("div");
     section.className = "file-manager-rich-metadata";
+    let imageGroupBlock = null;
 
-    groups.forEach((group) => {
+    metadataGroups.forEach((group) => {
       if (!group || !Array.isArray(group.fields) || !group.fields.length) return;
       const groupBlock = document.createElement("section");
       groupBlock.className = "file-manager-rich-metadata-group";
       const heading = document.createElement("h4");
       heading.textContent = group.label || "Metadata";
+      if (String(group.label || "").toLowerCase() === "image") imageGroupBlock = groupBlock;
       const details = document.createElement("dl");
       details.className = "file-manager-info-details";
       group.fields.forEach((field) => {
         if (!field || field.value === null || field.value === undefined || String(field.value).trim() === "") return;
-        appendInfoDetail(details, field.label || "Value", field.value);
+        appendInfoDetail(details, field.label || "Value", formatMetadataValue(field.label, field.value));
       });
       if (details.children.length) groupBlock.append(heading, details);
       if (groupBlock.children.length) section.appendChild(groupBlock);
     });
 
+    if (thumbnailUrl) {
+      if (!imageGroupBlock) {
+        imageGroupBlock = document.createElement("section");
+        imageGroupBlock.className = "file-manager-rich-metadata-group";
+        const heading = document.createElement("h4");
+        heading.textContent = "Image";
+        imageGroupBlock.appendChild(heading);
+        section.appendChild(imageGroupBlock);
+      }
+      const thumbnail = document.createElement("img");
+      thumbnail.className = "file-manager-info-thumbnail";
+      thumbnail.src = thumbnailUrl;
+      thumbnail.alt = "Embedded artwork";
+      thumbnail.loading = "lazy";
+      imageGroupBlock.appendChild(thumbnail);
+    }
+
     if (section.children.length) container.appendChild(section);
+  }
+
+  function formatMetadataValue(label, value) {
+    if (label !== "Duration") return value;
+    const seconds = Number.parseFloat(value);
+    if (!Number.isFinite(seconds) || seconds < 0) return value;
+    const totalSeconds = Math.round(seconds);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const remainder = totalSeconds % 60;
+    if (hours) return `${hours}h ${String(minutes).padStart(2, "0")}m ${String(remainder).padStart(2, "0")}s`;
+    return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
   }
 
   function appendInfoDetail(container, label, value) {

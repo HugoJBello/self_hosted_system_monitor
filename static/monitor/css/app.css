@@ -3673,6 +3673,19 @@ body.app-shell {
   width: min(100%, 42rem);
 }
 
+.file-manager-info-thumbnail {
+  display: block;
+  width: 9rem;
+  height: 9rem;
+  max-width: 100%;
+  max-height: 9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  object-fit: contain;
+  background: #050914;
+  margin: 0.5rem auto 0;
+}
+
 .file-manager-preview-text {
   width: 100%;
   min-height: 18rem;
@@ -4182,10 +4195,28 @@ body.app-shell {
   .file-manager-path {
     width: 100%;
     font-size: 0.78rem;
+    align-items: flex-start;
+  }
+
+  .file-manager-path nav.file-manager-breadcrumbs {
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    align-content: flex-start;
+    gap: 0.25rem;
+    overflow: visible;
+    white-space: normal;
   }
 
   .file-manager-breadcrumb {
-    max-width: 7rem;
+    max-width: 100%;
+    height: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    line-height: 1.25;
+    text-align: left;
   }
 
   .file-manager-summary {
@@ -4261,6 +4292,12 @@ body.app-shell {
     white-space: normal;
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
+  }
+
+  .file-manager-info-thumbnail {
+    width: 7rem;
+    height: 7rem;
+    max-height: 7rem;
   }
 
   .file-manager-grid {

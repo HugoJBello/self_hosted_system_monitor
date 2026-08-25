@@ -5,7 +5,11 @@ import time
 import uuid
 from collections import deque
 from datetime import datetime, timezone
+from urllib.parse import urlencode
 
+from django.urls import reverse
+
+from file_manager_app.embedded_media import has_embedded_thumbnail
 from file_manager_app.file_metadata import extract_file_metadata
 from volumes_app.path_browser import hostfs_path, normalize_host_path
 
@@ -118,6 +122,10 @@ def _metadata_from_stat(path, name, stat_result, *, include_rich_metadata=False)
     is_file = stat.S_ISREG(mode)
     is_symlink = stat.S_ISLNK(mode)
     content_type = "" if is_dir else (mimetypes.guess_type(name or path)[0] or "")
+    rich_metadata = extract_file_metadata(hostfs_path(path)) if include_rich_metadata and is_file else []
+    embedded_thumbnail_url = ""
+    if include_rich_metadata and is_file and has_embedded_thumbnail(hostfs_path(path)):
+        embedded_thumbnail_url = f"{reverse('monitor:file-manager-embedded-thumbnail')}?{urlencode({'path': path})}"
     return {
         "path": path,
         "name": name,
@@ -140,7 +148,8 @@ def _metadata_from_stat(path, name, stat_result, *, include_rich_metadata=False)
         "accessed_at": _timestamp(stat_result.st_atime),
         "changed_at": _timestamp(stat_result.st_ctime),
         "error": "",
-        "metadata_groups": extract_file_metadata(hostfs_path(path)) if include_rich_metadata and is_file else [],
+        "metadata_groups": rich_metadata,
+        "embedded_thumbnail_url": embedded_thumbnail_url,
     }
 
 
@@ -168,6 +177,7 @@ def _missing_item(path, message):
         "changed_at": "",
         "error": message,
         "metadata_groups": [],
+        "embedded_thumbnail_url": "",
     }
 
 

@@ -1,5 +1,6 @@
 import mimetypes
 import os
+from io import BytesIO
 from urllib.parse import urlencode
 
 from django.contrib import messages
@@ -21,6 +22,7 @@ from file_manager_app.browser import (
     list_file_manager_entries,
     media_kind_for_content_type,
 )
+from file_manager_app.embedded_media import extract_embedded_thumbnail
 from file_manager_app.information import continue_file_information, start_file_information
 from file_manager_app.models import FileOperation, FileSearch
 from file_manager_app.search import (
@@ -442,6 +444,19 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
         if media_kind not in {"image", "text", "video", "audio"}:
             raise Http404("Preview is not available.")
         return FileResponse(open(absolute_path, "rb"), content_type=content_type)
+
+
+class FileManagerEmbeddedThumbnailView(LoginRequiredMixin, View):
+    def get(self, request):
+        path = normalize_host_path(request.GET.get("path") or "")
+        absolute_path = hostfs_path(path)
+        if not os.path.isfile(absolute_path):
+            raise Http404("Embedded thumbnail not found.")
+        thumbnail = extract_embedded_thumbnail(absolute_path)
+        if not thumbnail:
+            raise Http404("Embedded thumbnail not found.")
+        content, content_type = thumbnail
+        return FileResponse(BytesIO(content), content_type=content_type)
 
 
 class FileManagerInformationView(LoginRequiredMixin, View):
