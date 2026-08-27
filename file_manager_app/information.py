@@ -18,7 +18,6 @@ from volumes_app.path_browser import hostfs_path, normalize_host_path
 INFO_BATCH_SIZE = 2500
 INFO_BATCH_SECONDS = 0.35
 INFO_SESSION_TTL_SECONDS = 15 * 60
-INFO_VIDEO_THUMBNAIL_MAX_BYTES = 128 * 1024 * 1024
 _INFO_SESSIONS = {}
 
 
@@ -132,8 +131,6 @@ def _metadata_from_stat(path, name, stat_result, *, include_rich_metadata=False)
     preview_url = ""
     if is_file and preview_is_available({"size_bytes": stat_result.st_size, "media_kind": media_kind, "content_type": content_type}):
         preview_url = f"{reverse('monitor:file-manager-preview')}?{urlencode({'path': path})}"
-    if media_kind == "video" and stat_result.st_size > INFO_VIDEO_THUMBNAIL_MAX_BYTES:
-        preview_url = ""
     return {
         "path": path,
         "name": name,

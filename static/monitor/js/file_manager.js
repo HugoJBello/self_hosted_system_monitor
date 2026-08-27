@@ -1205,8 +1205,9 @@
 
   function appendRichMetadata(container, groups, thumbnailUrl, item = {}) {
     const metadataGroups = Array.isArray(groups) ? groups : [];
-    const videoPreviewUrl = item.media_kind === "video" && item.preview_url ? item.preview_url : "";
-    if (!metadataGroups.length && !thumbnailUrl && !videoPreviewUrl) return;
+    const hasVideoPreview = item.media_kind === "video";
+    const videoPreviewUrl = hasVideoPreview && item.preview_url ? item.preview_url : "";
+    if (!metadataGroups.length && !thumbnailUrl && !hasVideoPreview) return;
     const section = document.createElement("div");
     section.className = "file-manager-rich-metadata";
     let imageGroupBlock = null;
@@ -1245,7 +1246,7 @@
       imageGroupBlock.appendChild(thumbnail);
     }
 
-    if (videoPreviewUrl) {
+    if (hasVideoPreview) {
       if (!imageGroupBlock) {
         imageGroupBlock = document.createElement("section");
         imageGroupBlock.className = "file-manager-rich-metadata-group";
@@ -1263,6 +1264,12 @@
   function appendVideoThumbnail(container, url) {
     const wrapper = document.createElement("div");
     wrapper.className = "file-manager-info-video-thumbnail";
+    if (!url) {
+      wrapper.classList.add("is-unavailable");
+      wrapper.innerHTML = '<i class="bi bi-file-earmark-play" aria-hidden="true"></i><span>Video thumbnail unavailable for this file size.</span>';
+      container.appendChild(wrapper);
+      return;
+    }
     wrapper.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>';
     container.appendChild(wrapper);
 
@@ -1280,7 +1287,8 @@
     const fail = () => {
       if (finished) return;
       finished = true;
-      wrapper.remove();
+      wrapper.classList.add("is-unavailable");
+      wrapper.innerHTML = '<i class="bi bi-file-earmark-play" aria-hidden="true"></i><span>Video thumbnail unavailable in this browser.</span>';
       cleanup();
     };
     const drawFrame = () => {

@@ -3719,10 +3719,30 @@ body.app-shell {
 .file-manager-info-video-thumbnail {
   display: grid;
   place-items: center;
+  gap: 0.35rem;
   width: min(100%, 10rem);
   min-height: 7rem;
   margin: 0.5rem auto 0;
   color: #7dd3fc;
+}
+
+.file-manager-info-video-thumbnail.is-unavailable {
+  padding: 0.75rem;
+  border: 1px dashed rgba(125, 211, 252, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(125, 211, 252, 0.06);
+  color: #8ea3b9;
+  text-align: center;
+}
+
+.file-manager-info-video-thumbnail.is-unavailable i {
+  color: #7dd3fc;
+  font-size: 1.5rem;
+}
+
+.file-manager-info-video-thumbnail.is-unavailable span {
+  font-size: 0.74rem;
+  line-height: 1.25;
 }
 
 .file-manager-preview-text {

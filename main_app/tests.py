@@ -420,22 +420,6 @@ class MonitorViewsTests(TestCase):
             self.assertEqual(item["media_kind"], "video")
             self.assertIn("/files/preview/", item["preview_url"])
 
-    @patch("file_manager_app.information.INFO_VIDEO_THUMBNAIL_MAX_BYTES", 1)
-    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
-    def test_file_manager_information_skips_large_video_preview_url(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            video_path = Path(tmpdir, "large.mp4")
-            video_path.write_bytes(b"video")
-
-            response = self.client.post(
-                self._path("monitor:file-manager-information"),
-                {"selected_paths": [str(video_path)]},
-                HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-            )
-
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["items"][0]["preview_url"], "")
-
     @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
     def test_file_manager_preview_serves_small_images_only(self):
         with tempfile.TemporaryDirectory() as tmpdir:
