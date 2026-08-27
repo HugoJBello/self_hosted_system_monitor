@@ -1198,14 +1198,15 @@
     }
 
     body.append(name, path, details);
-    appendRichMetadata(body, item.metadata_groups, item.embedded_thumbnail_url);
+    appendRichMetadata(body, item.metadata_groups, item.embedded_thumbnail_url, item);
     row.append(icon, body);
     return row;
   }
 
-  function appendRichMetadata(container, groups, thumbnailUrl) {
+  function appendRichMetadata(container, groups, thumbnailUrl, item = {}) {
     const metadataGroups = Array.isArray(groups) ? groups : [];
-    if (!metadataGroups.length && !thumbnailUrl) return;
+    const videoPreviewUrl = item.media_kind === "video" && item.preview_url ? item.preview_url : "";
+    if (!metadataGroups.length && !thumbnailUrl && !videoPreviewUrl) return;
     const section = document.createElement("div");
     section.className = "file-manager-rich-metadata";
     let imageGroupBlock = null;
@@ -1244,7 +1245,80 @@
       imageGroupBlock.appendChild(thumbnail);
     }
 
+    if (videoPreviewUrl) {
+      if (!imageGroupBlock) {
+        imageGroupBlock = document.createElement("section");
+        imageGroupBlock.className = "file-manager-rich-metadata-group";
+        const heading = document.createElement("h4");
+        heading.textContent = "Image";
+        imageGroupBlock.appendChild(heading);
+        section.appendChild(imageGroupBlock);
+      }
+      appendVideoThumbnail(imageGroupBlock, videoPreviewUrl);
+    }
+
     if (section.children.length) container.appendChild(section);
+  }
+
+  function appendVideoThumbnail(container, url) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "file-manager-info-video-thumbnail";
+    wrapper.innerHTML = '<span class="spinner-border spinner-border-sm" aria-hidden="true"></span>';
+    container.appendChild(wrapper);
+
+    const video = document.createElement("video");
+    video.preload = "metadata";
+    video.muted = true;
+    video.playsInline = true;
+    video.src = url;
+    let finished = false;
+
+    const cleanup = () => {
+      video.removeAttribute("src");
+      video.load();
+    };
+    const fail = () => {
+      if (finished) return;
+      finished = true;
+      wrapper.remove();
+      cleanup();
+    };
+    const drawFrame = () => {
+      if (finished) return;
+      if (!video.videoWidth || !video.videoHeight) {
+        fail();
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.className = "file-manager-info-thumbnail";
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        fail();
+        return;
+      }
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      finished = true;
+      wrapper.replaceChildren(canvas);
+      cleanup();
+    };
+    video.addEventListener("loadedmetadata", () => {
+      if (Number.isFinite(video.duration) && video.duration > 0.2) {
+        try {
+          video.currentTime = Math.min(0.2, video.duration / 2);
+        } catch (_) {
+          drawFrame();
+        }
+      } else {
+        drawFrame();
+      }
+    }, { once: true });
+    video.addEventListener("seeked", drawFrame, { once: true });
+    video.addEventListener("loadeddata", () => {
+      if (!Number.isFinite(video.duration) || video.duration <= 0.2) drawFrame();
+    }, { once: true });
+    video.addEventListener("error", fail, { once: true });
   }
 
   function formatMetadataValue(label, value) {
