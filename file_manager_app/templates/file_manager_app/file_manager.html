@@ -62,6 +62,7 @@
           <li><button type="button" class="dropdown-item" data-destination-action="copy" data-selection-action disabled><i class="bi bi-copy me-2"></i>Copy to...</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="move" data-selection-action disabled><i class="bi bi-arrows-move me-2"></i>Move to...</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="compress" data-selection-action disabled><i class="bi bi-file-earmark-zip me-2"></i>Compress...</button></li>
+          <li><button type="button" class="dropdown-item d-none" data-destination-action="uncompress" data-selection-action data-uncompress-trigger disabled><i class="bi bi-file-zip me-2"></i>Uncompress...</button></li>
           <li><hr class="dropdown-divider"></li>
           <li><button type="button" class="dropdown-item text-danger" data-delete-trigger data-selection-action disabled><i class="bi bi-trash me-2"></i>Delete</button></li>
         </ul>
@@ -448,5 +449,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260827-archive-formats"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260827-uncompress"></script>
 {% endblock %}

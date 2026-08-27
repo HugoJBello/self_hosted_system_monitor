@@ -34,6 +34,7 @@ ARCHIVE_FORMATS = {
     "tar_xz": {"label": "TAR XZ", "extension": ".tar.xz", "kind": "tar", "tar_mode": "w:xz"},
 }
 ARCHIVE_EXTENSIONS = tuple(sorted({format_config["extension"] for format_config in ARCHIVE_FORMATS.values()}, key=len, reverse=True))
+EXTRACTABLE_ARCHIVE_EXTENSIONS = (".tar.bz2", ".tar.gz", ".tar.xz", ".tbz2", ".tgz", ".txz", ".zip", ".tar")
 
 
 class FileOperationInterrupted(Exception):
@@ -117,6 +118,21 @@ def _validated_archive_name(archive_name, compression_method="deflated"):
     return name
 
 
+def _archive_extension(path):
+    lower_path = str(path or "").lower()
+    for extension in EXTRACTABLE_ARCHIVE_EXTENSIONS:
+        if lower_path.endswith(extension):
+            return extension
+    return ""
+
+
+def _source_is_extractable_archive(source):
+    if not _archive_extension(source):
+        return False
+    absolute_source = hostfs_path(source)
+    return os.path.isfile(absolute_source) and not os.path.islink(absolute_source)
+
+
 def _archive_name_with_extension(name, compression_method):
     expected_extension = ARCHIVE_FORMATS[_validated_compression_method(compression_method)]["extension"]
     lower_name = name.lower()
@@ -144,7 +160,7 @@ def create_file_operation(
     archive_name="",
     compression_method="deflated",
 ):
-    if action not in {"copy", "move", "delete", "download", "compress"}:
+    if action not in {"copy", "move", "delete", "download", "compress", "uncompress"}:
         raise ValueError("Unsupported file operation.")
     if conflict_policy not in {choice[0] for choice in FileOperation.CONFLICT_POLICY_CHOICES}:
         raise ValueError("Unsupported conflict policy.")
@@ -156,7 +172,7 @@ def create_file_operation(
         raise ValueError("Invalid rsync delete option.")
     normalized_sources = _validated_sources(sources)
     compression_method = _validated_compression_method(compression_method)
-    if action not in {"copy", "move", "compress"}:
+    if action not in {"copy", "move", "compress", "uncompress"}:
         transfer_method = "standard"
         rsync_delete = False
         conflict_policy = "overwrite"
@@ -175,6 +191,13 @@ def create_file_operation(
         archive_target = os.path.join(destination_folder, _validated_archive_name(archive_name, compression_method)).replace("\\", "/")
         normalize_host_path(archive_target)
         destination = archive_target
+        transfer_method = "standard"
+        rsync_delete = False
+        folder_conflict_policy = "merge"
+    elif action == "uncompress":
+        if len(normalized_sources) != 1 or not _source_is_extractable_archive(normalized_sources[0]):
+            raise ValueError("Select one supported archive file to uncompress.")
+        destination = _prepared_destination(destination_path, destination_new_folder_name)
         transfer_method = "standard"
         rsync_delete = False
         folder_conflict_policy = "merge"
@@ -272,6 +295,9 @@ def execute_file_operation(operation):
         return
     if operation.action == "compress":
         _execute_compress_operation(operation)
+        return
+    if operation.action == "uncompress":
+        _execute_uncompress_operation(operation)
         return
 
     completed = set(operation.completed_sources or [])
@@ -703,6 +729,210 @@ def _write_sources_to_archive(operation, archive_handle, archive_format, complet
             operation.summary = f"Completed archive item {source_index}/{total_sources}: {source}"
             _append_log(operation, f"Completed archive item {source_index}/{total_sources}: {source}")
         operation.save(update_fields=["completed_sources", "processed_count", "summary", "log_output", "heartbeat_at"])
+
+
+def _execute_uncompress_operation(operation):
+    source = (operation.sources or [""])[0]
+    absolute_source = hostfs_path(source)
+    destination_root = hostfs_path(operation.destination_path)
+    if not os.path.isdir(destination_root):
+        raise ValueError("Extraction destination folder does not exist.")
+
+    operation.completed_sources = []
+    operation.processed_count = 0
+    operation.current_path = source
+    operation.summary = f"Extracting archive: {source}"
+    _append_log(operation, f"Extracting {source} into {operation.destination_path}")
+    operation.save(update_fields=["completed_sources", "processed_count", "current_path", "summary", "log_output", "heartbeat_at"])
+
+    try:
+        if source.lower().endswith(".zip"):
+            extracted_count = _extract_zip_archive(operation, absolute_source, destination_root)
+        else:
+            extracted_count = _extract_tar_archive(operation, absolute_source, destination_root)
+    except FileOperationInterrupted as exc:
+        if exc.status == "cancelled":
+            finalize_file_operation(operation, "cancelled", "Extraction cancelled by operator.")
+        else:
+            operation.status = "paused"
+            operation.summary = "Extraction paused. Resume will continue with the same conflict policy."
+            operation.process_pid = None
+            _append_log(operation, "Paused during extraction.")
+            operation.save(update_fields=["status", "summary", "process_pid", "log_output", "heartbeat_at"])
+        return
+    except Exception as exc:
+        _append_log(operation, f"ERROR extraction failed: {exc}")
+        operation.save(update_fields=["log_output", "heartbeat_at"])
+        finalize_file_operation(operation, "failed", f"Extraction failed: {exc}")
+        return
+
+    operation.completed_sources = [source]
+    operation.processed_count = 1
+    operation.summary = f"Extracted {extracted_count} item(s) into {operation.destination_path}"
+    operation.save(update_fields=["completed_sources", "processed_count", "summary", "heartbeat_at"])
+    finalize_file_operation(operation, "success", operation.summary)
+
+
+def _extract_zip_archive(operation, absolute_source, destination_root):
+    extracted_count = 0
+    folder_maps = {}
+    skipped_dirs = set()
+    with zipfile.ZipFile(absolute_source) as zip_handle:
+        members = zip_handle.infolist()
+        for index, member in enumerate(members, start=1):
+            _raise_if_archive_operation_interrupted(operation)
+            if not member.filename or member.filename.endswith("/"):
+                _resolve_archive_member_target(operation, destination_root, member.filename, is_dir=True, folder_maps=folder_maps, skipped_dirs=skipped_dirs)
+                continue
+            target = _resolve_archive_member_target(operation, destination_root, member.filename, is_dir=False, folder_maps=folder_maps, skipped_dirs=skipped_dirs)
+            if target is None:
+                continue
+            target = _resolve_extraction_target(operation, target, member.filename)
+            if target is None:
+                continue
+            with zip_handle.open(member) as source_handle, open(target, "wb") as target_handle:
+                shutil.copyfileobj(source_handle, target_handle, length=1024 * 1024)
+            extracted_count += 1
+            if extracted_count == 1 or extracted_count % 25 == 0 or index == len(members):
+                _record_extraction_progress(operation, member.filename, extracted_count)
+    return extracted_count
+
+
+def _extract_tar_archive(operation, absolute_source, destination_root):
+    extracted_count = 0
+    folder_maps = {}
+    skipped_dirs = set()
+    with tarfile.open(absolute_source, "r:*") as tar_handle:
+        members = tar_handle.getmembers()
+        for index, member in enumerate(members, start=1):
+            _raise_if_archive_operation_interrupted(operation)
+            if member.isdir():
+                _resolve_archive_member_target(operation, destination_root, member.name, is_dir=True, folder_maps=folder_maps, skipped_dirs=skipped_dirs)
+                continue
+            if not member.isfile():
+                _append_log(operation, f"Skipped unsupported archive member type: {member.name}")
+                continue
+            target = _resolve_archive_member_target(operation, destination_root, member.name, is_dir=False, folder_maps=folder_maps, skipped_dirs=skipped_dirs)
+            if target is None:
+                continue
+            target = _resolve_extraction_target(operation, target, member.name)
+            if target is None:
+                continue
+            source_handle = tar_handle.extractfile(member)
+            if source_handle is None:
+                continue
+            with source_handle, open(target, "wb") as target_handle:
+                shutil.copyfileobj(source_handle, target_handle, length=1024 * 1024)
+            try:
+                os.chmod(target, member.mode & 0o777)
+            except OSError:
+                pass
+            extracted_count += 1
+            if extracted_count == 1 or extracted_count % 25 == 0 or index == len(members):
+                _record_extraction_progress(operation, member.name, extracted_count)
+    return extracted_count
+
+
+def _safe_archive_member_parts(member_name):
+    normalized_name = os.path.normpath(str(member_name or "").replace("\\", "/"))
+    if normalized_name in {"", "."} or normalized_name.startswith("../") or normalized_name == ".." or os.path.isabs(normalized_name):
+        raise ValueError(f"Unsafe archive member path: {member_name}")
+    return normalized_name.split("/")
+
+
+def _safe_archive_member_target(destination_root, member_name):
+    parts = _safe_archive_member_parts(member_name)
+    target = os.path.abspath(os.path.join(destination_root, *parts))
+    destination_root = os.path.abspath(destination_root)
+    if target != destination_root and not target.startswith(f"{destination_root}{os.sep}"):
+        raise ValueError(f"Unsafe archive member path: {member_name}")
+    return target
+
+
+def _resolve_archive_member_target(operation, destination_root, member_name, *, is_dir, folder_maps, skipped_dirs):
+    parts = _safe_archive_member_parts(member_name)
+    directory_parts = parts if is_dir else parts[:-1]
+    mapped_parts = []
+    for index, part in enumerate(directory_parts, start=1):
+        original_prefix = "/".join(parts[:index])
+        if _archive_prefix_is_skipped(original_prefix, skipped_dirs):
+            _append_log(operation, f"Skipped {member_name}: parent folder was skipped")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+            return None
+        if original_prefix in folder_maps:
+            mapped_parts = folder_maps[original_prefix].split("/")
+            continue
+
+        candidate_parts = [*mapped_parts, part]
+        candidate = os.path.abspath(os.path.join(destination_root, *candidate_parts))
+        _ensure_target_stays_in_destination(destination_root, candidate, member_name)
+        if os.path.isdir(candidate):
+            if operation.folder_conflict_policy == "skip":
+                skipped_dirs.add(original_prefix)
+                _append_log(operation, f"Skipped folder {original_prefix}: destination already exists")
+                operation.save(update_fields=["log_output", "heartbeat_at"])
+                return None
+            if operation.folder_conflict_policy == "rename":
+                candidate = _available_conflict_target(os.path.dirname(candidate), os.path.basename(candidate))
+                candidate_parts = [*mapped_parts, os.path.basename(candidate)]
+                folder_maps[original_prefix] = "/".join(candidate_parts)
+                _append_log(operation, f"Folder exists; extracting {original_prefix} as {'/'.join(candidate_parts)}")
+                operation.save(update_fields=["log_output", "heartbeat_at"])
+        elif os.path.lexists(candidate):
+            if operation.folder_conflict_policy == "skip":
+                skipped_dirs.add(original_prefix)
+                _append_log(operation, f"Skipped folder {original_prefix}: destination exists as a file")
+                operation.save(update_fields=["log_output", "heartbeat_at"])
+                return None
+            if operation.folder_conflict_policy == "rename":
+                candidate = _available_conflict_target(os.path.dirname(candidate), os.path.basename(candidate))
+                candidate_parts = [*mapped_parts, os.path.basename(candidate)]
+                folder_maps[original_prefix] = "/".join(candidate_parts)
+                _append_log(operation, f"Folder path exists as file; extracting {original_prefix} as {'/'.join(candidate_parts)}")
+                operation.save(update_fields=["log_output", "heartbeat_at"])
+            else:
+                _delete_path(candidate)
+        os.makedirs(candidate, exist_ok=True)
+        mapped_parts = candidate_parts
+
+    final_parts = mapped_parts if is_dir else [*mapped_parts, parts[-1]]
+    target = os.path.abspath(os.path.join(destination_root, *final_parts))
+    _ensure_target_stays_in_destination(destination_root, target, member_name)
+    return target
+
+
+def _archive_prefix_is_skipped(prefix, skipped_dirs):
+    return any(prefix == skipped or prefix.startswith(f"{skipped}/") for skipped in skipped_dirs)
+
+
+def _ensure_target_stays_in_destination(destination_root, target, member_name):
+    destination_root = os.path.abspath(destination_root)
+    if target != destination_root and not target.startswith(f"{destination_root}{os.sep}"):
+        raise ValueError(f"Unsafe archive member path: {member_name}")
+
+
+def _resolve_extraction_target(operation, target, display_name):
+    if os.path.lexists(target):
+        if operation.conflict_policy == "skip":
+            _append_log(operation, f"Skipped {display_name}: destination already exists")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+            return None
+        if operation.conflict_policy == "rename":
+            target = _available_conflict_target(os.path.dirname(target), os.path.basename(target))
+            _append_log(operation, f"Destination exists; extracting {display_name} as {target}")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+            return target
+        _append_log(operation, f"Destination exists; overwriting {display_name}")
+        _delete_path(target)
+        operation.save(update_fields=["log_output", "heartbeat_at"])
+    return target
+
+
+def _record_extraction_progress(operation, member_name, extracted_count):
+    operation.current_path = f"{operation.destination_path.rstrip('/')}/{member_name}".replace("//", "/")
+    operation.summary = f"Extracted {extracted_count} item(s): {member_name}"
+    _append_log(operation, f"Extraction progress: {extracted_count} item(s), latest {member_name}")
+    operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
 
 
 def _upload_session_root(operation_id):

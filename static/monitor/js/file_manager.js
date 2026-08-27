@@ -25,6 +25,7 @@
   const selectionActions = page.querySelectorAll("[data-selection-action]");
   const actionsToggle = page.querySelector("[data-actions-toggle]");
   const actionsMenu = actionsToggle?.nextElementSibling;
+  const uncompressTrigger = page.querySelector("[data-uncompress-trigger]");
   const previewTrigger = page.querySelector("[data-preview-trigger]");
   const previewModalElement = page.querySelector("[data-preview-modal]");
   const previewTitle = page.querySelector("[data-preview-title]");
@@ -279,7 +280,7 @@
       await submitCreateFolder();
       return;
     }
-    if (["copy", "move", "compress"].includes(action) && destinationModalElement?.classList.contains("show") && !destinationPlanConfirmed) {
+    if (["copy", "move", "compress", "uncompress"].includes(action) && destinationModalElement?.classList.contains("show") && !destinationPlanConfirmed) {
       event.preventDefault();
       showDestinationPlan();
       return;
@@ -987,6 +988,7 @@
     selectionActions.forEach((button) => {
       button.disabled = selectedCount === 0;
     });
+    updateUncompressAction(selectedCount);
     if (selectionCount) {
       selectionCount.textContent = selectedCount ? `${selectedCount} selected` : "";
       selectionCount.classList.toggle("d-none", !multipleSelectEnabled && selectedCount < 2);
@@ -1318,6 +1320,27 @@
     }) || null;
   }
 
+  function selectedArchiveItem() {
+    if (selectedPaths.size !== 1) return null;
+    const selectedPath = Array.from(selectedPaths)[0];
+    const element = Array.from(page.querySelectorAll(".file-manager-item[data-path]")).find((item) => {
+      return !item.dataset.parentRow && item.dataset.path === selectedPath;
+    });
+    if (!element || element.dataset.kind === "folder") return null;
+    return isSupportedArchiveName(element.dataset.name || selectedPath) ? element : null;
+  }
+
+  function isSupportedArchiveName(name) {
+    return /\.(tar\.bz2|tar\.gz|tar\.xz|tbz2|tgz|txz|zip|tar)$/i.test(String(name || ""));
+  }
+
+  function updateUncompressAction(selectedCount) {
+    if (!uncompressTrigger) return;
+    const available = selectedCount === 1 && Boolean(selectedArchiveItem());
+    uncompressTrigger.classList.toggle("d-none", !available);
+    uncompressTrigger.disabled = !available;
+  }
+
   function selectedItems() {
     return Array.from(selectedPaths).map((path) => {
       const element = Array.from(page.querySelectorAll(".file-manager-item[data-path]")).find((item) => {
@@ -1435,7 +1458,7 @@
 
   function openDestinationModal(action) {
     if (!selectedPaths.size) return;
-    destinationAction = ["move", "compress"].includes(action) ? action : "copy";
+    destinationAction = ["move", "compress", "uncompress"].includes(action) ? action : "copy";
     if (fileActionInput) fileActionInput.value = "";
     if (conflictPolicy) conflictPolicy.value = "overwrite";
     if (folderConflictPolicy) folderConflictPolicy.value = "merge";
@@ -1472,24 +1495,31 @@
 
   function updateDestinationActionUi() {
     const compressing = destinationAction === "compress";
+    const uncompressing = destinationAction === "uncompress";
     compressOptions?.classList.toggle("d-none", !compressing);
-    transferMethodPanel?.classList.toggle("d-none", compressing);
+    transferMethodPanel?.classList.toggle("d-none", compressing || uncompressing);
     rsyncOptions?.classList.toggle("d-none", true);
     conflictPolicies?.classList.toggle("d-none", false);
     folderConflictPolicyPanel?.classList.toggle("d-none", compressing);
     if (conflictPolicyLabel) {
-      conflictPolicyLabel.textContent = compressing ? "Archive conflicts" : "File conflicts";
+      conflictPolicyLabel.textContent = compressing ? "Archive conflicts" : uncompressing ? "Extracted file conflicts" : "File conflicts";
     }
-    updateConflictOptionLabels(compressing);
+    updateConflictOptionLabels(compressing, uncompressing);
   }
 
-  function updateConflictOptionLabels(compressing) {
+  function updateConflictOptionLabels(compressing, uncompressing = false) {
     if (!conflictPolicy) return;
     const labels = compressing
       ? {
           overwrite: "Overwrite existing archive",
           skip: "Skip if archive exists",
           rename: "Rename archive (1), (2)...",
+        }
+      : uncompressing
+      ? {
+          overwrite: "Overwrite existing extracted files",
+          skip: "Skip existing extracted files",
+          rename: "Rename extracted files (1), (2)...",
         }
       : {
           overwrite: "Overwrite existing file",
@@ -1504,12 +1534,14 @@
   function destinationActionTitle() {
     if (destinationAction === "move") return "Move selected items";
     if (destinationAction === "compress") return "Compress selected items";
+    if (destinationAction === "uncompress") return "Uncompress archive";
     return "Copy selected items";
   }
 
   function destinationActionVerb() {
     if (destinationAction === "move") return "move";
     if (destinationAction === "compress") return "compression";
+    if (destinationAction === "uncompress") return "extraction";
     return "copy";
   }
 
@@ -1562,7 +1594,7 @@
   }
 
   function updateRsyncOptions() {
-    if (destinationAction === "compress") {
+    if (destinationAction === "compress" || destinationAction === "uncompress") {
       rsyncOptions?.classList.add("d-none");
       if (rsyncDelete) rsyncDelete.checked = false;
       rsyncDeleteWarning?.classList.add("d-none");
@@ -1594,7 +1626,7 @@
     if (destinationPickerUi) destinationPickerUi.classList.add("d-none");
     if (destinationPlan) destinationPlan.classList.remove("d-none");
     if (destinationSubmit) {
-      destinationSubmit.textContent = destinationAction === "move" ? "Confirm move" : destinationAction === "compress" ? "Confirm compress" : "Confirm copy";
+      destinationSubmit.textContent = destinationAction === "move" ? "Confirm move" : destinationAction === "compress" ? "Confirm compress" : destinationAction === "uncompress" ? "Confirm extract" : "Confirm copy";
     }
     if (fileActionInput) fileActionInput.value = destinationAction;
     if (destinationPathInput) destinationPathInput.value = destinationPath;
@@ -1636,6 +1668,19 @@
       destinationPlanItems.appendChild(flow);
       return;
     }
+    if (destinationAction === "uncompress") {
+      const item = items[0];
+      const flow = document.createElement("div");
+      flow.className = "file-manager-transfer-plan-item";
+      const sourceCard = transferPlanCard("Archive", "bi-file-earmark-zip", item?.path || "");
+      const arrow = document.createElement("div");
+      arrow.className = "file-manager-transfer-plan-arrow";
+      arrow.innerHTML = '<i class="bi bi-arrow-right" aria-hidden="true"></i>';
+      const targetCard = transferPlanCard("Extract into", "bi-folder2-open", finalDestinationPath);
+      flow.append(sourceCard, arrow, targetCard);
+      destinationPlanItems.appendChild(flow);
+      return;
+    }
     items.forEach((item) => {
       const targetPath = joinPath(finalDestinationPath, item.name || basename(item.path));
       const flow = document.createElement("div");
@@ -1663,6 +1708,11 @@
       ["Destination folder", "bi-folder-plus", newFolderName ? `Create "${newFolderName}" first` : "Use selected folder"],
       ["Archive name", "bi-file-earmark-zip", normalizedArchiveName()],
       ["Archive conflicts", "bi-file-earmark-text", conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"]
+    ] : destinationAction === "uncompress" ? [
+      ["Destination folder", "bi-folder-plus", newFolderName ? `Create "${newFolderName}" first` : "Use selected folder"],
+      ["Existing files", "bi-file-earmark-text", conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"],
+      ["Existing folders", "bi-folder-fill", folderConflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Merge"],
+      ["Archive type", "bi-file-earmark-zip", archiveTypeLabel(selectedItems()[0]?.name || "archive")]
     ] : [
       ["Method", "bi-gear", transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard"],
       ["Destination folder", "bi-folder-plus", newFolderName ? `Create "${newFolderName}" first` : "Use selected folder"],
@@ -1739,6 +1789,16 @@
     }
     setCompressStatus("", false);
     return true;
+  }
+
+  function archiveTypeLabel(name) {
+    const lowerName = String(name || "").toLowerCase();
+    if (lowerName.endsWith(".zip")) return "ZIP";
+    if (lowerName.endsWith(".tar")) return "TAR";
+    if (lowerName.endsWith(".tar.gz") || lowerName.endsWith(".tgz")) return "TAR gzip";
+    if (lowerName.endsWith(".tar.bz2") || lowerName.endsWith(".tbz2")) return "TAR BZIP2";
+    if (lowerName.endsWith(".tar.xz") || lowerName.endsWith(".txz")) return "TAR XZ";
+    return "Archive";
   }
 
   function setCompressStatus(message, isError) {

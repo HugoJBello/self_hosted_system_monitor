@@ -81,6 +81,15 @@
     </section>
   </div>
   {% endif %}
+  {% if operation.action == "uncompress" %}
+  <div class="col-12 col-md-6 col-xl-3">
+    <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Extraction</p>
+      <h2 class="h6 mb-1">Existing files: {{ operation.get_conflict_policy_display }}</h2>
+      <p class="text-secondary mb-0">Archive extraction process</p>
+    </section>
+  </div>
+  {% endif %}
   {% if search %}
   <div class="col-12 col-md-6 col-xl-3">
     <section class="panel-card p-4">

@@ -7,7 +7,7 @@
   <div>
     <p class="eyebrow mb-2">File processes</p>
     <h1 class="display-6 mb-1">File operations</h1>
-    <p class="text-secondary mb-0">Track copy, move, compress, delete and upload activity from the file manager.</p>
+    <p class="text-secondary mb-0">Track copy, move, compress, uncompress, delete and upload activity from the file manager.</p>
   </div>
   <a href="{{ file_manager_back_url }}" class="btn btn-outline-light btn-sm"><i class="bi bi-arrow-left"></i> Back</a>
 </div>
@@ -63,6 +63,7 @@
             {% if operation.action == "copy" or operation.action == "move" %}<span class="chip compact-chip">Folders: {{ operation.get_folder_conflict_policy_display }}</span>{% endif %}
             {% if operation.action == "copy" or operation.action == "move" %}<span class="chip compact-chip">{{ operation.get_transfer_method_display }}</span>{% endif %}
             {% if operation.action == "compress" %}<span class="chip compact-chip">{{ operation.get_compression_method_display }}</span><span class="chip compact-chip">Archive: {{ operation.get_conflict_policy_display }}</span>{% endif %}
+            {% if operation.action == "uncompress" %}<span class="chip compact-chip">Extract: {{ operation.get_conflict_policy_display }}</span>{% endif %}
             {% if operation.rsync_delete %}<span class="chip compact-chip text-danger">Rsync --delete</span>{% endif %}
             {% if operation.runner_label %}<span class="chip compact-chip">{{ operation.runner_label }}</span>{% endif %}
           </div>

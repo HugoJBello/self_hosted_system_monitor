@@ -680,6 +680,136 @@ class MonitorViewsTests(TestCase):
                 self.assertIsNotNone(member)
                 self.assertEqual(member.read().decode("utf-8"), "content")
 
+    @patch("file_manager_app.views.start_background_file_operation")
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_uncompress_submission_creates_process(self, mock_start):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir, "archive.zip")
+            destination = Path(tmpdir, "destination")
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("source.txt", "content")
+            destination.mkdir()
+
+            response = self.client.post(
+                self._path("monitor:file-manager"),
+                {
+                    "file_action": "uncompress",
+                    "current_path": tmpdir,
+                    "return_path": tmpdir,
+                    "destination_path": str(destination),
+                    "destination_new_folder_name": "extracted",
+                    "selected_paths": str(archive_path),
+                    "conflict_policy": "rename",
+                },
+            )
+
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(Path(destination, "extracted").is_dir())
+            operation = FileOperation.objects.latest("id")
+            self.assertEqual(operation.action, "uncompress")
+            self.assertEqual(operation.sources, [str(archive_path)])
+            self.assertEqual(operation.destination_path, str(Path(destination, "extracted")))
+            self.assertEqual(operation.conflict_policy, "rename")
+            mock_start.assert_called_once_with(operation)
+
+    def test_file_operation_uncompress_extracts_zip_and_tar(self):
+        from file_manager_app.services import execute_file_operation
+
+        for extension, writer in (
+            ("zip", self._write_test_zip_archive),
+            ("tar.gz", self._write_test_tar_archive),
+        ):
+            with self.subTest(extension=extension), tempfile.TemporaryDirectory() as tmpdir:
+                archive_path = Path(tmpdir, f"archive.{extension}")
+                destination = Path(tmpdir, "destination")
+                destination.mkdir()
+                writer(archive_path)
+                operation = FileOperation.objects.create(
+                    action="uncompress",
+                    status="running",
+                    sources=[f"/archive.{extension}"],
+                    destination_path="/destination",
+                    conflict_policy="overwrite",
+                    total_count=1,
+                )
+
+                with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                    execute_file_operation(operation)
+
+                operation.refresh_from_db()
+                self.assertEqual(operation.status, "success")
+                self.assertEqual(Path(destination, "folder", "nested.txt").read_text(encoding="utf-8"), "nested")
+
+    def test_file_operation_uncompress_folder_conflict_policies(self):
+        from file_manager_app.services import execute_file_operation
+
+        for policy in ("skip", "rename"):
+            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as tmpdir:
+                archive_path = Path(tmpdir, "archive.zip")
+                destination = Path(tmpdir, "destination")
+                destination.mkdir()
+                Path(destination, "folder").mkdir()
+                Path(destination, "folder", "existing.txt").write_text("existing", encoding="utf-8")
+                with zipfile.ZipFile(archive_path, "w") as archive:
+                    archive.writestr("folder/incoming.txt", "incoming")
+                operation = FileOperation.objects.create(
+                    action="uncompress",
+                    status="running",
+                    sources=["/archive.zip"],
+                    destination_path="/destination",
+                    conflict_policy="overwrite",
+                    folder_conflict_policy=policy,
+                    total_count=1,
+                )
+
+                with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                    execute_file_operation(operation)
+
+                operation.refresh_from_db()
+                self.assertEqual(operation.status, "success")
+                self.assertEqual(Path(destination, "folder", "existing.txt").read_text(encoding="utf-8"), "existing")
+                if policy == "skip":
+                    self.assertFalse(Path(destination, "folder", "incoming.txt").exists())
+                else:
+                    self.assertEqual(Path(destination, "folder (1)", "incoming.txt").read_text(encoding="utf-8"), "incoming")
+
+    def test_file_operation_uncompress_rejects_unsafe_zip_paths(self):
+        from file_manager_app.services import execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            archive_path = Path(tmpdir, "archive.zip")
+            destination = Path(tmpdir, "destination")
+            with zipfile.ZipFile(archive_path, "w") as archive:
+                archive.writestr("../escape.txt", "unsafe")
+            destination.mkdir()
+            operation = FileOperation.objects.create(
+                action="uncompress",
+                status="running",
+                sources=["/archive.zip"],
+                destination_path="/destination",
+                conflict_policy="overwrite",
+                total_count=1,
+            )
+
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "failed")
+            self.assertFalse(Path(tmpdir, "escape.txt").exists())
+
+    def _write_test_zip_archive(self, archive_path):
+        with zipfile.ZipFile(archive_path, "w") as archive:
+            archive.writestr("folder/nested.txt", "nested")
+
+    def _write_test_tar_archive(self, archive_path):
+        source_root = Path(archive_path.parent, "tar-source")
+        source_folder = Path(source_root, "folder")
+        source_folder.mkdir(parents=True)
+        Path(source_folder, "nested.txt").write_text("nested", encoding="utf-8")
+        with tarfile.open(archive_path, "w:gz") as archive:
+            archive.add(source_folder, arcname="folder")
+
     def test_file_operation_copy_logs_item_and_directory_progress(self):
         from file_manager_app.services import execute_file_operation
 

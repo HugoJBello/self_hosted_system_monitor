@@ -34,6 +34,7 @@ class FileOperation(models.Model):
         ("upload", "Upload"),
         ("download", "Download"),
         ("compress", "Compress"),
+        ("uncompress", "Uncompress"),
         ("search", "Search"),
     ]
     STATUS_CHOICES = [

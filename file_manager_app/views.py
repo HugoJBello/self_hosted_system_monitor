@@ -191,7 +191,7 @@ class FileManagerView(LoginRequiredMixin, View):
                     return JsonResponse(payload)
                 messages.success(request, "Download archive preparation started.")
                 return redirect(self._operation_detail_url(operation, return_path))
-            if action in {"copy", "move", "delete", "compress"}:
+            if action in {"copy", "move", "delete", "compress", "uncompress"}:
                 operation = create_file_operation(
                     action,
                     selected_paths,
@@ -226,6 +226,7 @@ class FileManagerView(LoginRequiredMixin, View):
             "copy",
             "move",
             "compress",
+            "uncompress",
             "delete",
         }
         for action in reversed(request.POST.getlist("file_action")):
