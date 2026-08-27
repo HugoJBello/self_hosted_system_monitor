@@ -13,7 +13,7 @@ from django.db import OperationalError
 from django.utils import timezone
 
 from file_manager_app.models import FileOperation
-from volumes_app.path_browser import hostfs_path, normalize_host_path
+from volumes_app.path_browser import create_directory, hostfs_path, normalize_host_path
 
 
 FILE_OPERATION_LOG_LIMIT = 30000
@@ -22,6 +22,12 @@ DOWNLOAD_ARCHIVE_DIR_NAME = "file_manager_downloads"
 UPLOAD_SESSION_DIR_NAME = "file_manager_uploads"
 SQLITE_LOCK_RETRY_SECONDS = 0.2
 SQLITE_LOCK_RETRY_ATTEMPTS = 5
+ZIP_COMPRESSION_METHODS = {
+    "stored": zipfile.ZIP_STORED,
+    "deflated": zipfile.ZIP_DEFLATED,
+    "bzip2": zipfile.ZIP_BZIP2,
+    "lzma": zipfile.ZIP_LZMA,
+}
 
 
 class FileOperationInterrupted(Exception):
@@ -78,6 +84,34 @@ def _validated_destination(destination_path):
     return destination
 
 
+def _prepared_destination(destination_path, new_folder_name=""):
+    destination = _validated_destination(destination_path)
+    folder_name = (new_folder_name or "").strip()
+    if not folder_name:
+        return destination
+    return create_directory(destination, folder_name)["path"]
+
+
+def _validated_compression_method(method):
+    normalized = (method or "deflated").strip().lower()
+    if normalized not in ZIP_COMPRESSION_METHODS:
+        raise ValueError("Unsupported compression method.")
+    return normalized
+
+
+def _validated_archive_name(archive_name):
+    name = (archive_name or "").strip()
+    if not name:
+        raise ValueError("Archive name is required.")
+    if name in {".", ".."} or "/" in name or "\\" in name or "\0" in name:
+        raise ValueError("Archive name cannot contain path separators.")
+    if any(char in name for char in ["\n", "\r"]):
+        raise ValueError("Archive name cannot contain line breaks.")
+    if not name.lower().endswith(".zip"):
+        name = f"{name}.zip"
+    return name
+
+
 def _is_real_directory(path):
     absolute_path = hostfs_path(path)
     return os.path.isdir(absolute_path) and not os.path.islink(absolute_path)
@@ -92,8 +126,11 @@ def create_file_operation(
     rsync_delete=False,
     conflict_policy="overwrite",
     folder_conflict_policy="merge",
+    destination_new_folder_name="",
+    archive_name="",
+    compression_method="deflated",
 ):
-    if action not in {"copy", "move", "delete", "download"}:
+    if action not in {"copy", "move", "delete", "download", "compress"}:
         raise ValueError("Unsupported file operation.")
     if conflict_policy not in {choice[0] for choice in FileOperation.CONFLICT_POLICY_CHOICES}:
         raise ValueError("Unsupported conflict policy.")
@@ -104,7 +141,8 @@ def create_file_operation(
     if not isinstance(rsync_delete, bool):
         raise ValueError("Invalid rsync delete option.")
     normalized_sources = _validated_sources(sources)
-    if action not in {"copy", "move"}:
+    compression_method = _validated_compression_method(compression_method)
+    if action not in {"copy", "move", "compress"}:
         transfer_method = "standard"
         rsync_delete = False
         conflict_policy = "overwrite"
@@ -116,7 +154,18 @@ def create_file_operation(
             raise ValueError("Rsync delete requires overwrite files and merge folders policies.")
         if not all(_is_real_directory(source) for source in normalized_sources):
             raise ValueError("Rsync delete is available only when all selected items are folders.")
-    destination = _validated_destination(destination_path) if action in {"copy", "move"} else ""
+    if action in {"copy", "move"}:
+        destination = _prepared_destination(destination_path, destination_new_folder_name)
+    elif action == "compress":
+        destination_folder = _prepared_destination(destination_path, destination_new_folder_name)
+        archive_target = os.path.join(destination_folder, _validated_archive_name(archive_name)).replace("\\", "/")
+        normalize_host_path(archive_target)
+        destination = archive_target
+        transfer_method = "standard"
+        rsync_delete = False
+        folder_conflict_policy = "merge"
+    else:
+        destination = ""
     operation = FileOperation.objects.create(
         action=action,
         status="running",
@@ -126,6 +175,7 @@ def create_file_operation(
         rsync_delete=rsync_delete,
         conflict_policy=conflict_policy,
         folder_conflict_policy=folder_conflict_policy,
+        compression_method=compression_method,
         total_count=len(normalized_sources),
         summary=f"{action.title()} operation queued for {len(normalized_sources)} item(s).",
         heartbeat_at=timezone.now(),
@@ -205,6 +255,9 @@ def execute_file_operation(operation):
         return
     if operation.action == "download":
         _execute_download_operation(operation)
+        return
+    if operation.action == "compress":
+        _execute_compress_operation(operation)
         return
 
     completed = set(operation.completed_sources or [])
@@ -529,6 +582,106 @@ def download_archive_path(operation_id):
     return _download_root() / f"download_{int(operation_id)}.zip"
 
 
+def _resolve_archive_target(operation):
+    target = hostfs_path(operation.destination_path)
+    target_parent = os.path.dirname(target)
+    if not os.path.isdir(target_parent):
+        raise ValueError("Archive destination folder does not exist.")
+    if os.path.lexists(target):
+        if operation.conflict_policy == "skip":
+            _append_log(operation, f"Skipped compression: archive already exists at {operation.destination_path}")
+            operation.save(update_fields=["log_output", "heartbeat_at"])
+            return None
+        if operation.conflict_policy == "rename":
+            target = _available_conflict_target(target_parent, os.path.basename(target))
+            operation.destination_path = normalize_host_path(os.path.join(os.path.dirname(operation.destination_path), os.path.basename(target)))
+            _append_log(operation, f"Archive exists; using renamed target {operation.destination_path}")
+            operation.save(update_fields=["destination_path", "log_output", "heartbeat_at"])
+            return target
+        if os.path.isdir(target) and not os.path.islink(target):
+            raise ValueError("Archive target is a folder. Choose another archive name.")
+        _append_log(operation, f"Archive exists; overwriting {operation.destination_path}")
+        operation.save(update_fields=["log_output", "heartbeat_at"])
+    return target
+
+
+def _execute_compress_operation(operation):
+    completed = set()
+    operation.completed_sources = []
+    operation.processed_count = 0
+    target = _resolve_archive_target(operation)
+    if target is None:
+        finalize_file_operation(operation, "success", "Compression skipped because the archive already exists.")
+        return
+
+    compression = ZIP_COMPRESSION_METHODS[_validated_compression_method(operation.compression_method)]
+    tmp_archive_path = Path(f"{target}.tmp")
+    if tmp_archive_path.exists():
+        if tmp_archive_path.is_dir():
+            raise ValueError("Temporary archive path is a folder. Choose another archive name.")
+        tmp_archive_path.unlink()
+
+    _append_log(operation, f"Creating ZIP archive: {operation.destination_path}")
+    _append_log(operation, f"Compression method: {operation.get_compression_method_display()}")
+    operation.save(update_fields=["completed_sources", "processed_count", "log_output", "heartbeat_at"])
+    errors = []
+
+    try:
+        with zipfile.ZipFile(tmp_archive_path, "w", compression=compression) as zip_handle:
+            sources = operation.sources or []
+            total_sources = len(sources)
+            for source_index, source in enumerate(sources, start=1):
+                operation.refresh_from_db()
+                if source in completed:
+                    continue
+                if operation.cancel_requested_at:
+                    finalize_file_operation(operation, "cancelled", "Compression cancelled by operator.")
+                    return
+                if operation.pause_requested_at:
+                    operation.status = "paused"
+                    operation.summary = "Compression paused."
+                    operation.process_pid = None
+                    _append_log(operation, "Paused before next item.")
+                    operation.save(update_fields=["status", "summary", "process_pid", "log_output", "heartbeat_at"])
+                    return
+
+                operation.current_path = source
+                operation.summary = f"Adding item {source_index}/{total_sources} to archive: {source}"
+                operation.heartbeat_at = timezone.now()
+                _append_log(operation, f"Starting archive item {source_index}/{total_sources}: {source}")
+                operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
+                try:
+                    _write_source_to_zip(zip_handle, source, operation)
+                except FileOperationInterrupted:
+                    raise
+                except Exception as exc:
+                    errors.append(f"{source}: {exc}")
+                    _append_log(operation, f"ERROR archive item {source_index}/{total_sources}: {source}: {exc}")
+                else:
+                    completed.add(source)
+                    operation.completed_sources = sorted(completed)
+                    operation.processed_count = len(completed)
+                    operation.summary = f"Completed archive item {source_index}/{total_sources}: {source}"
+                    _append_log(operation, f"Completed archive item {source_index}/{total_sources}: {source}")
+                operation.save(update_fields=["completed_sources", "processed_count", "summary", "log_output", "heartbeat_at"])
+    except FileOperationInterrupted as exc:
+        if exc.status == "cancelled":
+            finalize_file_operation(operation, "cancelled", "Compression cancelled by operator.")
+        else:
+            operation.status = "paused"
+            operation.summary = "Compression paused. Resume will rebuild the archive."
+            operation.process_pid = None
+            _append_log(operation, "Paused during archive creation. Resume will rebuild the archive.")
+            operation.save(update_fields=["status", "summary", "process_pid", "log_output", "heartbeat_at"])
+        return
+
+    tmp_archive_path.replace(target)
+    if errors:
+        finalize_file_operation(operation, "failed", f"Compression finished with {len(errors)} error(s).")
+    else:
+        finalize_file_operation(operation, "success", f"Archive created at {operation.destination_path} with {len(completed)} item(s).")
+
+
 def _upload_session_root(operation_id):
     db_path = os.getenv("DJANGO_DB_PATH", "/app/data/db.sqlite3")
     root = Path(db_path).resolve().parent / UPLOAD_SESSION_DIR_NAME / str(int(operation_id))
@@ -575,6 +728,16 @@ def _execute_download_operation(operation):
             operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
             try:
                 _write_source_to_zip(zip_handle, source, operation)
+            except FileOperationInterrupted as exc:
+                if exc.status == "cancelled":
+                    finalize_file_operation(operation, "cancelled", "Download preparation cancelled by operator.")
+                else:
+                    operation.status = "paused"
+                    operation.summary = "Download preparation paused."
+                    operation.process_pid = None
+                    _append_log(operation, "Paused during ZIP creation.")
+                    operation.save(update_fields=["status", "summary", "process_pid", "log_output", "heartbeat_at"])
+                return
             except Exception as exc:
                 errors.append(f"{source}: {exc}")
                 _append_log(operation, f"ERROR ZIP item {source_index}/{total_sources}: {source}: {exc}")
@@ -601,6 +764,8 @@ def _write_source_to_zip(zip_handle, source, operation=None):
     if os.path.isdir(absolute_source) and not os.path.islink(absolute_source):
         archived_files = 0
         for root, dirs, files in os.walk(absolute_source):
+            if operation:
+                _raise_if_zip_operation_interrupted(operation)
             dirs.sort()
             files.sort()
             relative_root = os.path.relpath(root, absolute_source)
@@ -612,12 +777,23 @@ def _write_source_to_zip(zip_handle, source, operation=None):
                 zip_handle.write(absolute_file, os.path.join(archive_root, relative_name))
                 archived_files += 1
                 if operation and (archived_files == 1 or archived_files % 25 == 0):
+                    _raise_if_zip_operation_interrupted(operation)
                     operation.current_path = f"{source}/{relative_name}".replace("//", "/")
                     operation.summary = f"Adding {source} to ZIP: {archived_files} file(s)"
                     _append_log(operation, f"ZIP progress {source}: {archived_files} file(s) added")
                     operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
         return
+    if operation:
+        _raise_if_zip_operation_interrupted(operation)
     zip_handle.write(absolute_source, archive_root)
+
+
+def _raise_if_zip_operation_interrupted(operation):
+    operation.refresh_from_db(fields=["pause_requested_at", "cancel_requested_at"])
+    if operation.cancel_requested_at:
+        raise FileOperationInterrupted("cancelled")
+    if operation.pause_requested_at:
+        raise FileOperationInterrupted("paused")
 
 
 def _delete_path(absolute_path):

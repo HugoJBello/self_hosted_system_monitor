@@ -3,6 +3,12 @@ from django.utils import timezone
 
 
 class FileOperation(models.Model):
+    COMPRESSION_METHOD_CHOICES = [
+        ("deflated", "ZIP deflated"),
+        ("stored", "Store only"),
+        ("bzip2", "ZIP BZIP2"),
+        ("lzma", "ZIP LZMA"),
+    ]
     TRANSFER_METHOD_CHOICES = [
         ("standard", "Standard"),
         ("rsync", "Rsync differential"),
@@ -23,6 +29,7 @@ class FileOperation(models.Model):
         ("delete", "Delete"),
         ("upload", "Upload"),
         ("download", "Download"),
+        ("compress", "Compress"),
         ("search", "Search"),
     ]
     STATUS_CHOICES = [
@@ -42,6 +49,7 @@ class FileOperation(models.Model):
     rsync_delete = models.BooleanField(default=False)
     conflict_policy = models.CharField(max_length=16, choices=CONFLICT_POLICY_CHOICES, default="overwrite")
     folder_conflict_policy = models.CharField(max_length=16, choices=FOLDER_CONFLICT_POLICY_CHOICES, default="merge")
+    compression_method = models.CharField(max_length=16, choices=COMPRESSION_METHOD_CHOICES, default="deflated")
     current_path = models.CharField(max_length=500, blank=True, default="")
     total_count = models.PositiveIntegerField(default=0)
     processed_count = models.PositiveIntegerField(default=0)

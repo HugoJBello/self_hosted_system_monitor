@@ -9,6 +9,7 @@
   <input type="hidden" name="current_path" value="{{ current_path }}" data-current-path-input>
   <input type="hidden" name="return_path" value="{{ current_path }}" data-return-path-input>
   <input type="hidden" name="destination_path" value="" data-destination-path-input>
+  <input type="hidden" name="destination_new_folder_name" value="" data-destination-new-folder-input>
   <input type="hidden" name="file_action" value="" data-file-action-input>
   <div data-selected-paths-inputs></div>
   <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-end gap-3 mb-4">
@@ -60,6 +61,7 @@
           <li><button type="button" class="dropdown-item" data-download-trigger data-selection-action disabled><i class="bi bi-download me-2"></i>Download</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="copy" data-selection-action disabled><i class="bi bi-copy me-2"></i>Copy to...</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="move" data-selection-action disabled><i class="bi bi-arrows-move me-2"></i>Move to...</button></li>
+          <li><button type="button" class="dropdown-item" data-destination-action="compress" data-selection-action disabled><i class="bi bi-file-earmark-zip me-2"></i>Compress to ZIP...</button></li>
           <li><hr class="dropdown-divider"></li>
           <li><button type="button" class="dropdown-item text-danger" data-delete-trigger data-selection-action disabled><i class="bi bi-trash me-2"></i>Delete</button></li>
         </ul>
@@ -164,7 +166,35 @@
             <button type="button" class="btn btn-outline-light btn-sm" data-destination-sort-direction aria-label="Sort ascending" title="Sort ascending"><i class="bi bi-sort-alpha-down"></i></button>
           </div>
           <div class="file-manager-destination-list file-manager-destination-browser" data-destination-rows></div>
-          <div class="file-manager-transfer-method mt-3">
+          <div class="file-manager-destination-new-folder mt-3" data-destination-new-folder-panel>
+            <button type="button" class="btn btn-outline-light btn-sm" data-destination-new-folder-toggle aria-expanded="false" aria-controls="destinationNewFolderFields">
+              <i class="bi bi-folder-plus"></i> Create folder in destination
+            </button>
+            <div id="destinationNewFolderFields" class="file-manager-destination-new-folder-fields d-none mt-2" data-destination-new-folder-fields>
+              <label class="form-label file-manager-option-label" for="destinationNewFolderName"><i class="bi bi-folder-plus" aria-hidden="true"></i><span>New folder name</span></label>
+              <input id="destinationNewFolderName" type="text" class="form-control" autocomplete="off" data-destination-new-folder-name placeholder="Folder name">
+              <div class="form-text">The folder will be created only after you confirm the transfer plan.</div>
+              <div class="file-manager-status d-none mt-2" data-destination-new-folder-status></div>
+            </div>
+          </div>
+          <div class="file-manager-compress-options mt-3 d-none" data-compress-options>
+            <div class="file-manager-compress-option">
+              <label class="form-label file-manager-option-label" for="fileArchiveName"><i class="bi bi-file-earmark-zip" aria-hidden="true"></i><span>ZIP name</span></label>
+              <input id="fileArchiveName" type="text" name="archive_name" class="form-control" autocomplete="off" data-compress-archive-name placeholder="archive.zip">
+              <div class="form-text">The archive will be created in the selected destination folder.</div>
+            </div>
+            <div class="file-manager-compress-option">
+              <label class="form-label file-manager-option-label" for="fileCompressionMethod"><i class="bi bi-speedometer2" aria-hidden="true"></i><span>Compression</span></label>
+              <select id="fileCompressionMethod" name="compression_method" class="form-select" data-compression-method>
+                <option value="deflated" selected>Standard ZIP deflated</option>
+                <option value="stored">Store only, no compression</option>
+                <option value="bzip2">BZIP2, smaller but slower</option>
+                <option value="lzma">LZMA, strongest but slowest</option>
+              </select>
+            </div>
+            <div class="file-manager-status d-none" data-compress-status></div>
+          </div>
+          <div class="file-manager-transfer-method mt-3" data-transfer-method-panel>
             <div>
               <label class="form-label file-manager-option-label" for="fileTransferMethod"><i class="bi bi-gear" aria-hidden="true"></i><span>Transfer method</span></label>
               <select id="fileTransferMethod" name="transfer_method" class="form-select" data-transfer-method>
@@ -189,16 +219,16 @@
               <span>Dangerous option: items that exist only in the destination will be permanently deleted. This does not affect the source, but it can remove unrelated destination data.</span>
             </div>
           </div>
-          <div class="file-manager-conflict-policies mt-3">
+          <div class="file-manager-conflict-policies mt-3" data-conflict-policies>
             <div class="file-manager-conflict-policy">
-              <label class="form-label file-manager-option-label" for="fileConflictPolicy"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span>File conflicts</span></label>
+              <label class="form-label file-manager-option-label" for="fileConflictPolicy"><i class="bi bi-file-earmark-text" aria-hidden="true"></i><span data-conflict-policy-label>File conflicts</span></label>
               <select id="fileConflictPolicy" name="conflict_policy" class="form-select" data-conflict-policy>
                 <option value="overwrite" selected>Overwrite existing file</option>
                 <option value="skip">Skip existing file</option>
                 <option value="rename">Rename incoming file (1), (2)...</option>
               </select>
             </div>
-            <div class="file-manager-conflict-policy">
+            <div class="file-manager-conflict-policy" data-folder-conflict-policy-panel>
               <label class="form-label file-manager-option-label" for="folderConflictPolicy"><i class="bi bi-folder-fill" aria-hidden="true"></i><span>Folder conflicts</span></label>
               <select id="folderConflictPolicy" name="folder_conflict_policy" class="form-select" data-folder-conflict-policy>
                 <option value="merge" selected>Merge into existing folder</option>
@@ -414,5 +444,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260825-image-metadata-section"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260827-file-compress"></script>
 {% endblock %}

@@ -3,6 +3,7 @@ import os
 import tempfile
 import time
 import gzip
+import zipfile
 from io import BytesIO
 from pathlib import Path
 
@@ -554,6 +555,101 @@ class MonitorViewsTests(TestCase):
                 self.assertIn("return_path=", response.url)
 
             self.assertEqual(mock_start.call_count, 2)
+
+    @patch("file_manager_app.views.start_background_file_operation")
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_transfer_can_create_destination_folder(self, mock_start):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir, "source.txt")
+            destination = Path(tmpdir, "destination")
+            source.write_text("content", encoding="utf-8")
+            destination.mkdir()
+
+            response = self.client.post(
+                self._path("monitor:file-manager"),
+                {
+                    "file_action": "copy",
+                    "current_path": tmpdir,
+                    "return_path": tmpdir,
+                    "destination_path": str(destination),
+                    "destination_new_folder_name": "new_target",
+                    "selected_paths": str(source),
+                    "conflict_policy": "overwrite",
+                    "folder_conflict_policy": "merge",
+                    "transfer_method": "standard",
+                },
+            )
+
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(Path(destination, "new_target").is_dir())
+            operation = FileOperation.objects.latest("id")
+            self.assertEqual(operation.action, "copy")
+            self.assertEqual(operation.destination_path, str(Path(destination, "new_target")))
+            mock_start.assert_called_once_with(operation)
+
+    @patch("file_manager_app.views.start_background_file_operation")
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_file_manager_compress_submission_creates_process(self, mock_start):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source = Path(tmpdir, "source.txt")
+            destination = Path(tmpdir, "destination")
+            source.write_text("content", encoding="utf-8")
+            destination.mkdir()
+
+            response = self.client.post(
+                self._path("monitor:file-manager"),
+                {
+                    "file_action": "compress",
+                    "current_path": tmpdir,
+                    "return_path": tmpdir,
+                    "destination_path": str(destination),
+                    "destination_new_folder_name": "archives",
+                    "archive_name": "packed",
+                    "compression_method": "stored",
+                    "selected_paths": str(source),
+                    "conflict_policy": "rename",
+                },
+            )
+
+            self.assertEqual(response.status_code, 302)
+            self.assertTrue(Path(destination, "archives").is_dir())
+            operation = FileOperation.objects.latest("id")
+            self.assertEqual(operation.action, "compress")
+            self.assertEqual(operation.destination_path, str(Path(destination, "archives", "packed.zip")))
+            self.assertEqual(operation.compression_method, "stored")
+            self.assertEqual(operation.conflict_policy, "rename")
+            mock_start.assert_called_once_with(operation)
+
+    def test_file_operation_compress_creates_zip_archive(self):
+        from file_manager_app.services import execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_file = Path(tmpdir, "source.txt")
+            source_folder = Path(tmpdir, "folder")
+            destination = Path(tmpdir, "destination")
+            source_file.write_text("content", encoding="utf-8")
+            source_folder.mkdir()
+            Path(source_folder, "nested.txt").write_text("nested", encoding="utf-8")
+            destination.mkdir()
+            operation = FileOperation.objects.create(
+                action="compress",
+                status="running",
+                sources=["/source.txt", "/folder"],
+                destination_path="/destination/archive.zip",
+                compression_method="stored",
+                conflict_policy="overwrite",
+                total_count=2,
+            )
+
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            self.assertTrue(Path(destination, "archive.zip").is_file())
+            with zipfile.ZipFile(Path(destination, "archive.zip")) as archive:
+                self.assertEqual(archive.read("source.txt").decode("utf-8"), "content")
+                self.assertEqual(archive.read("folder/nested.txt").decode("utf-8"), "nested")
 
     def test_file_operation_copy_logs_item_and_directory_progress(self):
         from file_manager_app.services import execute_file_operation

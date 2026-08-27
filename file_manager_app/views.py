@@ -191,7 +191,7 @@ class FileManagerView(LoginRequiredMixin, View):
                     return JsonResponse(payload)
                 messages.success(request, "Download archive preparation started.")
                 return redirect(self._operation_detail_url(operation, return_path))
-            if action in {"copy", "move", "delete"}:
+            if action in {"copy", "move", "delete", "compress"}:
                 operation = create_file_operation(
                     action,
                     selected_paths,
@@ -200,6 +200,9 @@ class FileManagerView(LoginRequiredMixin, View):
                     rsync_delete=request.POST.get("rsync_delete") == "1",
                     conflict_policy=request.POST.get("conflict_policy") or "overwrite",
                     folder_conflict_policy=request.POST.get("folder_conflict_policy") or "merge",
+                    destination_new_folder_name=request.POST.get("destination_new_folder_name") or "",
+                    archive_name=request.POST.get("archive_name") or "",
+                    compression_method=request.POST.get("compression_method") or "deflated",
                 )
                 start_background_file_operation(operation)
                 messages.success(request, f"{operation.get_action_display()} operation started.")
@@ -222,6 +225,7 @@ class FileManagerView(LoginRequiredMixin, View):
             "download",
             "copy",
             "move",
+            "compress",
             "delete",
         }
         for action in reversed(request.POST.getlist("file_action")):
@@ -259,7 +263,7 @@ class FileManagerView(LoginRequiredMixin, View):
             "operation_id": operation.id,
             "status_url": reverse("monitor:file-manager-operation-status", args=[operation.id]),
             "detail_url": self._operation_detail_url(operation, return_path),
-            "download_url": reverse("monitor:file-manager-operation-download", args=[operation.id]),
+            "download_url": reverse("monitor:file-manager-operation-download", args=[operation.id]) if operation.action == "download" else "",
             "summary": operation.summary,
         }
 
@@ -561,6 +565,8 @@ class FileManagerOperationStatusView(LoginRequiredMixin, View):
                 "conflict_policy_label": operation.get_conflict_policy_display(),
                 "folder_conflict_policy": operation.folder_conflict_policy,
                 "folder_conflict_policy_label": operation.get_folder_conflict_policy_display(),
+                "compression_method": operation.compression_method,
+                "compression_method_label": operation.get_compression_method_display(),
                 "log_output": operation.log_output,
                 "process_pid": operation.process_pid,
                 "runner_label": operation.runner_label,

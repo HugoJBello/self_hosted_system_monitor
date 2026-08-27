@@ -63,10 +63,20 @@
   const destinationModalElement = page.querySelector("[data-destination-modal]");
   const destinationRows = page.querySelector("[data-destination-rows]");
   const destinationPathInput = page.querySelector("[data-destination-path-input]");
+  const destinationNewFolderInput = page.querySelector("[data-destination-new-folder-input]");
   const destinationBreadcrumbs = page.querySelector("[data-destination-breadcrumbs]");
   const destinationTitle = page.querySelector("[data-destination-title]");
   const destinationUp = page.querySelector("[data-destination-up]");
   const destinationSubmit = page.querySelector("[data-destination-submit]");
+  const destinationNewFolderToggle = page.querySelector("[data-destination-new-folder-toggle]");
+  const destinationNewFolderFields = page.querySelector("[data-destination-new-folder-fields]");
+  const destinationNewFolderName = page.querySelector("[data-destination-new-folder-name]");
+  const destinationNewFolderStatus = page.querySelector("[data-destination-new-folder-status]");
+  const compressOptions = page.querySelector("[data-compress-options]");
+  const compressArchiveName = page.querySelector("[data-compress-archive-name]");
+  const compressionMethod = page.querySelector("[data-compression-method]");
+  const compressStatus = page.querySelector("[data-compress-status]");
+  const transferMethodPanel = page.querySelector("[data-transfer-method-panel]");
   const transferMethod = page.querySelector("[data-transfer-method]");
   const destinationPickerUi = page.querySelector("[data-destination-picker-ui]");
   const destinationPlan = page.querySelector("[data-destination-plan]");
@@ -79,8 +89,11 @@
   const rsyncOptions = page.querySelector("[data-rsync-options]");
   const rsyncDelete = page.querySelector("[data-rsync-delete]");
   const rsyncDeleteWarning = page.querySelector("[data-rsync-delete-warning]");
+  const conflictPolicies = page.querySelector("[data-conflict-policies]");
   const conflictPolicy = page.querySelector("[data-conflict-policy]");
+  const conflictPolicyLabel = page.querySelector("[data-conflict-policy-label]");
   const folderConflictPolicy = page.querySelector("[data-folder-conflict-policy]");
+  const folderConflictPolicyPanel = page.querySelector("[data-folder-conflict-policy-panel]");
   const deleteTrigger = page.querySelector("[data-delete-trigger]");
   const deleteModalElement = page.querySelector("[data-delete-modal]");
   const deleteSummary = page.querySelector("[data-delete-summary]");
@@ -113,6 +126,7 @@
   let destinationParentPath = "";
   let destinationPlanConfirmed = false;
   let destinationAction = "copy";
+  let destinationNewFolderEnabled = false;
   let viewMode = "list";
   let uploadFiles = [];
   let uploadDragDepth = 0;
@@ -237,6 +251,21 @@
   folderConflictPolicy?.addEventListener("change", updateRsyncOptions);
   rsyncDelete?.addEventListener("change", updateRsyncOptions);
   destinationPlanEdit?.addEventListener("click", showDestinationPicker);
+  compressArchiveName?.addEventListener("input", () => {
+    setCompressStatus("", false);
+    destinationPlanConfirmed = false;
+  });
+  compressionMethod?.addEventListener("change", () => {
+    destinationPlanConfirmed = false;
+  });
+  destinationNewFolderToggle?.addEventListener("click", () => {
+    setDestinationNewFolderEnabled(!destinationNewFolderEnabled, { focus: true });
+  });
+  destinationNewFolderName?.addEventListener("input", () => {
+    setDestinationNewFolderStatus("", false);
+    destinationPlanConfirmed = false;
+    if (destinationNewFolderInput) destinationNewFolderInput.value = normalizedDestinationNewFolderName();
+  });
   deleteTrigger?.addEventListener("click", openDeleteModal);
   destinationUp?.addEventListener("click", () => {
     if (destinationParentPath) loadDestination(destinationParentPath);
@@ -249,7 +278,7 @@
       await submitCreateFolder();
       return;
     }
-    if ((action === "copy" || action === "move") && destinationModalElement?.classList.contains("show") && !destinationPlanConfirmed) {
+    if (["copy", "move", "compress"].includes(action) && destinationModalElement?.classList.contains("show") && !destinationPlanConfirmed) {
       event.preventDefault();
       showDestinationPlan();
       return;
@@ -1405,17 +1434,21 @@
 
   function openDestinationModal(action) {
     if (!selectedPaths.size) return;
-    destinationAction = action === "move" ? "move" : "copy";
+    destinationAction = ["move", "compress"].includes(action) ? action : "copy";
     if (fileActionInput) fileActionInput.value = "";
     if (conflictPolicy) conflictPolicy.value = "overwrite";
     if (folderConflictPolicy) folderConflictPolicy.value = "merge";
     if (transferMethod) transferMethod.value = "standard";
     if (rsyncDelete) rsyncDelete.checked = false;
+    if (compressionMethod) compressionMethod.value = "deflated";
+    if (compressArchiveName) compressArchiveName.value = defaultArchiveName();
+    setCompressStatus("", false);
+    resetDestinationNewFolder();
     destinationPlanConfirmed = false;
     showDestinationPicker();
     if (destinationSubmit) destinationSubmit.value = destinationAction;
     if (destinationTitle) {
-      destinationTitle.textContent = destinationAction === "move" ? "Move selected items" : "Copy selected items";
+      destinationTitle.textContent = destinationActionTitle();
     }
     window.history.pushState({ fileManagerDestinationPath: currentPath || "/" }, "", window.location.href);
     loadDestination(currentPath || "/", { updateHistory: false });
@@ -1429,13 +1462,111 @@
     destinationPickerUi?.classList.remove("d-none");
     destinationPlan?.classList.add("d-none");
     if (destinationSubmit) {
-      destinationSubmit.textContent = destinationAction === "move" ? "Review move plan" : "Review copy plan";
+      destinationSubmit.textContent = `Review ${destinationActionVerb()} plan`;
     }
     destinationPlanEdit?.classList.add("d-none");
+    updateDestinationActionUi();
     updateRsyncOptions();
   }
 
+  function updateDestinationActionUi() {
+    const compressing = destinationAction === "compress";
+    compressOptions?.classList.toggle("d-none", !compressing);
+    transferMethodPanel?.classList.toggle("d-none", compressing);
+    rsyncOptions?.classList.toggle("d-none", true);
+    conflictPolicies?.classList.toggle("d-none", false);
+    folderConflictPolicyPanel?.classList.toggle("d-none", compressing);
+    if (conflictPolicyLabel) {
+      conflictPolicyLabel.textContent = compressing ? "Archive conflicts" : "File conflicts";
+    }
+    updateConflictOptionLabels(compressing);
+  }
+
+  function updateConflictOptionLabels(compressing) {
+    if (!conflictPolicy) return;
+    const labels = compressing
+      ? {
+          overwrite: "Overwrite existing archive",
+          skip: "Skip if archive exists",
+          rename: "Rename archive (1), (2)...",
+        }
+      : {
+          overwrite: "Overwrite existing file",
+          skip: "Skip existing file",
+          rename: "Rename incoming file (1), (2)...",
+        };
+    Array.from(conflictPolicy.options).forEach((option) => {
+      if (labels[option.value]) option.textContent = labels[option.value];
+    });
+  }
+
+  function destinationActionTitle() {
+    if (destinationAction === "move") return "Move selected items";
+    if (destinationAction === "compress") return "Compress selected items";
+    return "Copy selected items";
+  }
+
+  function destinationActionVerb() {
+    if (destinationAction === "move") return "move";
+    if (destinationAction === "compress") return "compression";
+    return "copy";
+  }
+
+  function setDestinationNewFolderEnabled(enabled, { focus = false } = {}) {
+    destinationNewFolderEnabled = Boolean(enabled);
+    destinationNewFolderFields?.classList.toggle("d-none", !destinationNewFolderEnabled);
+    destinationNewFolderToggle?.setAttribute("aria-expanded", destinationNewFolderEnabled ? "true" : "false");
+    if (!destinationNewFolderEnabled && destinationNewFolderName) {
+      destinationNewFolderName.value = "";
+    }
+    setDestinationNewFolderStatus("", false);
+    if (destinationNewFolderInput) destinationNewFolderInput.value = normalizedDestinationNewFolderName();
+    destinationPlanConfirmed = false;
+    if (destinationNewFolderEnabled && focus) {
+      window.setTimeout(() => destinationNewFolderName?.focus(), 0);
+    }
+  }
+
+  function resetDestinationNewFolder() {
+    if (destinationNewFolderName) destinationNewFolderName.value = "";
+    setDestinationNewFolderEnabled(false);
+  }
+
+  function normalizedDestinationNewFolderName() {
+    return destinationNewFolderEnabled ? (destinationNewFolderName?.value || "").trim() : "";
+  }
+
+  function validateDestinationNewFolder() {
+    const folderName = normalizedDestinationNewFolderName();
+    if (!destinationNewFolderEnabled) return true;
+    if (!folderName) {
+      setDestinationNewFolderStatus("Folder name is required.", true);
+      destinationNewFolderName?.focus();
+      return false;
+    }
+    if (folderName === "." || folderName === ".." || /[\\/]/.test(folderName) || /[\n\r\0]/.test(folderName)) {
+      setDestinationNewFolderStatus("Folder name cannot contain path separators or line breaks.", true);
+      destinationNewFolderName?.focus();
+      return false;
+    }
+    setDestinationNewFolderStatus("", false);
+    return true;
+  }
+
+  function setDestinationNewFolderStatus(message, isError) {
+    if (!destinationNewFolderStatus) return;
+    destinationNewFolderStatus.textContent = message || "";
+    destinationNewFolderStatus.classList.toggle("d-none", !message);
+    destinationNewFolderStatus.classList.toggle("is-error", Boolean(isError));
+  }
+
   function updateRsyncOptions() {
+    if (destinationAction === "compress") {
+      rsyncOptions?.classList.add("d-none");
+      if (rsyncDelete) rsyncDelete.checked = false;
+      rsyncDeleteWarning?.classList.add("d-none");
+      return;
+    }
     const isRsync = transferMethod?.value === "rsync";
     const items = selectedItems();
     const foldersOnly = items.length > 0 && items.every((item) => item.kind === "folder");
@@ -1452,6 +1583,8 @@
   function showDestinationPlan() {
     const items = selectedItems();
     if (!items.length || !destinationPath) return;
+    if (!validateDestinationNewFolder()) return;
+    if (!validateCompressOptions()) return;
     updateRsyncOptions();
     const isRsync = transferMethod?.value === "rsync";
     if (isRsync && rsyncDelete?.disabled && rsyncDelete?.checked) {
@@ -1460,10 +1593,11 @@
     if (destinationPickerUi) destinationPickerUi.classList.add("d-none");
     if (destinationPlan) destinationPlan.classList.remove("d-none");
     if (destinationSubmit) {
-      destinationSubmit.textContent = destinationAction === "move" ? "Confirm move" : "Confirm copy";
+      destinationSubmit.textContent = destinationAction === "move" ? "Confirm move" : destinationAction === "compress" ? "Confirm compress" : "Confirm copy";
     }
     if (fileActionInput) fileActionInput.value = destinationAction;
     if (destinationPathInput) destinationPathInput.value = destinationPath;
+    if (destinationNewFolderInput) destinationNewFolderInput.value = normalizedDestinationNewFolderName();
     syncSelectedInputs();
     destinationPlanEdit?.classList.remove("d-none");
     if (destinationPlanMethod) {
@@ -1484,8 +1618,25 @@
   function renderDestinationPlanItems(items) {
     if (!destinationPlanItems) return;
     destinationPlanItems.replaceChildren();
+    const finalDestinationPath = plannedDestinationPath();
+    if (destinationAction === "compress") {
+      const flow = document.createElement("div");
+      flow.className = "file-manager-transfer-plan-item";
+      const sourceCard = transferPlanCard(
+        "Archive contents",
+        "bi-files",
+        `${items.length} selected item${items.length === 1 ? "" : "s"}`,
+      );
+      const arrow = document.createElement("div");
+      arrow.className = "file-manager-transfer-plan-arrow";
+      arrow.innerHTML = '<i class="bi bi-arrow-right" aria-hidden="true"></i>';
+      const targetCard = transferPlanCard("ZIP archive", "bi-file-earmark-zip", plannedArchivePath());
+      flow.append(sourceCard, arrow, targetCard);
+      destinationPlanItems.appendChild(flow);
+      return;
+    }
     items.forEach((item) => {
-      const targetPath = joinPath(destinationPath, item.name || basename(item.path));
+      const targetPath = joinPath(finalDestinationPath, item.name || basename(item.path));
       const flow = document.createElement("div");
       flow.className = "file-manager-transfer-plan-item";
       const sourceCard = transferPlanCard(
@@ -1505,8 +1656,15 @@
   function renderDestinationPlanOptions(isRsync) {
     if (!destinationPlanOptions) return;
     destinationPlanOptions.replaceChildren();
-    const options = [
+    const newFolderName = normalizedDestinationNewFolderName();
+    const options = destinationAction === "compress" ? [
+      ["Compression", "bi-speedometer2", compressionMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard ZIP deflated"],
+      ["Destination folder", "bi-folder-plus", newFolderName ? `Create "${newFolderName}" first` : "Use selected folder"],
+      ["Archive name", "bi-file-earmark-zip", normalizedArchiveName()],
+      ["Archive conflicts", "bi-file-earmark-text", conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"]
+    ] : [
       ["Method", "bi-gear", transferMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard"],
+      ["Destination folder", "bi-folder-plus", newFolderName ? `Create "${newFolderName}" first` : "Use selected folder"],
       ["Files", "bi-file-earmark-text", conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"],
       ["Directories", "bi-folder-fill", folderConflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Merge"],
       ["Rsync delete", "bi-trash3", isRsync && rsyncDelete?.checked ? "Enabled · --delete" : "Disabled"]
@@ -1528,6 +1686,54 @@
       card.append(iconNode, body);
       destinationPlanOptions.appendChild(card);
     });
+  }
+
+  function plannedDestinationPath() {
+    const newFolderName = normalizedDestinationNewFolderName();
+    return newFolderName ? joinPath(destinationPath, newFolderName) : destinationPath;
+  }
+
+  function plannedArchivePath() {
+    return joinPath(plannedDestinationPath(), normalizedArchiveName());
+  }
+
+  function normalizedArchiveName() {
+    const name = (compressArchiveName?.value || "").trim();
+    if (!name) return "";
+    return name.toLowerCase().endsWith(".zip") ? name : `${name}.zip`;
+  }
+
+  function validateCompressOptions() {
+    if (destinationAction !== "compress") return true;
+    const name = (compressArchiveName?.value || "").trim();
+    if (!name) {
+      setCompressStatus("Archive name is required.", true);
+      compressArchiveName?.focus();
+      return false;
+    }
+    if (name === "." || name === ".." || /[\\/]/.test(name) || /[\n\r\0]/.test(name)) {
+      setCompressStatus("Archive name cannot contain path separators or line breaks.", true);
+      compressArchiveName?.focus();
+      return false;
+    }
+    setCompressStatus("", false);
+    return true;
+  }
+
+  function setCompressStatus(message, isError) {
+    if (!compressStatus) return;
+    compressStatus.textContent = message || "";
+    compressStatus.classList.toggle("d-none", !message);
+    compressStatus.classList.toggle("is-error", Boolean(isError));
+  }
+
+  function defaultArchiveName() {
+    const items = selectedItems();
+    if (items.length === 1) {
+      const base = (items[0].name || basename(items[0].path) || "archive").replace(/\.zip$/i, "");
+      return `${base}.zip`;
+    }
+    return "archive.zip";
   }
 
   function transferPlanCard(label, iconClass, path) {
