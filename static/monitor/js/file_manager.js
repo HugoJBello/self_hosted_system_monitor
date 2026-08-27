@@ -256,6 +256,7 @@
     destinationPlanConfirmed = false;
   });
   compressionMethod?.addEventListener("change", () => {
+    normalizeArchiveNameExtension();
     destinationPlanConfirmed = false;
   });
   destinationNewFolderToggle?.addEventListener("click", () => {
@@ -1630,7 +1631,7 @@
       const arrow = document.createElement("div");
       arrow.className = "file-manager-transfer-plan-arrow";
       arrow.innerHTML = '<i class="bi bi-arrow-right" aria-hidden="true"></i>';
-      const targetCard = transferPlanCard("ZIP archive", "bi-file-earmark-zip", plannedArchivePath());
+      const targetCard = transferPlanCard("Archive", "bi-file-earmark-zip", plannedArchivePath());
       flow.append(sourceCard, arrow, targetCard);
       destinationPlanItems.appendChild(flow);
       return;
@@ -1658,7 +1659,7 @@
     destinationPlanOptions.replaceChildren();
     const newFolderName = normalizedDestinationNewFolderName();
     const options = destinationAction === "compress" ? [
-      ["Compression", "bi-speedometer2", compressionMethod?.selectedOptions?.[0]?.textContent?.trim() || "Standard ZIP deflated"],
+      ["Archive format", "bi-speedometer2", compressionMethod?.selectedOptions?.[0]?.textContent?.trim() || "ZIP deflated"],
       ["Destination folder", "bi-folder-plus", newFolderName ? `Create "${newFolderName}" first` : "Use selected folder"],
       ["Archive name", "bi-file-earmark-zip", normalizedArchiveName()],
       ["Archive conflicts", "bi-file-earmark-text", conflictPolicy?.selectedOptions?.[0]?.textContent?.trim() || "Overwrite"]
@@ -1700,7 +1701,27 @@
   function normalizedArchiveName() {
     const name = (compressArchiveName?.value || "").trim();
     if (!name) return "";
-    return name.toLowerCase().endsWith(".zip") ? name : `${name}.zip`;
+    return archiveNameWithCurrentExtension(name);
+  }
+
+  function archiveNameWithCurrentExtension(name) {
+    const extension = currentArchiveExtension();
+    const archiveExtensions = [".tar.bz2", ".tar.gz", ".tar.xz", ".zip", ".tar"];
+    const lowerName = name.toLowerCase();
+    const matched = archiveExtensions.find((candidate) => lowerName.endsWith(candidate));
+    if (matched) return `${name.slice(0, -matched.length)}${extension}`;
+    return `${name}${extension}`;
+  }
+
+  function currentArchiveExtension() {
+    return compressionMethod?.selectedOptions?.[0]?.dataset?.extension || ".zip";
+  }
+
+  function normalizeArchiveNameExtension() {
+    if (!compressArchiveName) return;
+    const name = compressArchiveName.value.trim();
+    if (!name) return;
+    compressArchiveName.value = archiveNameWithCurrentExtension(name);
   }
 
   function validateCompressOptions() {
@@ -1730,10 +1751,10 @@
   function defaultArchiveName() {
     const items = selectedItems();
     if (items.length === 1) {
-      const base = (items[0].name || basename(items[0].path) || "archive").replace(/\.zip$/i, "");
-      return `${base}.zip`;
+      const base = (items[0].name || basename(items[0].path) || "archive").replace(/\.(tar\.bz2|tar\.gz|tar\.xz|zip|tar)$/i, "");
+      return `${base}${currentArchiveExtension()}`;
     }
-    return "archive.zip";
+    return `archive${currentArchiveExtension()}`;
   }
 
   function transferPlanCard(label, iconClass, path) {

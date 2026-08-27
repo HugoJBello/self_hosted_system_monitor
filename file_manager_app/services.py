@@ -4,6 +4,7 @@ import select
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import zipfile
 from dataclasses import dataclass
@@ -22,12 +23,17 @@ DOWNLOAD_ARCHIVE_DIR_NAME = "file_manager_downloads"
 UPLOAD_SESSION_DIR_NAME = "file_manager_uploads"
 SQLITE_LOCK_RETRY_SECONDS = 0.2
 SQLITE_LOCK_RETRY_ATTEMPTS = 5
-ZIP_COMPRESSION_METHODS = {
-    "stored": zipfile.ZIP_STORED,
-    "deflated": zipfile.ZIP_DEFLATED,
-    "bzip2": zipfile.ZIP_BZIP2,
-    "lzma": zipfile.ZIP_LZMA,
+ARCHIVE_FORMATS = {
+    "stored": {"label": "ZIP stored", "extension": ".zip", "kind": "zip", "zip_compression": zipfile.ZIP_STORED},
+    "deflated": {"label": "ZIP deflated", "extension": ".zip", "kind": "zip", "zip_compression": zipfile.ZIP_DEFLATED},
+    "bzip2": {"label": "ZIP BZIP2", "extension": ".zip", "kind": "zip", "zip_compression": zipfile.ZIP_BZIP2},
+    "lzma": {"label": "ZIP LZMA", "extension": ".zip", "kind": "zip", "zip_compression": zipfile.ZIP_LZMA},
+    "tar": {"label": "TAR", "extension": ".tar", "kind": "tar", "tar_mode": "w"},
+    "tar_gz": {"label": "TAR gzip", "extension": ".tar.gz", "kind": "tar", "tar_mode": "w:gz"},
+    "tar_bz2": {"label": "TAR BZIP2", "extension": ".tar.bz2", "kind": "tar", "tar_mode": "w:bz2"},
+    "tar_xz": {"label": "TAR XZ", "extension": ".tar.xz", "kind": "tar", "tar_mode": "w:xz"},
 }
+ARCHIVE_EXTENSIONS = tuple(sorted({format_config["extension"] for format_config in ARCHIVE_FORMATS.values()}, key=len, reverse=True))
 
 
 class FileOperationInterrupted(Exception):
@@ -94,12 +100,12 @@ def _prepared_destination(destination_path, new_folder_name=""):
 
 def _validated_compression_method(method):
     normalized = (method or "deflated").strip().lower()
-    if normalized not in ZIP_COMPRESSION_METHODS:
-        raise ValueError("Unsupported compression method.")
+    if normalized not in ARCHIVE_FORMATS:
+        raise ValueError("Unsupported archive format.")
     return normalized
 
 
-def _validated_archive_name(archive_name):
+def _validated_archive_name(archive_name, compression_method="deflated"):
     name = (archive_name or "").strip()
     if not name:
         raise ValueError("Archive name is required.")
@@ -107,9 +113,17 @@ def _validated_archive_name(archive_name):
         raise ValueError("Archive name cannot contain path separators.")
     if any(char in name for char in ["\n", "\r"]):
         raise ValueError("Archive name cannot contain line breaks.")
-    if not name.lower().endswith(".zip"):
-        name = f"{name}.zip"
+    name = _archive_name_with_extension(name, compression_method)
     return name
+
+
+def _archive_name_with_extension(name, compression_method):
+    expected_extension = ARCHIVE_FORMATS[_validated_compression_method(compression_method)]["extension"]
+    lower_name = name.lower()
+    for extension in ARCHIVE_EXTENSIONS:
+        if lower_name.endswith(extension):
+            return f"{name[:-len(extension)]}{expected_extension}"
+    return f"{name}{expected_extension}"
 
 
 def _is_real_directory(path):
@@ -158,7 +172,7 @@ def create_file_operation(
         destination = _prepared_destination(destination_path, destination_new_folder_name)
     elif action == "compress":
         destination_folder = _prepared_destination(destination_path, destination_new_folder_name)
-        archive_target = os.path.join(destination_folder, _validated_archive_name(archive_name)).replace("\\", "/")
+        archive_target = os.path.join(destination_folder, _validated_archive_name(archive_name, compression_method)).replace("\\", "/")
         normalize_host_path(archive_target)
         destination = archive_target
         transfer_method = "standard"
@@ -614,56 +628,21 @@ def _execute_compress_operation(operation):
         finalize_file_operation(operation, "success", "Compression skipped because the archive already exists.")
         return
 
-    compression = ZIP_COMPRESSION_METHODS[_validated_compression_method(operation.compression_method)]
+    archive_format = ARCHIVE_FORMATS[_validated_compression_method(operation.compression_method)]
     tmp_archive_path = Path(f"{target}.tmp")
     if tmp_archive_path.exists():
         if tmp_archive_path.is_dir():
             raise ValueError("Temporary archive path is a folder. Choose another archive name.")
         tmp_archive_path.unlink()
 
-    _append_log(operation, f"Creating ZIP archive: {operation.destination_path}")
-    _append_log(operation, f"Compression method: {operation.get_compression_method_display()}")
+    _append_log(operation, f"Creating archive: {operation.destination_path}")
+    _append_log(operation, f"Archive format: {operation.get_compression_method_display()}")
     operation.save(update_fields=["completed_sources", "processed_count", "log_output", "heartbeat_at"])
     errors = []
 
     try:
-        with zipfile.ZipFile(tmp_archive_path, "w", compression=compression) as zip_handle:
-            sources = operation.sources or []
-            total_sources = len(sources)
-            for source_index, source in enumerate(sources, start=1):
-                operation.refresh_from_db()
-                if source in completed:
-                    continue
-                if operation.cancel_requested_at:
-                    finalize_file_operation(operation, "cancelled", "Compression cancelled by operator.")
-                    return
-                if operation.pause_requested_at:
-                    operation.status = "paused"
-                    operation.summary = "Compression paused."
-                    operation.process_pid = None
-                    _append_log(operation, "Paused before next item.")
-                    operation.save(update_fields=["status", "summary", "process_pid", "log_output", "heartbeat_at"])
-                    return
-
-                operation.current_path = source
-                operation.summary = f"Adding item {source_index}/{total_sources} to archive: {source}"
-                operation.heartbeat_at = timezone.now()
-                _append_log(operation, f"Starting archive item {source_index}/{total_sources}: {source}")
-                operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
-                try:
-                    _write_source_to_zip(zip_handle, source, operation)
-                except FileOperationInterrupted:
-                    raise
-                except Exception as exc:
-                    errors.append(f"{source}: {exc}")
-                    _append_log(operation, f"ERROR archive item {source_index}/{total_sources}: {source}: {exc}")
-                else:
-                    completed.add(source)
-                    operation.completed_sources = sorted(completed)
-                    operation.processed_count = len(completed)
-                    operation.summary = f"Completed archive item {source_index}/{total_sources}: {source}"
-                    _append_log(operation, f"Completed archive item {source_index}/{total_sources}: {source}")
-                operation.save(update_fields=["completed_sources", "processed_count", "summary", "log_output", "heartbeat_at"])
+        with _open_archive_writer(tmp_archive_path, archive_format) as archive_handle:
+            _write_sources_to_archive(operation, archive_handle, archive_format, completed, errors)
     except FileOperationInterrupted as exc:
         if exc.status == "cancelled":
             finalize_file_operation(operation, "cancelled", "Compression cancelled by operator.")
@@ -680,6 +659,50 @@ def _execute_compress_operation(operation):
         finalize_file_operation(operation, "failed", f"Compression finished with {len(errors)} error(s).")
     else:
         finalize_file_operation(operation, "success", f"Archive created at {operation.destination_path} with {len(completed)} item(s).")
+
+
+def _open_archive_writer(path, archive_format):
+    if archive_format["kind"] == "zip":
+        return zipfile.ZipFile(path, "w", compression=archive_format["zip_compression"])
+    if archive_format["kind"] == "tar":
+        return tarfile.open(path, archive_format["tar_mode"])
+    raise ValueError("Unsupported archive format.")
+
+
+def _write_sources_to_archive(operation, archive_handle, archive_format, completed, errors):
+    sources = operation.sources or []
+    total_sources = len(sources)
+    for source_index, source in enumerate(sources, start=1):
+        operation.refresh_from_db()
+        if source in completed:
+            continue
+        if operation.cancel_requested_at:
+            raise FileOperationInterrupted("cancelled")
+        if operation.pause_requested_at:
+            raise FileOperationInterrupted("paused")
+
+        operation.current_path = source
+        operation.summary = f"Adding item {source_index}/{total_sources} to archive: {source}"
+        operation.heartbeat_at = timezone.now()
+        _append_log(operation, f"Starting archive item {source_index}/{total_sources}: {source}")
+        operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
+        try:
+            if archive_format["kind"] == "zip":
+                _write_source_to_zip(archive_handle, source, operation)
+            else:
+                _write_source_to_tar(archive_handle, source, operation)
+        except FileOperationInterrupted:
+            raise
+        except Exception as exc:
+            errors.append(f"{source}: {exc}")
+            _append_log(operation, f"ERROR archive item {source_index}/{total_sources}: {source}: {exc}")
+        else:
+            completed.add(source)
+            operation.completed_sources = sorted(completed)
+            operation.processed_count = len(completed)
+            operation.summary = f"Completed archive item {source_index}/{total_sources}: {source}"
+            _append_log(operation, f"Completed archive item {source_index}/{total_sources}: {source}")
+        operation.save(update_fields=["completed_sources", "processed_count", "summary", "log_output", "heartbeat_at"])
 
 
 def _upload_session_root(operation_id):
@@ -765,7 +788,7 @@ def _write_source_to_zip(zip_handle, source, operation=None):
         archived_files = 0
         for root, dirs, files in os.walk(absolute_source):
             if operation:
-                _raise_if_zip_operation_interrupted(operation)
+                _raise_if_archive_operation_interrupted(operation)
             dirs.sort()
             files.sort()
             relative_root = os.path.relpath(root, absolute_source)
@@ -777,18 +800,52 @@ def _write_source_to_zip(zip_handle, source, operation=None):
                 zip_handle.write(absolute_file, os.path.join(archive_root, relative_name))
                 archived_files += 1
                 if operation and (archived_files == 1 or archived_files % 25 == 0):
-                    _raise_if_zip_operation_interrupted(operation)
+                    _raise_if_archive_operation_interrupted(operation)
                     operation.current_path = f"{source}/{relative_name}".replace("//", "/")
                     operation.summary = f"Adding {source} to ZIP: {archived_files} file(s)"
                     _append_log(operation, f"ZIP progress {source}: {archived_files} file(s) added")
                     operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
         return
     if operation:
-        _raise_if_zip_operation_interrupted(operation)
+        _raise_if_archive_operation_interrupted(operation)
     zip_handle.write(absolute_source, archive_root)
 
 
-def _raise_if_zip_operation_interrupted(operation):
+def _write_source_to_tar(tar_handle, source, operation=None):
+    absolute_source = hostfs_path(source)
+    if not os.path.lexists(absolute_source):
+        raise FileNotFoundError("Source no longer exists.")
+    archive_root = os.path.basename(source.rstrip("/")) or "root"
+    if os.path.isdir(absolute_source) and not os.path.islink(absolute_source):
+        archived_files = 0
+        tar_handle.add(absolute_source, arcname=archive_root, recursive=False)
+        for root, dirs, files in os.walk(absolute_source):
+            if operation:
+                _raise_if_archive_operation_interrupted(operation)
+            dirs.sort()
+            files.sort()
+            relative_root = os.path.relpath(root, absolute_source)
+            archive_dir = archive_root if relative_root == "." else os.path.join(archive_root, relative_root)
+            if relative_root != ".":
+                tar_handle.add(root, arcname=archive_dir, recursive=False)
+            for file_name in files:
+                absolute_file = os.path.join(root, file_name)
+                relative_name = os.path.relpath(absolute_file, absolute_source)
+                tar_handle.add(absolute_file, arcname=os.path.join(archive_root, relative_name), recursive=False)
+                archived_files += 1
+                if operation and (archived_files == 1 or archived_files % 25 == 0):
+                    _raise_if_archive_operation_interrupted(operation)
+                    operation.current_path = f"{source}/{relative_name}".replace("//", "/")
+                    operation.summary = f"Adding {source} to archive: {archived_files} file(s)"
+                    _append_log(operation, f"Archive progress {source}: {archived_files} file(s) added")
+                    operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
+        return
+    if operation:
+        _raise_if_archive_operation_interrupted(operation)
+    tar_handle.add(absolute_source, arcname=archive_root, recursive=False)
+
+
+def _raise_if_archive_operation_interrupted(operation):
     operation.refresh_from_db(fields=["pause_requested_at", "cancel_requested_at"])
     if operation.cancel_requested_at:
         raise FileOperationInterrupted("cancelled")

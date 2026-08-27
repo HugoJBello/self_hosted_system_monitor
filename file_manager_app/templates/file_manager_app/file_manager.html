@@ -61,7 +61,7 @@
           <li><button type="button" class="dropdown-item" data-download-trigger data-selection-action disabled><i class="bi bi-download me-2"></i>Download</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="copy" data-selection-action disabled><i class="bi bi-copy me-2"></i>Copy to...</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="move" data-selection-action disabled><i class="bi bi-arrows-move me-2"></i>Move to...</button></li>
-          <li><button type="button" class="dropdown-item" data-destination-action="compress" data-selection-action disabled><i class="bi bi-file-earmark-zip me-2"></i>Compress to ZIP...</button></li>
+          <li><button type="button" class="dropdown-item" data-destination-action="compress" data-selection-action disabled><i class="bi bi-file-earmark-zip me-2"></i>Compress...</button></li>
           <li><hr class="dropdown-divider"></li>
           <li><button type="button" class="dropdown-item text-danger" data-delete-trigger data-selection-action disabled><i class="bi bi-trash me-2"></i>Delete</button></li>
         </ul>
@@ -179,17 +179,21 @@
           </div>
           <div class="file-manager-compress-options mt-3 d-none" data-compress-options>
             <div class="file-manager-compress-option">
-              <label class="form-label file-manager-option-label" for="fileArchiveName"><i class="bi bi-file-earmark-zip" aria-hidden="true"></i><span>ZIP name</span></label>
+              <label class="form-label file-manager-option-label" for="fileArchiveName"><i class="bi bi-file-earmark-zip" aria-hidden="true"></i><span>Archive name</span></label>
               <input id="fileArchiveName" type="text" name="archive_name" class="form-control" autocomplete="off" data-compress-archive-name placeholder="archive.zip">
               <div class="form-text">The archive will be created in the selected destination folder.</div>
             </div>
             <div class="file-manager-compress-option">
-              <label class="form-label file-manager-option-label" for="fileCompressionMethod"><i class="bi bi-speedometer2" aria-hidden="true"></i><span>Compression</span></label>
+              <label class="form-label file-manager-option-label" for="fileCompressionMethod"><i class="bi bi-speedometer2" aria-hidden="true"></i><span>Archive format</span></label>
               <select id="fileCompressionMethod" name="compression_method" class="form-select" data-compression-method>
-                <option value="deflated" selected>Standard ZIP deflated</option>
-                <option value="stored">Store only, no compression</option>
-                <option value="bzip2">BZIP2, smaller but slower</option>
-                <option value="lzma">LZMA, strongest but slowest</option>
+                <option value="deflated" data-extension=".zip" selected>ZIP deflated</option>
+                <option value="stored" data-extension=".zip">ZIP stored, no compression</option>
+                <option value="bzip2" data-extension=".zip">ZIP BZIP2</option>
+                <option value="lzma" data-extension=".zip">ZIP LZMA</option>
+                <option value="tar" data-extension=".tar">TAR, no compression</option>
+                <option value="tar_gz" data-extension=".tar.gz">TAR gzip</option>
+                <option value="tar_bz2" data-extension=".tar.bz2">TAR BZIP2</option>
+                <option value="tar_xz" data-extension=".tar.xz">TAR XZ</option>
               </select>
             </div>
             <div class="file-manager-status d-none" data-compress-status></div>
@@ -444,5 +448,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260827-file-compress"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260827-archive-formats"></script>
 {% endblock %}

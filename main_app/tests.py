@@ -2,6 +2,7 @@ import json
 import os
 import tempfile
 import time
+import tarfile
 import gzip
 import zipfile
 from io import BytesIO
@@ -605,7 +606,7 @@ class MonitorViewsTests(TestCase):
                     "destination_path": str(destination),
                     "destination_new_folder_name": "archives",
                     "archive_name": "packed",
-                    "compression_method": "stored",
+                    "compression_method": "tar_xz",
                     "selected_paths": str(source),
                     "conflict_policy": "rename",
                 },
@@ -615,8 +616,8 @@ class MonitorViewsTests(TestCase):
             self.assertTrue(Path(destination, "archives").is_dir())
             operation = FileOperation.objects.latest("id")
             self.assertEqual(operation.action, "compress")
-            self.assertEqual(operation.destination_path, str(Path(destination, "archives", "packed.zip")))
-            self.assertEqual(operation.compression_method, "stored")
+            self.assertEqual(operation.destination_path, str(Path(destination, "archives", "packed.tar.xz")))
+            self.assertEqual(operation.compression_method, "tar_xz")
             self.assertEqual(operation.conflict_policy, "rename")
             mock_start.assert_called_once_with(operation)
 
@@ -650,6 +651,34 @@ class MonitorViewsTests(TestCase):
             with zipfile.ZipFile(Path(destination, "archive.zip")) as archive:
                 self.assertEqual(archive.read("source.txt").decode("utf-8"), "content")
                 self.assertEqual(archive.read("folder/nested.txt").decode("utf-8"), "nested")
+
+    def test_file_operation_compress_creates_tar_archive(self):
+        from file_manager_app.services import execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_file = Path(tmpdir, "source.txt")
+            destination = Path(tmpdir, "destination")
+            source_file.write_text("content", encoding="utf-8")
+            destination.mkdir()
+            operation = FileOperation.objects.create(
+                action="compress",
+                status="running",
+                sources=["/source.txt"],
+                destination_path="/destination/archive.tar.gz",
+                compression_method="tar_gz",
+                conflict_policy="overwrite",
+                total_count=1,
+            )
+
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            with tarfile.open(Path(destination, "archive.tar.gz"), "r:gz") as archive:
+                member = archive.extractfile("source.txt")
+                self.assertIsNotNone(member)
+                self.assertEqual(member.read().decode("utf-8"), "content")
 
     def test_file_operation_copy_logs_item_and_directory_progress(self):
         from file_manager_app.services import execute_file_operation

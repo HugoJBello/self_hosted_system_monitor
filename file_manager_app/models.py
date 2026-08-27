@@ -8,6 +8,10 @@ class FileOperation(models.Model):
         ("stored", "Store only"),
         ("bzip2", "ZIP BZIP2"),
         ("lzma", "ZIP LZMA"),
+        ("tar", "TAR"),
+        ("tar_gz", "TAR gzip"),
+        ("tar_bz2", "TAR BZIP2"),
+        ("tar_xz", "TAR XZ"),
     ]
     TRANSFER_METHOD_CHOICES = [
         ("standard", "Standard"),
