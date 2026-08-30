@@ -53,6 +53,25 @@ class FakeHttpResponse:
 
 @override_settings(FORCE_SCRIPT_NAME=None)
 class MonitorViewsTests(TestCase):
+    def test_http_manifest_skips_symbolic_links(self):
+        from backups_app.http_services import build_manifest
+
+        with tempfile.TemporaryDirectory(dir="/hostfs/tmp") as hostfs_root:
+            host_root = hostfs_root.replace("/hostfs", "", 1)
+            source_dir = Path(hostfs_root) / "source"
+            source_dir.mkdir()
+            (source_dir / "real.txt").write_text("content", encoding="utf-8")
+            (source_dir / "linked.txt").symlink_to(source_dir / "real.txt")
+            (source_dir / "linked-dir").symlink_to(source_dir, target_is_directory=True)
+
+            manifest = build_manifest(host_root, include_hashes=False)
+
+        self.assertEqual(set(manifest["files"]), {"source/real.txt"})
+        self.assertEqual(
+            {item["path"]: item["reason"] for item in manifest["skipped"]},
+            {"source/linked.txt": "symlink", "source/linked-dir": "symlink"},
+        )
+
     def setUp(self):
         self.user = User.objects.create_user("admin", password="test-pass", is_staff=True, is_superuser=True)
         self.client.force_login(self.user)

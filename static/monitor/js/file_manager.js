@@ -1287,6 +1287,7 @@
     const fail = () => {
       if (finished) return;
       finished = true;
+      window.clearTimeout(timeoutId);
       wrapper.classList.add("is-unavailable");
       wrapper.innerHTML = '<i class="bi bi-file-earmark-play" aria-hidden="true"></i><span>Video thumbnail unavailable in this browser.</span>';
       cleanup();
@@ -1308,9 +1309,11 @@
       }
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
       finished = true;
+      window.clearTimeout(timeoutId);
       wrapper.replaceChildren(canvas);
       cleanup();
     };
+    const timeoutId = window.setTimeout(fail, 4500);
     video.addEventListener("loadedmetadata", () => {
       if (Number.isFinite(video.duration) && video.duration > 0.2) {
         try {
@@ -1484,7 +1487,7 @@
 
   function renderPreviewVideo(url, contentType) {
     if (!previewStage) return;
-    previewStage.innerHTML = "";
+    previewStage.innerHTML = '<div class="file-manager-empty"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading video preview...</div>';
     const video = document.createElement("video");
     video.className = "file-manager-preview-video";
     video.controls = true;
@@ -1493,7 +1496,33 @@
     source.src = url;
     source.type = contentType;
     video.appendChild(source);
-    previewStage.appendChild(video);
+    let settled = false;
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      previewStage.innerHTML = `
+        <div class="file-manager-preview-unavailable">
+          <i class="bi bi-file-earmark-play" aria-hidden="true"></i>
+          <strong>Video preview unavailable</strong>
+          <span>This browser cannot decode this video container or codec here. The file is still accessible from the file manager.</span>
+        </div>
+      `;
+      setPreviewStatus(`Preview unavailable for ${contentType || "this video type"}.`, true);
+    };
+    const show = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      setPreviewStatus("", false);
+      previewStage.replaceChildren(video);
+    };
+    const timeoutId = window.setTimeout(fail, 5500);
+    video.addEventListener("loadedmetadata", show, { once: true });
+    video.addEventListener("loadeddata", show, { once: true });
+    video.addEventListener("canplay", show, { once: true });
+    video.addEventListener("error", fail, { once: true });
+    video.load();
   }
 
   function renderPreviewAudio(url, contentType) {

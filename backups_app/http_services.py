@@ -177,6 +177,8 @@ def build_manifest(
             rel_dir = f"{relative_dir}/{dirname}".strip("/")
             if _is_excluded(f"{rel_dir}/", excludes):
                 skipped.append({"path": rel_dir, "reason": "excluded"})
+            elif os.path.islink(os.path.join(current_root, dirname)):
+                skipped.append({"path": rel_dir, "reason": "symlink"})
             else:
                 kept_dirs.append(dirname)
         dirnames[:] = kept_dirs
@@ -190,6 +192,9 @@ def build_manifest(
                 continue
             absolute_path = os.path.join(current_root, filename)
             try:
+                if os.path.islink(absolute_path):
+                    skipped.append({"path": relative_path, "reason": "symlink"})
+                    continue
                 stat = os.stat(absolute_path, follow_symlinks=False)
             except OSError:
                 skipped.append({"path": relative_path, "reason": "stat_failed"})

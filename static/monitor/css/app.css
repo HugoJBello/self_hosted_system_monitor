@@ -3703,6 +3703,31 @@ body.app-shell {
   width: min(100%, 42rem);
 }
 
+.file-manager-preview-unavailable {
+  display: grid;
+  justify-items: center;
+  gap: 0.45rem;
+  max-width: 28rem;
+  padding: 1.2rem;
+  color: #8ea3b9;
+  text-align: center;
+}
+
+.file-manager-preview-unavailable i {
+  color: #7dd3fc;
+  font-size: 2rem;
+}
+
+.file-manager-preview-unavailable strong {
+  color: #edf2f7;
+  font-size: 1rem;
+}
+
+.file-manager-preview-unavailable span {
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
 .file-manager-info-thumbnail {
   display: block;
   width: 9rem;
