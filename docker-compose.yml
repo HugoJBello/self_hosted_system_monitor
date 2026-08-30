@@ -65,6 +65,8 @@ services:
     build: .
     container_name: system_monitor_backup_scheduler
     restart: unless-stopped
+    pid: host
+    privileged: true
     command: ["python", "manage.py", "run_backup_scheduler"]
     environment:
       RUN_STARTUP_TASKS: "false"
