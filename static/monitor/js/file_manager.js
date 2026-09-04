@@ -21,6 +21,7 @@
   const viewModeLabel = page.querySelector("[data-view-mode-label]");
   const multipleSelectToggle = page.querySelector("[data-multiple-select-toggle]");
   const singleClickToggle = page.querySelector("[data-single-click-toggle]");
+  const selectAllToggle = page.querySelector("[data-select-all-toggle]");
   const selectedInputs = page.querySelector("[data-selected-paths-inputs]");
   const selectionActions = page.querySelectorAll("[data-selection-action]");
   const actionsToggle = page.querySelector("[data-actions-toggle]");
@@ -123,6 +124,7 @@
   let parentPath = page.dataset.parentPath || "";
   let multipleSelectEnabled = false;
   let singleClickOpenEnabled = false;
+  let hasSingleClickOpenPreference = false;
   let destinationPath = "/";
   let destinationParentPath = "";
   let destinationPlanConfirmed = false;
@@ -219,6 +221,7 @@
   singleClickToggle?.addEventListener("click", () => {
     setSingleClickOpenEnabled(!singleClickOpenEnabled);
   });
+  selectAllToggle?.addEventListener("click", toggleSelectAllVisibleItems);
   createFolderTrigger?.addEventListener("click", openCreateFolderModal);
   uploadTrigger?.addEventListener("click", openUploadModal);
   uploadFilesButton?.addEventListener("click", () => uploadFilesInput?.click());
@@ -907,13 +910,16 @@
     syncSelectionState();
   }
 
-  function setSingleClickOpenEnabled(enabled) {
+  function setSingleClickOpenEnabled(enabled, { save = true } = {}) {
     singleClickOpenEnabled = Boolean(enabled);
     page.classList.toggle("is-single-click-open", singleClickOpenEnabled);
     singleClickToggle?.setAttribute("aria-pressed", singleClickOpenEnabled ? "true" : "false");
     singleClickToggle?.classList.toggle("active", singleClickOpenEnabled);
     if (singleClickOpenEnabled && !multipleSelectEnabled) clearSelection();
-    saveSessionPreference(preferenceKeys.singleClickOpen, singleClickOpenEnabled ? "1" : "0");
+    if (save) {
+      hasSingleClickOpenPreference = true;
+      saveSessionPreference(preferenceKeys.singleClickOpen, singleClickOpenEnabled ? "1" : "0");
+    }
   }
 
   function restoreSessionPreferences() {
@@ -926,7 +932,9 @@
       setViewMode(storedViewMode);
     }
     setMultipleSelectEnabled(loadSessionPreference(preferenceKeys.multipleSelect) === "1");
-    setSingleClickOpenEnabled(loadSessionPreference(preferenceKeys.singleClickOpen) === "1");
+    const storedSingleClickOpen = loadSessionPreference(preferenceKeys.singleClickOpen);
+    hasSingleClickOpenPreference = storedSingleClickOpen !== null;
+    setSingleClickOpenEnabled(storedSingleClickOpen === "1", { save: false });
     saveSortPreferences();
   }
 
@@ -971,6 +979,25 @@
     syncSelectionState();
   }
 
+  function selectableCurrentPaths() {
+    return Array.from(page.querySelectorAll(`${viewMode === "grid" ? "[data-file-manager-grid]" : "[data-file-manager-rows]"} .file-manager-item[data-path]`))
+      .filter((item) => !item.dataset.parentRow)
+      .map((item) => item.dataset.path || "")
+      .filter(Boolean);
+  }
+
+  function toggleSelectAllVisibleItems() {
+    const paths = selectableCurrentPaths();
+    if (!paths.length) return;
+    const allSelected = paths.every((path) => selectedPaths.has(path));
+    if (allSelected) {
+      paths.forEach((path) => selectedPaths.delete(path));
+    } else {
+      paths.forEach((path) => selectedPaths.add(path));
+    }
+    syncSelectionState();
+  }
+
   function clearSelection() {
     selectedPaths.clear();
     syncSelectionState();
@@ -988,6 +1015,7 @@
     selectionActions.forEach((button) => {
       button.disabled = selectedCount === 0;
     });
+    updateSelectAllToggle();
     updateUncompressAction(selectedCount);
     if (selectionCount) {
       selectionCount.textContent = selectedCount ? `${selectedCount} selected` : "";
@@ -996,6 +1024,20 @@
     if (previewTrigger) {
       previewTrigger.disabled = !selectedPreviewItem();
     }
+  }
+
+  function updateSelectAllToggle() {
+    if (!selectAllToggle) return;
+    const paths = selectableCurrentPaths();
+    const hasSelectableItems = paths.length > 0;
+    const allSelected = hasSelectableItems && paths.every((path) => selectedPaths.has(path));
+    selectAllToggle.classList.toggle("d-none", !multipleSelectEnabled);
+    selectAllToggle.disabled = !multipleSelectEnabled || !hasSelectableItems;
+    selectAllToggle.setAttribute("aria-pressed", allSelected ? "true" : "false");
+    const label = selectAllToggle.querySelector("span");
+    if (label) label.textContent = allSelected ? "Clear all" : "Select all";
+    const icon = selectAllToggle.querySelector("i");
+    if (icon) icon.className = `bi ${allSelected ? "bi-x-square" : "bi-check2-all"}`;
   }
 
   function syncSelectedInputs() {
@@ -1592,6 +1634,10 @@
     }
   }
 
+  function destinationUsesSingleClickOpen() {
+    return hasSingleClickOpenPreference ? singleClickOpenEnabled : true;
+  }
+
   function showDestinationPicker() {
     destinationPlanConfirmed = false;
     destinationPickerUi?.classList.remove("d-none");
@@ -1763,6 +1809,7 @@
     if (!destinationPlanItems) return;
     destinationPlanItems.replaceChildren();
     const finalDestinationPath = plannedDestinationPath();
+    destinationPlanItems.appendChild(transferPlanSummary(items));
     if (destinationAction === "compress") {
       const flow = document.createElement("div");
       flow.className = "file-manager-transfer-plan-item";
@@ -1792,7 +1839,8 @@
       destinationPlanItems.appendChild(flow);
       return;
     }
-    items.forEach((item) => {
+    const visibleItems = items.slice(0, 50);
+    visibleItems.forEach((item) => {
       const targetPath = joinPath(finalDestinationPath, item.name || basename(item.path));
       const flow = document.createElement("div");
       flow.className = "file-manager-transfer-plan-item";
@@ -1808,6 +1856,25 @@
       flow.append(sourceCard, arrow, targetCard);
       destinationPlanItems.appendChild(flow);
     });
+    if (items.length > visibleItems.length) {
+      const more = document.createElement("div");
+      more.className = "file-manager-transfer-plan-more";
+      more.textContent = `${items.length - visibleItems.length} more selected item${items.length - visibleItems.length === 1 ? "" : "s"} included in this operation.`;
+      destinationPlanItems.appendChild(more);
+    }
+  }
+
+  function transferPlanSummary(items) {
+    const folders = items.filter((item) => item.kind === "folder").length;
+    const files = items.length - folders;
+    const parts = [];
+    if (files) parts.push(`${files} file${files === 1 ? "" : "s"}`);
+    if (folders) parts.push(`${folders} folder${folders === 1 ? "" : "s"}`);
+    const summary = document.createElement("div");
+    summary.className = "file-manager-transfer-plan-summary";
+    summary.innerHTML = '<i class="bi bi-check2-square" aria-hidden="true"></i><span></span>';
+    summary.querySelector("span").textContent = `Selected: ${parts.join(" and ") || `${items.length} item${items.length === 1 ? "" : "s"}`}.`;
+    return summary;
   }
 
   function renderDestinationPlanOptions(isRsync) {
@@ -2511,7 +2578,7 @@
       upRow.type = "button";
       upRow.className = "file-manager-destination-row file-manager-parent-row";
       upRow.innerHTML = '<i class="bi bi-arrow-up-short"></i><span class="text-truncate">..</span>';
-      upRow.addEventListener("click", () => loadDestination(destinationParentPath));
+      bindDestinationOpen(upRow, () => loadDestination(destinationParentPath));
       destinationRows.appendChild(upRow);
     }
     if (!items.length) {
@@ -2526,8 +2593,23 @@
       row.className = "file-manager-destination-row";
       row.innerHTML = '<i class="bi bi-folder-fill"></i><span class="text-truncate"></span>';
       row.querySelector("span").textContent = item.name || "";
-      row.addEventListener("click", () => loadDestination(item.path));
+      bindDestinationOpen(row, () => loadDestination(item.path));
       destinationRows.appendChild(row);
+    });
+  }
+
+  function bindDestinationOpen(row, openHandler) {
+    row.addEventListener("click", () => {
+      if (destinationUsesSingleClickOpen()) openHandler();
+    });
+    row.addEventListener("dblclick", () => {
+      if (!destinationUsesSingleClickOpen()) openHandler();
+    });
+    row.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        openHandler();
+      }
     });
   }
 

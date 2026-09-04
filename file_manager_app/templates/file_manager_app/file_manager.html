@@ -89,6 +89,9 @@
           <button type="button" class="btn btn-outline-light btn-sm" data-sort-direction data-direction="{{ sort_direction }}" aria-label="Sort ascending" title="Sort ascending"><i class="bi bi-sort-alpha-down"></i></button>
         </div>
         <div class="file-manager-summary">
+          <button type="button" class="btn btn-outline-light btn-sm file-manager-select-all d-none" data-select-all-toggle>
+            <i class="bi bi-check2-all"></i><span>Select all</span>
+          </button>
           <span data-item-count>{{ entries|length }}</span> items
           <span class="file-manager-selection-count d-none" data-selection-count></span>
         </div>
@@ -449,5 +452,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260827-video-preview-fallback"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260904-file-manager-selection"></script>
 {% endblock %}
