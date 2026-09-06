@@ -3774,6 +3774,13 @@ body.app-shell {
   flex: 0 0 auto;
 }
 
+.file-manager-preview-toc-toggle {
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
 .file-manager-preview-modal .file-manager-preview-stage {
   flex: 1 1 auto;
   min-height: min(72vh, 46rem);
@@ -3788,6 +3795,71 @@ body.app-shell {
   background: #17202d;
 }
 
+.file-manager-pdf-shell {
+  position: relative;
+  width: 100%;
+  min-height: min(72vh, 46rem);
+  display: grid;
+  grid-template-columns: 0 minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.file-manager-pdf-shell.is-toc-open {
+  grid-template-columns: minmax(14rem, 18rem) minmax(0, 1fr);
+}
+
+.file-manager-pdf-toc {
+  min-width: 0;
+  overflow: auto;
+  border-right: 1px solid rgba(255, 255, 255, 0.09);
+  background: #0f1724;
+}
+
+.file-manager-pdf-toc-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.7rem 0.8rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: #0f1724;
+  color: #dff4ff;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.file-manager-pdf-toc-item {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem 0.55rem calc(0.75rem + var(--pdf-toc-indent, 0rem));
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  background: transparent;
+  color: #dce5f1;
+  text-align: left;
+}
+
+.file-manager-pdf-toc-item:hover,
+.file-manager-pdf-toc-item:focus-visible {
+  background: rgba(93, 198, 255, 0.1);
+  outline: none;
+}
+
+.file-manager-pdf-toc-item span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-manager-pdf-toc-item small {
+  color: #8ea3b9;
+  font-weight: 800;
+}
+
 .file-manager-preview-modal .file-manager-preview-text {
   max-height: min(72vh, 46rem);
   overflow: auto;
@@ -3795,8 +3867,11 @@ body.app-shell {
 
 .file-manager-pdf-viewer {
   width: 100%;
+  min-width: 0;
+  overflow: auto;
   display: grid;
   justify-items: center;
+  align-content: start;
   gap: 0.85rem;
   padding: 0.85rem;
 }
@@ -4317,6 +4392,24 @@ body.app-shell {
   .file-manager-pdf-viewer {
     padding: 0.5rem;
     gap: 0.55rem;
+  }
+
+  .file-manager-pdf-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .file-manager-pdf-shell.is-toc-open .file-manager-pdf-toc {
+    transform: translateX(0);
+  }
+
+  .file-manager-pdf-toc {
+    position: absolute;
+    inset: 0 auto 0 0;
+    z-index: 2;
+    width: min(19rem, calc(100% - 2.5rem));
+    transform: translateX(-105%);
+    transition: transform 160ms ease;
+    box-shadow: 0.8rem 0 1.8rem rgba(0, 0, 0, 0.28);
   }
 
   .file-manager-pdf-page {

@@ -408,6 +408,9 @@
             <p class="eyebrow mb-1">Preview</p>
             <h2 class="h5 mb-0 file-manager-preview-title" data-preview-title>File preview</h2>
           </div>
+          <button type="button" class="btn btn-outline-light btn-sm file-manager-preview-toc-toggle d-none" data-pdf-toc-toggle aria-expanded="false">
+            <i class="bi bi-list-nested"></i><span>Contents</span>
+          </button>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
         <div class="modal-body">
@@ -452,5 +455,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260906-file-manager-pdfjs-preview"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260906-file-manager-pdf-toc"></script>
 {% endblock %}

@@ -33,6 +33,7 @@
   const previewTitle = page.querySelector("[data-preview-title]");
   const previewStage = page.querySelector("[data-preview-stage]");
   const previewStatus = page.querySelector("[data-preview-status]");
+  const pdfTocToggle = page.querySelector("[data-pdf-toc-toggle]");
   const createFolderTrigger = page.querySelector("[data-create-folder-trigger]");
   const createFolderModalElement = page.querySelector("[data-create-folder-modal]");
   const createFolderName = page.querySelector("[data-create-folder-name]");
@@ -237,6 +238,7 @@
   createFolderModalElement?.addEventListener("shown.bs.modal", () => {
     createFolderName?.focus({ preventScroll: true });
   });
+  pdfTocToggle?.addEventListener("click", togglePdfToc);
 
   multipleSelectToggle?.addEventListener("click", () => {
     setMultipleSelectEnabled(!multipleSelectEnabled);
@@ -1605,6 +1607,7 @@
 
   function resetPreviewModal() {
     previewRenderId += 1;
+    setPdfTocAvailable(false);
     if (previewStage) {
       previewStage.classList.remove("is-pdf-preview");
       previewStage.innerHTML = '<div class="file-manager-empty">Select a previewable file.</div>';
@@ -1688,13 +1691,21 @@
       const pdf = await loadingTask.promise;
       if (renderId !== previewRenderId) return;
 
+      const shell = document.createElement("div");
+      shell.className = "file-manager-pdf-shell";
+      const toc = document.createElement("aside");
+      toc.className = "file-manager-pdf-toc";
+      toc.setAttribute("aria-label", "PDF table of contents");
       const viewer = document.createElement("div");
       viewer.className = "file-manager-pdf-viewer";
-      previewStage.replaceChildren(viewer);
+      shell.append(toc, viewer);
+      previewStage.replaceChildren(shell);
+      const pageFrames = new Map();
+      renderPdfOutline(pdf, toc, viewer, pageFrames, renderId);
       for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
         if (renderId !== previewRenderId) return;
         setPreviewStatus(`Rendering PDF page ${pageNumber} of ${pdf.numPages}...`, false);
-        await renderPdfPage(pdf, pageNumber, viewer, renderId);
+        await renderPdfPage(pdf, pageNumber, viewer, pageFrames, renderId);
       }
       if (renderId === previewRenderId) setPreviewStatus("");
     } catch (error) {
@@ -1714,7 +1725,91 @@
     return pdfJsLibraryPromise;
   }
 
-  async function renderPdfPage(pdf, pageNumber, viewer, renderId) {
+  async function renderPdfOutline(pdf, toc, viewer, pageFrames, renderId) {
+    try {
+      const outline = await pdf.getOutline();
+      if (renderId !== previewRenderId) return;
+      const items = await outlineItemsWithPages(pdf, outline || []);
+      if (renderId !== previewRenderId) return;
+      renderPdfToc(toc, items, viewer, pageFrames);
+      setPdfTocAvailable(items.length > 0);
+    } catch (_) {
+      if (renderId === previewRenderId) setPdfTocAvailable(false);
+    }
+  }
+
+  async function outlineItemsWithPages(pdf, outline, level = 0) {
+    const items = [];
+    for (const item of outline || []) {
+      const pageNumber = await outlineItemPageNumber(pdf, item);
+      items.push({
+        title: item.title || "Untitled",
+        pageNumber,
+        level,
+      });
+      const children = await outlineItemsWithPages(pdf, item.items || [], level + 1);
+      items.push(...children);
+    }
+    return items;
+  }
+
+  async function outlineItemPageNumber(pdf, item) {
+    try {
+      const destination = typeof item.dest === "string" ? await pdf.getDestination(item.dest) : item.dest;
+      const pageReference = Array.isArray(destination) ? destination[0] : null;
+      if (Number.isInteger(pageReference)) return pageReference + 1;
+      if (!pageReference) return null;
+      return (await pdf.getPageIndex(pageReference)) + 1;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function renderPdfToc(toc, items, viewer, pageFrames) {
+    toc.replaceChildren();
+    if (!items.length) return;
+    const heading = document.createElement("div");
+    heading.className = "file-manager-pdf-toc-heading";
+    heading.textContent = "Contents";
+    toc.appendChild(heading);
+    items.forEach((item) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "file-manager-pdf-toc-item";
+      button.style.setProperty("--pdf-toc-indent", `${Math.min(item.level, 4) * 0.85}rem`);
+      button.disabled = !item.pageNumber;
+      button.innerHTML = '<span></span><small></small>';
+      button.querySelector("span").textContent = item.title;
+      button.querySelector("small").textContent = item.pageNumber ? String(item.pageNumber) : "-";
+      button.addEventListener("click", () => scrollPdfToPage(viewer, pageFrames, item.pageNumber));
+      toc.appendChild(button);
+    });
+  }
+
+  function scrollPdfToPage(viewer, pageFrames, pageNumber) {
+    const pageFrame = pageFrames.get(pageNumber);
+    if (!viewer || !pageFrame) return;
+    viewer.scrollTo({ top: pageFrame.offsetTop - viewer.offsetTop, behavior: "smooth" });
+    previewStage?.querySelector(".file-manager-pdf-shell")?.classList.remove("is-toc-open");
+    pdfTocToggle?.setAttribute("aria-expanded", "false");
+  }
+
+  function setPdfTocAvailable(available) {
+    if (!pdfTocToggle) return;
+    pdfTocToggle.classList.toggle("d-none", !available);
+    pdfTocToggle.disabled = !available;
+    pdfTocToggle.setAttribute("aria-expanded", "false");
+  }
+
+  function togglePdfToc() {
+    const shell = previewStage?.querySelector(".file-manager-pdf-shell");
+    if (!shell || !pdfTocToggle) return;
+    const open = !shell.classList.contains("is-toc-open");
+    shell.classList.toggle("is-toc-open", open);
+    pdfTocToggle.setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  async function renderPdfPage(pdf, pageNumber, viewer, pageFrames, renderId) {
     const page = await pdf.getPage(pageNumber);
     if (renderId !== previewRenderId) return;
     const baseViewport = page.getViewport({ scale: 1 });
@@ -1733,6 +1828,7 @@
     const pageFrame = document.createElement("div");
     pageFrame.className = "file-manager-pdf-page";
     pageFrame.appendChild(canvas);
+    pageFrames.set(pageNumber, pageFrame);
     viewer.appendChild(pageFrame);
 
     await page.render({
