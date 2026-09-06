@@ -11,6 +11,16 @@ MAX_IMAGE_PREVIEW_BYTES = 15 * 1024 * 1024
 MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
 MAX_VIDEO_PREVIEW_BYTES = 512 * 1024 * 1024
 MAX_AUDIO_PREVIEW_BYTES = 512 * 1024 * 1024
+MAX_PDF_PREVIEW_BYTES = 100 * 1024 * 1024
+
+PREVIEW_SIZE_LIMITS = {
+    "image": MAX_IMAGE_PREVIEW_BYTES,
+    "text": MAX_TEXT_PREVIEW_BYTES,
+    "video": MAX_VIDEO_PREVIEW_BYTES,
+    "audio": MAX_AUDIO_PREVIEW_BYTES,
+    "pdf": MAX_PDF_PREVIEW_BYTES,
+}
+PREVIEWABLE_MEDIA_KINDS = frozenset(PREVIEW_SIZE_LIMITS)
 
 TEXT_CONTENT_TYPES = {
     "application/json",
@@ -51,6 +61,8 @@ def file_entry_for_path(host_path):
 
 
 def media_kind_for_content_type(content_type):
+    if content_type == "application/pdf":
+        return "pdf"
     if content_type.startswith("image/"):
         return "image"
     if content_type.startswith("video/"):
@@ -62,17 +74,14 @@ def media_kind_for_content_type(content_type):
     return ""
 
 
+def preview_size_limit(media_kind):
+    return PREVIEW_SIZE_LIMITS.get(media_kind or "")
+
+
 def preview_is_available(entry):
     size_bytes = entry.get("size_bytes")
     media_kind = entry.get("media_kind") or media_kind_for_content_type(entry.get("content_type") or "")
-    if not size_bytes:
+    limit = preview_size_limit(media_kind)
+    if size_bytes is None or limit is None:
         return False
-    if media_kind == "image":
-        return size_bytes <= MAX_IMAGE_PREVIEW_BYTES
-    if media_kind == "text":
-        return size_bytes <= MAX_TEXT_PREVIEW_BYTES
-    if media_kind == "video":
-        return size_bytes <= MAX_VIDEO_PREVIEW_BYTES
-    if media_kind == "audio":
-        return size_bytes <= MAX_AUDIO_PREVIEW_BYTES
-    return False
+    return size_bytes <= limit

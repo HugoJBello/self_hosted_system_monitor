@@ -13,12 +13,11 @@ from django.utils.decorators import method_decorator
 from django.utils import timezone
 from django.views import View
 from django.views.decorators.cache import never_cache
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 
 from file_manager_app.browser import (
-    MAX_IMAGE_PREVIEW_BYTES,
-    MAX_AUDIO_PREVIEW_BYTES,
-    MAX_TEXT_PREVIEW_BYTES,
-    MAX_VIDEO_PREVIEW_BYTES,
+    PREVIEWABLE_MEDIA_KINDS,
+    preview_size_limit,
     list_file_manager_entries,
     media_kind_for_content_type,
 )
@@ -429,6 +428,7 @@ class FileManagerSearchView(LoginRequiredMixin, View):
         return redirect(search_operation_url(operation))
 
 
+@method_decorator(xframe_options_sameorigin, name="dispatch")
 class FileManagerPreviewView(LoginRequiredMixin, View):
     def get(self, request):
         path = normalize_host_path(request.GET.get("path") or "")
@@ -438,16 +438,11 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
         size_bytes = os.path.getsize(absolute_path)
         content_type = mimetypes.guess_type(absolute_path)[0] or ""
         media_kind = media_kind_for_content_type(content_type)
-        if media_kind == "image" and size_bytes > MAX_IMAGE_PREVIEW_BYTES:
-            raise Http404("Preview is too large.")
-        if media_kind == "text" and size_bytes > MAX_TEXT_PREVIEW_BYTES:
-            raise Http404("Preview is too large.")
-        if media_kind == "video" and size_bytes > MAX_VIDEO_PREVIEW_BYTES:
-            raise Http404("Preview is too large.")
-        if media_kind == "audio" and size_bytes > MAX_AUDIO_PREVIEW_BYTES:
-            raise Http404("Preview is too large.")
-        if media_kind not in {"image", "text", "video", "audio"}:
+        if media_kind not in PREVIEWABLE_MEDIA_KINDS:
             raise Http404("Preview is not available.")
+        limit = preview_size_limit(media_kind)
+        if limit is None or size_bytes > limit:
+            raise Http404("Preview is too large.")
         return FileResponse(open(absolute_path, "rb"), content_type=content_type)
 
 

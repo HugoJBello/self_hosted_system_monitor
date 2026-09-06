@@ -401,12 +401,12 @@
   </div>
 
   <div class="modal fade" id="filePreviewModal" tabindex="-1" aria-hidden="true" data-preview-modal>
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable file-manager-info-modal">
+    <div class="modal-dialog modal-xl modal-dialog-centered file-manager-info-modal file-manager-preview-modal">
       <div class="modal-content bg-dark text-light border-secondary">
         <div class="modal-header border-secondary">
-          <div class="min-w-0">
+          <div class="file-manager-preview-title-wrap">
             <p class="eyebrow mb-1">Preview</p>
-            <h2 class="h5 mb-0 text-truncate" data-preview-title>File preview</h2>
+            <h2 class="h5 mb-0 file-manager-preview-title" data-preview-title>File preview</h2>
           </div>
           <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
@@ -452,5 +452,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260906-file-manager-column-resize"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260906-file-manager-preview-title"></script>
 {% endblock %}

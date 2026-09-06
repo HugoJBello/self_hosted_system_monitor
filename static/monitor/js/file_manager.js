@@ -1587,6 +1587,10 @@
       renderPreviewAudio(previewUrl, item.dataset.contentType || "audio/mpeg");
       return;
     }
+    if (mediaKind === "pdf") {
+      renderPreviewPdf(previewUrl, item.dataset.name || "PDF preview");
+      return;
+    }
     if (mediaKind === "text") {
       await renderPreviewText(previewUrl);
       return;
@@ -1663,6 +1667,17 @@
     source.type = contentType;
     audio.appendChild(source);
     previewStage.appendChild(audio);
+  }
+
+  function renderPreviewPdf(url, title) {
+    if (!previewStage) return;
+    previewStage.innerHTML = "";
+    const frame = document.createElement("iframe");
+    frame.className = "file-manager-preview-pdf";
+    frame.src = url;
+    frame.title = title || "PDF preview";
+    frame.loading = "lazy";
+    previewStage.appendChild(frame);
   }
 
   async function renderPreviewText(url) {

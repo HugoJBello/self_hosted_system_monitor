@@ -3751,6 +3751,49 @@ body.app-shell {
   background: rgba(255, 255, 255, 0.035);
 }
 
+.file-manager-preview-modal .modal-body {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.file-manager-preview-title-wrap {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.file-manager-preview-title {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-manager-preview-modal .btn-close {
+  flex: 0 0 auto;
+}
+
+.file-manager-preview-modal .file-manager-preview-stage {
+  flex: 1 1 auto;
+  min-height: min(72vh, 46rem);
+  max-height: none;
+  overflow: hidden;
+}
+
+.file-manager-preview-modal .file-manager-preview-text {
+  max-height: min(72vh, 46rem);
+  overflow: auto;
+}
+
+.file-manager-preview-pdf {
+  width: 100%;
+  height: min(72vh, 46rem);
+  min-height: 0;
+  border: 0;
+  background: #ffffff;
+}
+
 .file-manager-preview-image,
 .file-manager-preview-video {
   max-width: 100%;
@@ -4248,6 +4291,10 @@ body.app-shell {
   .file-manager-preview-stage {
     min-height: 14rem;
     max-height: 68vh;
+  }
+
+  .file-manager-preview-pdf {
+    height: 68vh;
   }
 
   .file-manager-preview-text {
