@@ -15,6 +15,7 @@
   const sortField = page.querySelector("[data-sort-field]");
   const sortDirection = page.querySelector("[data-sort-direction]");
   const sortHeaders = page.querySelectorAll("[data-sort-header]");
+  const columnResizers = page.querySelectorAll("[data-column-resize]");
   const fileSearchLink = page.querySelector("[data-file-search-link]");
   const parentButton = page.querySelector("[data-parent-button]");
   const viewModeToggle = page.querySelector("[data-view-mode-toggle]");
@@ -150,13 +151,23 @@
     multipleSelect: "fileManager.multipleSelect",
     singleClickOpen: "fileManager.singleClickOpen",
     sortField: "fileManager.sortField",
-    sortDirection: "fileManager.sortDirection"
+    sortDirection: "fileManager.sortDirection",
+    columnWidths: "fileManager.columnWidths"
+  };
+  const resizableColumns = {
+    name: { min: 180, max: 1200 },
+    kind: { min: 80, max: 320 },
+    size: { min: 90, max: 360 },
+    modified: { min: 150, max: 440 },
+    owner: { min: 120, max: 420 },
+    permissions: { min: 120, max: 360 },
   };
 
   page.dataset.previousPath = currentPath;
   formatVisibleValues();
   renderBreadcrumbs(currentBreadcrumbs, currentPath, navigateTo);
   window.history.replaceState({ ...(window.history.state || {}), fileManagerPath: currentPath }, "", window.location.href);
+  restoreColumnWidths();
   restoreSessionPreferences();
   currentItems = Array.from(rowsContainer?.querySelectorAll(".file-manager-item[data-path]:not([data-parent-row])") || []).map(itemFromElement);
   renderItems(currentItems);
@@ -173,6 +184,13 @@
   sortField?.addEventListener("change", () => applyFileSort());
   sortDirection?.addEventListener("click", () => toggleSortDirection());
   sortHeaders.forEach((header) => header.addEventListener("click", () => sortByHeader(header.dataset.sortHeader)));
+  columnResizers.forEach((handle) => {
+    handle.addEventListener("pointerdown", startColumnResize);
+    handle.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  });
   destinationSortField?.addEventListener("change", () => reloadDestinationWithSort());
   destinationSortDirection?.addEventListener("click", () => {
     destinationSort.direction = destinationSort.direction === "asc" ? "desc" : "asc";
@@ -657,6 +675,72 @@
     sortField.value = field;
     sortDirection.dataset.direction = nextDirection;
     applyFileSort();
+  }
+
+  function startColumnResize(event) {
+    const column = event.currentTarget?.dataset?.columnResize || "";
+    const limits = resizableColumns[column];
+    const header = event.currentTarget?.closest("[data-sort-header]");
+    if (!limits || !header) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = header.getBoundingClientRect().width;
+    page.classList.add("is-resizing-column");
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    const move = (moveEvent) => {
+      const nextWidth = Math.min(Math.max(startWidth + moveEvent.clientX - startX, limits.min), limits.max);
+      setColumnWidth(column, nextWidth);
+    };
+    const stop = () => {
+      page.classList.remove("is-resizing-column");
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", stop);
+      document.removeEventListener("pointercancel", stop);
+      saveColumnWidths();
+    };
+
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", stop);
+    document.addEventListener("pointercancel", stop);
+  }
+
+  function setColumnWidth(column, width) {
+    if (!resizableColumns[column]) return;
+    page.style.setProperty(`--file-manager-col-${column}`, `${Math.round(width)}px`);
+  }
+
+  function currentColumnWidths() {
+    return Object.keys(resizableColumns).reduce((widths, column) => {
+      const value = page.style.getPropertyValue(`--file-manager-col-${column}`).trim();
+      const width = Number.parseInt(value, 10);
+      if (Number.isFinite(width)) widths[column] = width;
+      return widths;
+    }, {});
+  }
+
+  function saveColumnWidths() {
+    try {
+      window.sessionStorage.setItem(preferenceKeys.columnWidths, JSON.stringify(currentColumnWidths()));
+    } catch (_) {
+    }
+  }
+
+  function restoreColumnWidths() {
+    let widths = {};
+    try {
+      widths = JSON.parse(window.sessionStorage.getItem(preferenceKeys.columnWidths) || "{}");
+    } catch (_) {
+      widths = {};
+    }
+    Object.entries(widths || {}).forEach(([column, width]) => {
+      const limits = resizableColumns[column];
+      const numericWidth = Number(width);
+      if (!limits || !Number.isFinite(numericWidth)) return;
+      setColumnWidth(column, Math.min(Math.max(numericWidth, limits.min), limits.max));
+    });
   }
 
   function updateSortHeaders() {

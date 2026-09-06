@@ -106,12 +106,12 @@
       <div data-file-manager-table>
         <div class="file-manager-row file-manager-row-head" role="row">
           <div role="columnheader" class="file-manager-select-cell"></div>
-          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="name" aria-sort="none">Name <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
-          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="kind" aria-sort="none">Type <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
-          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="size" aria-sort="none">Size <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
-          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="modified" aria-sort="none">Modified <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
-          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="owner" aria-sort="none">Owner <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
-          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="permissions" aria-sort="none">Permissions <i class="bi bi-arrow-down-up" aria-hidden="true"></i></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="name" aria-sort="none"><span>Name</span> <i class="bi bi-arrow-down-up" aria-hidden="true"></i><span class="file-manager-column-resizer" data-column-resize="name" role="separator" aria-orientation="vertical" aria-label="Resize name column"></span></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="kind" aria-sort="none"><span>Type</span> <i class="bi bi-arrow-down-up" aria-hidden="true"></i><span class="file-manager-column-resizer" data-column-resize="kind" role="separator" aria-orientation="vertical" aria-label="Resize type column"></span></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="size" aria-sort="none"><span>Size</span> <i class="bi bi-arrow-down-up" aria-hidden="true"></i><span class="file-manager-column-resizer" data-column-resize="size" role="separator" aria-orientation="vertical" aria-label="Resize size column"></span></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="modified" aria-sort="none"><span>Modified</span> <i class="bi bi-arrow-down-up" aria-hidden="true"></i><span class="file-manager-column-resizer" data-column-resize="modified" role="separator" aria-orientation="vertical" aria-label="Resize modified column"></span></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="owner" aria-sort="none"><span>Owner</span> <i class="bi bi-arrow-down-up" aria-hidden="true"></i><span class="file-manager-column-resizer" data-column-resize="owner" role="separator" aria-orientation="vertical" aria-label="Resize owner column"></span></button>
+          <button type="button" class="file-manager-sort-header" role="columnheader" data-sort-header="permissions" aria-sort="none"><span>Permissions</span> <i class="bi bi-arrow-down-up" aria-hidden="true"></i><span class="file-manager-column-resizer" data-column-resize="permissions" role="separator" aria-orientation="vertical" aria-label="Resize permissions column"></span></button>
         </div>
         <div data-file-manager-rows>
           {% for entry in entries %}
@@ -452,5 +452,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260904-file-manager-selection"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260906-file-manager-column-resize"></script>
 {% endblock %}

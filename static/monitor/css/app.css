@@ -2880,7 +2880,7 @@ body.app-shell {
 .file-manager-row {
   width: 100%;
   display: grid;
-  grid-template-columns: 0 minmax(14rem, 1.8fr) minmax(5rem, 0.45fr) minmax(6rem, 0.5fr) minmax(10rem, 0.85fr) minmax(8rem, 0.7fr) minmax(8rem, 0.7fr);
+  grid-template-columns: 0 var(--file-manager-col-name, minmax(14rem, 1.8fr)) var(--file-manager-col-kind, minmax(5rem, 0.45fr)) var(--file-manager-col-size, minmax(6rem, 0.5fr)) var(--file-manager-col-modified, minmax(10rem, 0.85fr)) var(--file-manager-col-owner, minmax(8rem, 0.7fr)) var(--file-manager-col-permissions, minmax(8rem, 0.7fr));
   align-items: center;
   gap: 1rem;
   padding: 0.82rem 1rem;
@@ -2899,7 +2899,7 @@ body.app-shell {
 }
 
 .file-manager-page.is-selecting .file-manager-row {
-  grid-template-columns: 2rem minmax(14rem, 1.8fr) minmax(5rem, 0.45fr) minmax(6rem, 0.5fr) minmax(10rem, 0.85fr) minmax(8rem, 0.7fr) minmax(8rem, 0.7fr);
+  grid-template-columns: 2rem var(--file-manager-col-name, minmax(14rem, 1.8fr)) var(--file-manager-col-kind, minmax(5rem, 0.45fr)) var(--file-manager-col-size, minmax(6rem, 0.5fr)) var(--file-manager-col-modified, minmax(10rem, 0.85fr)) var(--file-manager-col-owner, minmax(8rem, 0.7fr)) var(--file-manager-col-permissions, minmax(8rem, 0.7fr));
 }
 
 .file-manager-page.is-selecting .file-manager-select-cell {
@@ -2930,17 +2930,51 @@ body.app-shell {
 }
 
 .file-manager-sort-header {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
   min-width: 0;
-  padding: 0;
+  padding: 0 0.55rem 0 0;
   border: 0;
   background: transparent;
   color: inherit;
   font: inherit;
   text-align: left;
   text-transform: inherit;
+}
+
+.file-manager-column-resizer {
+  position: absolute;
+  top: -0.82rem;
+  right: -0.65rem;
+  bottom: -0.82rem;
+  width: 0.75rem;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.file-manager-column-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0.45rem;
+  right: 0.33rem;
+  bottom: 0.45rem;
+  width: 1px;
+  background: rgba(148, 163, 184, 0.28);
+}
+
+.file-manager-column-resizer:hover::after,
+.file-manager-column-resizer:focus-visible::after,
+.file-manager-page.is-resizing-column .file-manager-column-resizer::after {
+  background: rgba(125, 211, 252, 0.85);
+}
+
+.file-manager-page.is-resizing-column,
+.file-manager-page.is-resizing-column * {
+  cursor: col-resize !important;
+  user-select: none;
 }
 
 .file-manager-sort-header:hover,
