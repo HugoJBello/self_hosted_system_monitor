@@ -145,7 +145,12 @@
   let destinationSort = { field: "name", direction: "asc" };
   const actionsMenuParent = actionsMenu?.parentElement || null;
   const uploadChunkSize = 16 * 1024 * 1024;
+  const pdfJsVersion = "6.3.289";
+  const pdfJsModuleUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfJsVersion}/build/pdf.mjs`;
+  const pdfJsWorkerUrl = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${pdfJsVersion}/build/pdf.worker.mjs`;
   let informationPollTimer = null;
+  let pdfJsLibraryPromise = null;
+  let previewRenderId = 0;
   const preferenceKeys = {
     viewMode: "fileManager.viewMode",
     multipleSelect: "fileManager.multipleSelect",
@@ -1599,7 +1604,9 @@
   }
 
   function resetPreviewModal() {
+    previewRenderId += 1;
     if (previewStage) {
+      previewStage.classList.remove("is-pdf-preview");
       previewStage.innerHTML = '<div class="file-manager-empty">Select a previewable file.</div>';
     }
     setPreviewStatus("");
@@ -1669,15 +1676,84 @@
     previewStage.appendChild(audio);
   }
 
-  function renderPreviewPdf(url, title) {
+  async function renderPreviewPdf(url, title) {
     if (!previewStage) return;
-    previewStage.innerHTML = "";
-    const frame = document.createElement("iframe");
-    frame.className = "file-manager-preview-pdf";
-    frame.src = url;
-    frame.title = title || "PDF preview";
-    frame.loading = "lazy";
-    previewStage.appendChild(frame);
+    const renderId = previewRenderId;
+    previewStage.classList.add("is-pdf-preview");
+    previewStage.innerHTML = '<div class="file-manager-empty"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading PDF...</div>';
+    try {
+      const pdfjsLib = await loadPdfJs();
+      if (renderId !== previewRenderId) return;
+      const loadingTask = pdfjsLib.getDocument({ url, withCredentials: true });
+      const pdf = await loadingTask.promise;
+      if (renderId !== previewRenderId) return;
+
+      const viewer = document.createElement("div");
+      viewer.className = "file-manager-pdf-viewer";
+      previewStage.replaceChildren(viewer);
+      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+        if (renderId !== previewRenderId) return;
+        setPreviewStatus(`Rendering PDF page ${pageNumber} of ${pdf.numPages}...`, false);
+        await renderPdfPage(pdf, pageNumber, viewer, renderId);
+      }
+      if (renderId === previewRenderId) setPreviewStatus("");
+    } catch (error) {
+      if (renderId !== previewRenderId) return;
+      renderPdfFallback(url, title, error);
+    }
+  }
+
+  function loadPdfJs() {
+    if (!pdfJsLibraryPromise) {
+      pdfJsLibraryPromise = import(pdfJsModuleUrl).then((module) => {
+        const pdfjsLib = module.pdfjsLib || module;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfJsWorkerUrl;
+        return pdfjsLib;
+      });
+    }
+    return pdfJsLibraryPromise;
+  }
+
+  async function renderPdfPage(pdf, pageNumber, viewer, renderId) {
+    const page = await pdf.getPage(pageNumber);
+    if (renderId !== previewRenderId) return;
+    const baseViewport = page.getViewport({ scale: 1 });
+    const availableWidth = Math.min(980, Math.max(280, (previewStage?.clientWidth || 640) - 32));
+    const viewport = page.getViewport({ scale: availableWidth / baseViewport.width });
+    const outputScale = Math.min(window.devicePixelRatio || 1, 2);
+
+    const canvas = document.createElement("canvas");
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Canvas is not available.");
+    canvas.width = Math.floor(viewport.width * outputScale);
+    canvas.height = Math.floor(viewport.height * outputScale);
+    canvas.style.width = `${Math.floor(viewport.width)}px`;
+    canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+    const pageFrame = document.createElement("div");
+    pageFrame.className = "file-manager-pdf-page";
+    pageFrame.appendChild(canvas);
+    viewer.appendChild(pageFrame);
+
+    await page.render({
+      canvasContext: context,
+      transform: outputScale !== 1 ? [outputScale, 0, 0, outputScale, 0, 0] : null,
+      viewport,
+    }).promise;
+  }
+
+  function renderPdfFallback(url, title, error) {
+    previewStage.innerHTML = `
+      <div class="file-manager-preview-unavailable">
+        <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>
+        <strong>PDF preview unavailable</strong>
+        <span>${escapeHtml(error?.message || "This browser could not render the PDF preview.")}</span>
+        <a class="btn btn-accent btn-sm" href="${escapeAttribute(url)}" target="_blank" rel="noopener">Open PDF</a>
+      </div>
+    `;
+    const link = previewStage.querySelector("a");
+    if (link) link.title = title || "Open PDF";
+    setPreviewStatus("", false);
   }
 
   async function renderPreviewText(url) {
