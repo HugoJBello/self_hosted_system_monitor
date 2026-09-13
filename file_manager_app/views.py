@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -50,6 +50,10 @@ from main_app.models import MonitoringSettings
 from volumes_app.path_browser import create_directory, hostfs_path, normalize_host_path
 
 
+VIDEO_STREAM_CHUNK_SIZE = 1024 * 1024
+VIDEO_STREAM_MAX_RANGE_BYTES = 8 * 1024 * 1024
+
+
 def _file_manager_url(path):
     url = reverse("monitor:file-manager")
     if path:
@@ -79,6 +83,82 @@ def _operations_url(return_path=""):
     if return_path:
         return f"{url}?{urlencode({'return_path': return_path})}"
     return url
+
+
+def _parse_http_range(range_header, file_size):
+    if not range_header:
+        return 0, file_size - 1, False
+    units, _, value = range_header.partition("=")
+    if units.strip().lower() != "bytes" or "," in value:
+        return None
+    start_text, _, end_text = value.strip().partition("-")
+    try:
+        if start_text:
+            start = int(start_text)
+            end = int(end_text) if end_text else file_size - 1
+        elif end_text:
+            suffix_length = int(end_text)
+            if suffix_length <= 0:
+                return None
+            start = max(file_size - suffix_length, 0)
+            end = file_size - 1
+        else:
+            return None
+    except ValueError:
+        return None
+    if start < 0 or end < start or start >= file_size:
+        return None
+    return start, min(end, file_size - 1), True
+
+
+def _file_iterator(path, start, length, chunk_size=VIDEO_STREAM_CHUNK_SIZE):
+    with open(path, "rb") as handle:
+        handle.seek(start)
+        remaining = length
+        while remaining > 0:
+            chunk = handle.read(min(chunk_size, remaining))
+            if not chunk:
+                break
+            remaining -= len(chunk)
+            yield chunk
+
+
+def _range_not_satisfiable_response(file_size):
+    response = HttpResponse(status=416)
+    response["Content-Range"] = f"bytes */{file_size}"
+    response["Accept-Ranges"] = "bytes"
+    return response
+
+
+def _streaming_file_response(request, path, content_type, file_size):
+    range_header = request.headers.get("Range", "")
+    parsed_range = _parse_http_range(range_header, file_size)
+    if parsed_range is None:
+        return _range_not_satisfiable_response(file_size)
+    start, end, is_partial = parsed_range
+    if end - start + 1 > VIDEO_STREAM_MAX_RANGE_BYTES:
+        end = start + VIDEO_STREAM_MAX_RANGE_BYTES - 1
+        is_partial = True
+    elif not range_header and file_size > VIDEO_STREAM_MAX_RANGE_BYTES:
+        is_partial = True
+    length = end - start + 1
+    response = StreamingHttpResponse(
+        _file_iterator(path, start, length),
+        status=206 if is_partial else 200,
+        content_type=content_type,
+    )
+    response["Accept-Ranges"] = "bytes"
+    response["Content-Length"] = str(length)
+    if is_partial:
+        response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+    return response
+
+
+def _direct_file_response(path, content_type, *, as_attachment=False):
+    kwargs = {"content_type": content_type, "as_attachment": as_attachment}
+    if as_attachment:
+        kwargs["filename"] = os.path.basename(path)
+    return FileResponse(open(path, "rb"), **kwargs)
 
 
 @method_decorator(never_cache, name="dispatch")
@@ -440,10 +520,16 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
         media_kind = media_kind_for_content_type(content_type)
         if media_kind not in PREVIEWABLE_MEDIA_KINDS:
             raise Http404("Preview is not available.")
+        if size_bytes <= 0:
+            raise Http404("Preview not found.")
         limit = preview_size_limit(media_kind)
-        if limit is None or size_bytes > limit:
+        if limit is not None and size_bytes > limit:
             raise Http404("Preview is too large.")
-        return FileResponse(open(absolute_path, "rb"), content_type=content_type)
+        if request.GET.get("download") == "1":
+            return _direct_file_response(absolute_path, content_type, as_attachment=True)
+        if media_kind == "video":
+            return _streaming_file_response(request, absolute_path, content_type, size_bytes)
+        return _direct_file_response(absolute_path, content_type)
 
 
 class FileManagerEmbeddedThumbnailView(LoginRequiredMixin, View):

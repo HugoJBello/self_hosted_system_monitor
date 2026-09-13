@@ -3900,7 +3900,50 @@ body.app-shell {
 
 .file-manager-preview-video {
   width: 100%;
+  border-radius: 0.35rem;
   background: #050914;
+}
+
+.file-manager-video-preview {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 0.55rem;
+  padding: 0.75rem;
+}
+
+.file-manager-video-actions {
+  width: 100%;
+  display: flex;
+  justify-content: flex-end;
+  min-height: 2.25rem;
+}
+
+.file-manager-video-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.15rem;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid rgba(125, 211, 252, 0.3);
+  border-radius: 0.45rem;
+  background: rgba(15, 23, 42, 0.72);
+  color: #dff4ff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1;
+  text-decoration: none;
+  box-shadow: 0 0.4rem 1rem rgba(0, 0, 0, 0.18);
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.file-manager-video-download:hover,
+.file-manager-video-download:focus-visible {
+  border-color: rgba(125, 211, 252, 0.62);
+  background: rgba(14, 165, 233, 0.2);
+  color: #ffffff;
+  outline: none;
 }
 
 .file-manager-preview-audio {
@@ -4387,6 +4430,18 @@ body.app-shell {
   .file-manager-preview-stage {
     min-height: 14rem;
     max-height: 68vh;
+  }
+
+  .file-manager-video-preview {
+    padding: 0.5rem;
+  }
+
+  .file-manager-video-actions {
+    justify-content: center;
+  }
+
+  .file-manager-video-download {
+    width: 100%;
   }
 
   .file-manager-pdf-viewer {

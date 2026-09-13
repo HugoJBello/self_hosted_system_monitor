@@ -9,14 +9,13 @@ from .sorting import sort_entries
 
 MAX_IMAGE_PREVIEW_BYTES = 15 * 1024 * 1024
 MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024
-MAX_VIDEO_PREVIEW_BYTES = 512 * 1024 * 1024
 MAX_AUDIO_PREVIEW_BYTES = 512 * 1024 * 1024
 MAX_PDF_PREVIEW_BYTES = 100 * 1024 * 1024
 
 PREVIEW_SIZE_LIMITS = {
     "image": MAX_IMAGE_PREVIEW_BYTES,
     "text": MAX_TEXT_PREVIEW_BYTES,
-    "video": MAX_VIDEO_PREVIEW_BYTES,
+    "video": None,
     "audio": MAX_AUDIO_PREVIEW_BYTES,
     "pdf": MAX_PDF_PREVIEW_BYTES,
 }
@@ -82,6 +81,6 @@ def preview_is_available(entry):
     size_bytes = entry.get("size_bytes")
     media_kind = entry.get("media_kind") or media_kind_for_content_type(entry.get("content_type") or "")
     limit = preview_size_limit(media_kind)
-    if size_bytes is None or limit is None:
+    if not size_bytes:
         return False
-    return size_bytes <= limit
+    return limit is None or size_bytes <= limit

@@ -1627,37 +1627,54 @@
 
   function renderPreviewVideo(url, contentType) {
     if (!previewStage) return;
-    previewStage.innerHTML = '<div class="file-manager-empty"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Loading video preview...</div>';
+    const renderId = previewRenderId;
+    previewStage.innerHTML = "";
+    setPreviewStatus("Loading video metadata...", false);
+    const wrapper = document.createElement("div");
+    wrapper.className = "file-manager-video-preview";
     const video = document.createElement("video");
     video.className = "file-manager-preview-video";
     video.controls = true;
     video.preload = "metadata";
-    const source = document.createElement("source");
-    source.src = url;
-    source.type = contentType;
-    video.appendChild(source);
-    let settled = false;
-    const fail = () => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeoutId);
-      previewStage.innerHTML = `
-        <div class="file-manager-preview-unavailable">
-          <i class="bi bi-file-earmark-play" aria-hidden="true"></i>
-          <strong>Video preview unavailable</strong>
-          <span>This browser cannot decode this video container or codec here. The file is still accessible from the file manager.</span>
-        </div>
-      `;
-      setPreviewStatus(`Preview unavailable for ${contentType || "this video type"}.`, true);
-    };
+    video.playsInline = true;
+    video.src = url;
+    const actions = document.createElement("div");
+    actions.className = "file-manager-video-actions";
+    const download = document.createElement("a");
+    download.className = "file-manager-video-download";
+    download.href = directDownloadUrl(url);
+    download.download = "";
+    download.title = "Download video";
+    download.setAttribute("aria-label", "Download video");
+    download.innerHTML = '<i class="bi bi-download" aria-hidden="true"></i><span>Download</span>';
+    actions.appendChild(download);
+    wrapper.append(video, actions);
+    previewStage.appendChild(wrapper);
+    let loaded = false;
+    let failed = false;
+    const timeoutId = window.setTimeout(() => {
+      if (loaded || failed || renderId !== previewRenderId) return;
+      setPreviewStatus("Video metadata is taking longer than expected. Direct download is available.", false);
+    }, 12000);
     const show = () => {
-      if (settled) return;
-      settled = true;
+      if (failed || renderId !== previewRenderId) return;
+      loaded = true;
       window.clearTimeout(timeoutId);
       setPreviewStatus("", false);
-      previewStage.replaceChildren(video);
     };
-    const timeoutId = window.setTimeout(fail, 5500);
+    const fail = () => {
+      if (failed || renderId !== previewRenderId) return;
+      failed = true;
+      window.clearTimeout(timeoutId);
+      renderPreviewUnavailable({
+        icon: "bi-file-earmark-play",
+        title: "Video preview unavailable",
+        message: "This browser cannot decode this video container or codec here.",
+        actionUrl: directDownloadUrl(url),
+        actionLabel: "Download video",
+      });
+      setPreviewStatus(`Preview unavailable for ${contentType || "this video type"}.`, true);
+    };
     video.addEventListener("loadedmetadata", show, { once: true });
     video.addEventListener("loadeddata", show, { once: true });
     video.addEventListener("canplay", show, { once: true });
@@ -1839,17 +1856,44 @@
   }
 
   function renderPdfFallback(url, title, error) {
+    renderPreviewUnavailable({
+      icon: "bi-file-earmark-pdf",
+      title: "PDF preview unavailable",
+      message: error?.message || "This browser could not render the PDF preview.",
+      actionUrl: directDownloadUrl(url),
+      actionLabel: "Download PDF",
+    });
+    const link = previewStage.querySelector("a");
+    if (link) link.title = title || "Download PDF";
+    setPreviewStatus("", false);
+  }
+
+  function renderPreviewUnavailable({ icon, title, message, actionUrl = "", actionLabel = "" }) {
+    if (!previewStage) return;
+    previewStage.classList.remove("is-pdf-preview");
     previewStage.innerHTML = `
       <div class="file-manager-preview-unavailable">
-        <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>
-        <strong>PDF preview unavailable</strong>
-        <span>${escapeHtml(error?.message || "This browser could not render the PDF preview.")}</span>
-        <a class="btn btn-accent btn-sm" href="${escapeAttribute(url)}" target="_blank" rel="noopener">Open PDF</a>
+        <i class="bi ${escapeAttribute(icon)}" aria-hidden="true"></i>
+        <strong></strong>
+        <span></span>
       </div>
     `;
-    const link = previewStage.querySelector("a");
-    if (link) link.title = title || "Open PDF";
-    setPreviewStatus("", false);
+    const body = previewStage.querySelector(".file-manager-preview-unavailable");
+    body.querySelector("strong").textContent = title || "Preview unavailable";
+    body.querySelector("span").textContent = message || "This file cannot be previewed here.";
+    if (actionUrl && actionLabel) {
+      const action = document.createElement("a");
+      action.className = "btn btn-accent btn-sm";
+      action.href = actionUrl;
+      action.textContent = actionLabel;
+      body.appendChild(action);
+    }
+  }
+
+  function directDownloadUrl(url) {
+    const downloadUrl = new URL(url, window.location.origin);
+    downloadUrl.searchParams.set("download", "1");
+    return downloadUrl.toString();
   }
 
   async function renderPreviewText(url) {

@@ -1,0 +1,12 @@
+# Keep runtime state and local tooling out of Docker build contexts.
+# The compose services mount ./data at /app/data, and the entrypoint creates it.
+.git
+.agents
+.codex
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+data/
+staticfiles/
