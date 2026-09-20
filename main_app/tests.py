@@ -688,6 +688,36 @@ class MonitorViewsTests(TestCase):
                 self.assertEqual(archive.read("source.txt").decode("utf-8"), "content")
                 self.assertEqual(archive.read("folder/nested.txt").decode("utf-8"), "nested")
 
+    def test_file_operation_zip_clamps_timestamps_before_1980(self):
+        from file_manager_app.services import execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_file = Path(tmpdir, "historic.txt")
+            destination = Path(tmpdir, "destination")
+            source_file.write_text("historic", encoding="utf-8")
+            os.utime(source_file, (0, 0))
+            destination.mkdir()
+            operation = FileOperation.objects.create(
+                action="compress",
+                status="running",
+                sources=["/historic.txt"],
+                destination_path="/destination/archive.zip",
+                compression_method="deflated",
+                conflict_policy="overwrite",
+                total_count=1,
+            )
+
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            self.assertIn("timestamps outside the supported 1980-2107 range", operation.log_output)
+            with zipfile.ZipFile(Path(destination, "archive.zip")) as archive:
+                member = archive.getinfo("historic.txt")
+                self.assertEqual(member.date_time, (1980, 1, 1, 0, 0, 0))
+                self.assertEqual(archive.read(member), b"historic")
+
     def test_file_operation_compress_creates_tar_archive(self):
         from file_manager_app.services import execute_file_operation
 

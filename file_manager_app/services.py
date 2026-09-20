@@ -19,6 +19,7 @@ from volumes_app.path_browser import create_directory, hostfs_path, normalize_ho
 
 FILE_OPERATION_LOG_LIMIT = 30000
 FILE_OPERATION_HEARTBEAT_SECONDS = 5
+ZIP_TIMESTAMP_FALLBACK_NOTE = "ZIP timestamps outside the supported 1980-2107 range will be clamped."
 DOWNLOAD_ARCHIVE_DIR_NAME = "file_manager_downloads"
 UPLOAD_SESSION_DIR_NAME = "file_manager_uploads"
 SQLITE_LOCK_RETRY_SECONDS = 0.2
@@ -677,6 +678,8 @@ def _execute_compress_operation(operation):
 
     _append_log(operation, f"Creating archive: {operation.destination_path}")
     _append_log(operation, f"Archive format: {operation.get_compression_method_display()}")
+    if archive_format["kind"] == "zip":
+        _append_log(operation, ZIP_TIMESTAMP_FALLBACK_NOTE)
     operation.save(update_fields=["completed_sources", "processed_count", "log_output", "heartbeat_at"])
     errors = []
 
@@ -703,7 +706,12 @@ def _execute_compress_operation(operation):
 
 def _open_archive_writer(path, archive_format):
     if archive_format["kind"] == "zip":
-        return zipfile.ZipFile(path, "w", compression=archive_format["zip_compression"])
+        return zipfile.ZipFile(
+            path,
+            "w",
+            compression=archive_format["zip_compression"],
+            strict_timestamps=False,
+        )
     if archive_format["kind"] == "tar":
         return tarfile.open(path, archive_format["tar_mode"])
     raise ValueError("Unsupported archive format.")
@@ -967,10 +975,16 @@ def _execute_download_operation(operation):
         tmp_archive_path.unlink()
 
     _append_log(operation, f"Preparing ZIP archive: {archive_path.name}")
+    _append_log(operation, ZIP_TIMESTAMP_FALLBACK_NOTE)
     operation.destination_path = str(archive_path)
     operation.save(update_fields=["destination_path", "completed_sources", "processed_count", "log_output", "heartbeat_at"])
 
-    with zipfile.ZipFile(tmp_archive_path, "w", compression=zipfile.ZIP_DEFLATED) as zip_handle:
+    with zipfile.ZipFile(
+        tmp_archive_path,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+        strict_timestamps=False,
+    ) as zip_handle:
         sources = operation.sources or []
         total_sources = len(sources)
         for source_index, source in enumerate(sources, start=1):
