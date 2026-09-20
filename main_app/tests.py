@@ -943,6 +943,63 @@ class MonitorViewsTests(TestCase):
                     renamed = Path(destination, "source (1)")
                     self.assertTrue(Path(renamed, "incoming.txt").is_file())
 
+    def test_file_operation_delete_removes_files_folders_and_symlinks(self):
+        from file_manager_app.services import create_file_operation, execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            folder = Path(tmpdir, "folder")
+            folder.mkdir()
+            Path(folder, "nested.txt").write_text("nested", encoding="utf-8")
+            file_path = Path(tmpdir, "file.txt")
+            file_path.write_text("file", encoding="utf-8")
+            link_path = Path(tmpdir, "folder-link")
+            link_path.symlink_to(folder, target_is_directory=True)
+
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                operation = create_file_operation("delete", ["/file.txt", "/folder-link", "/folder"])
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            self.assertEqual(operation.processed_count, 3)
+            self.assertFalse(file_path.exists())
+            self.assertFalse(link_path.exists())
+            self.assertFalse(folder.exists())
+
+    def test_file_operation_delete_rejects_root_and_collapses_nested_targets(self):
+        from file_manager_app.services import create_file_operation
+
+        with self.assertRaisesMessage(ValueError, "host root folder cannot be deleted"):
+            create_file_operation("delete", ["/"])
+
+        operation = create_file_operation(
+            "delete",
+            ["/folder/nested.txt", "/folder", "/folder/nested.txt", "/other.txt"],
+        )
+        self.assertEqual(operation.sources, ["/folder", "/other.txt"])
+        self.assertEqual(operation.total_count, 2)
+
+    @patch("file_manager_app.views.start_background_file_operation")
+    def test_file_manager_delete_post_queues_operation_and_returns_to_browser(self, start_operation):
+        response = self.client.post(
+            self._path("monitor:file-manager"),
+            {
+                "file_action": "delete",
+                "current_path": "/home",
+                "return_path": "/home",
+                "selected_paths": ["/home/example.txt", "/home/example-folder"],
+            },
+        )
+
+        operation = FileOperation.objects.get(action="delete")
+        self.assertEqual(operation.sources, ["/home/example-folder", "/home/example.txt"])
+        start_operation.assert_called_once_with(operation)
+        self.assertRedirects(
+            response,
+            f"{reverse('monitor:file-manager-operation-detail', args=[operation.id])}?return_path=%2Fhome",
+            fetch_redirect_response=False,
+        )
+
     def test_file_operation_rsync_transfer_method_is_persisted(self):
         from file_manager_app.services import create_file_operation
 

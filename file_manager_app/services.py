@@ -83,6 +83,20 @@ def _validated_sources(raw_sources):
     return sources
 
 
+def _prepared_delete_sources(raw_sources):
+    """Validate destructive targets and remove redundant nested selections."""
+    sources = _validated_sources(raw_sources)
+    if "/" in sources:
+        raise ValueError("The host root folder cannot be deleted.")
+
+    prepared = []
+    for source in sorted(set(sources), key=lambda path: (path.count("/"), path)):
+        if any(source.startswith(f"{parent.rstrip('/')}/") for parent in prepared):
+            continue
+        prepared.append(source)
+    return prepared
+
+
 def _validated_destination(destination_path):
     destination = normalize_host_path(destination_path or "")
     absolute_destination = hostfs_path(destination)
@@ -170,7 +184,7 @@ def create_file_operation(
         raise ValueError("Unsupported transfer method.")
     if not isinstance(rsync_delete, bool):
         raise ValueError("Invalid rsync delete option.")
-    normalized_sources = _validated_sources(sources)
+    normalized_sources = _prepared_delete_sources(sources) if action == "delete" else _validated_sources(sources)
     compression_method = _validated_compression_method(compression_method)
     if action not in {"copy", "move", "compress", "uncompress"}:
         transfer_method = "standard"
