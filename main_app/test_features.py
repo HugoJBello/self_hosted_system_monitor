@@ -40,7 +40,14 @@ class FeatureAccessTests(TestCase):
         response = self.client.get(self.url("monitor:access-home"))
         for label in ("System monitor", "Files", "Backups"):
             self.assertContains(response, label)
-        self.assertEqual(len(FEATURE_KEYS), 9)
+        self.assertEqual(len(FEATURE_KEYS), 10)
+
+    def test_uncategorized_authenticated_view_is_denied_by_default(self):
+        self.client.force_login(self.member)
+        self.assertEqual(self.client.get(self.url("monitor:settings")).status_code, 403)
+        UserFeatureAccess.objects.create(user=self.member, feature="other")
+        # The fallback permission passes; the view's stricter admin rule still applies.
+        self.assertEqual(self.client.get(self.url("monitor:settings")).status_code, 403)
 
     def test_admin_can_update_member_features(self):
         self.client.force_login(self.admin)
@@ -49,3 +56,12 @@ class FeatureAccessTests(TestCase):
         })
         self.assertEqual(response.status_code, 302)
         self.assertEqual(set(UserFeatureAccess.objects.filter(user=self.member).values_list("feature", flat=True)), {"files", "reports"})
+
+    def test_user_creation_uses_modal_and_reopens_on_validation_errors(self):
+        self.client.force_login(self.admin)
+        page = self.client.get(self.url("monitor:users"))
+        self.assertContains(page, 'data-bs-target="#createUserModal"')
+        self.assertContains(page, 'id="createUserModal"')
+        invalid = self.client.post(self.url("monitor:users"), {"create_user": "1", "new-username": ""})
+        self.assertEqual(invalid.status_code, 200)
+        self.assertContains(invalid, 'data-open-on-load="1"')

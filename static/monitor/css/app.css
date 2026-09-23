@@ -2699,6 +2699,12 @@ body.app-shell {
 .users-accordion .text-secondary, .users-accordion .form-text, .users-accordion small { color: #aebbd0 !important; }
 .users-accordion .form-control, .users-accordion .form-select { color: #f8fafc; background-color: rgba(2, 6, 23, .55); border-color: rgba(148, 163, 184, .3); }
 .users-accordion .form-control::placeholder { color: #8492a6; opacity: 1; }
+.users-create-modal { color: #e5edf7; background: linear-gradient(145deg, #111c2f, #0b1220); border: 1px solid rgba(148,163,184,.22); box-shadow: 0 28px 80px rgba(0,0,0,.5); }
+.users-create-modal .form-label, .users-create-modal .form-check-label { color: #e5edf7; }
+.users-create-modal .text-secondary, .users-create-modal .form-text { color: #aebbd0 !important; }
+.users-create-modal .form-control { color: #f8fafc; background: rgba(2,6,23,.58); border-color: rgba(148,163,184,.3); }
+.users-create-modal .form-control:focus { border-color: #38bdf8; box-shadow: 0 0 0 .2rem rgba(56,189,248,.12); }
+.create-user-switch { display: flex; align-items: center; gap: .65rem; min-height: 3rem; padding: .7rem .85rem; border: 1px solid rgba(148,163,184,.18); border-radius: .75rem; background: rgba(15,23,42,.45); }
 .users-avatar, .users-section-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 2.65rem; height: 2.65rem; border-radius: .85rem; background: rgba(56, 189, 248, .12); color: #7dd3fc; font-weight: 700; }
 .users-section-icon { width: 2.35rem; height: 2.35rem; }
 .status-dot { width: .65rem; height: .65rem; border-radius: 50%; background: #64748b; box-shadow: 0 0 0 4px rgba(100,116,139,.12); }

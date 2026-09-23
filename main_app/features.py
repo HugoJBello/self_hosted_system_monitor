@@ -11,6 +11,7 @@ FEATURES = (
     {"key": "volumes", "label": "Volumes", "description": "Storage volumes and volume operations.", "icon": "bi-device-hdd", "url_name": "monitor:volumes"},
     {"key": "jobs", "label": "Jobs", "description": "Script jobs, runs and execution details.", "icon": "bi-terminal", "url_name": "monitor:script-jobs"},
     {"key": "backups", "label": "Backups", "description": "Backup jobs, runs and file trees.", "icon": "bi-hdd-network", "url_name": "monitor:backups"},
+    {"key": "other", "label": "Other functionality", "description": "Access to future or uncategorized authenticated views. Keep disabled unless explicitly needed.", "icon": "bi-puzzle", "url_name": None},
 )
 FEATURE_KEYS = frozenset(item["key"] for item in FEATURES)
 
@@ -30,6 +31,11 @@ URL_FEATURES = {
     "backup-http-manifest": "backups", "backup-http-list": "backups", "backup-http-stat": "backups", "backup-http-compare": "backups", "backup-http-prune": "backups", "backup-http-file": "backups", "backup-http-delete": "backups",
 }
 
+ALWAYS_AVAILABLE_URL_NAMES = frozenset({
+    "home", "healthz", "login", "logout", "password", "access-home",
+    "file-share-public", "file-share-download", "file-share-archive",
+})
+
 
 def feature_keys_for_user(user):
     if not user.is_authenticated:
@@ -41,7 +47,7 @@ def feature_keys_for_user(user):
 
 def feature_catalog_for_user(user):
     allowed = feature_keys_for_user(user)
-    return [{**item, "url": reverse(item["url_name"]), "allowed": item["key"] in allowed} for item in FEATURES]
+    return [{**item, "url": reverse(item["url_name"]) if item["url_name"] else "", "allowed": item["key"] in allowed} for item in FEATURES]
 
 
 def user_has_feature(user, feature):

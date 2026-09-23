@@ -2,7 +2,7 @@ from django.conf import settings
 from django.middleware.csrf import CsrfViewMiddleware
 from django.shortcuts import render
 
-from main_app.features import URL_FEATURES, user_has_feature
+from main_app.features import ALWAYS_AVAILABLE_URL_NAMES, URL_FEATURES, user_has_feature
 
 
 class AppSubpathMiddleware:
@@ -43,7 +43,10 @@ class FeatureAccessMiddleware:
         if not user or not user.is_authenticated or user.is_staff:
             return None
         match = request.resolver_match
-        feature = URL_FEATURES.get(match.url_name if match else "")
-        if not feature or user_has_feature(user, feature):
+        url_name = match.url_name if match else ""
+        if url_name in ALWAYS_AVAILABLE_URL_NAMES:
+            return None
+        feature = URL_FEATURES.get(url_name, "other")
+        if user_has_feature(user, feature):
             return None
         return render(request, "main_app/feature_forbidden.html", {"required_feature": feature}, status=403)
