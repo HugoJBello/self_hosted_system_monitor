@@ -94,6 +94,16 @@ def shared_entries(share, relative_path=""):
     return entries, parent
 
 
+def shared_archive_sources(share, relative_path=""):
+    """Return validated host paths for either the whole share or one shared folder."""
+    if not relative_path:
+        return list(share.paths)
+    path, absolute = resolve_share_path(share, relative_path)
+    if not os.path.isdir(absolute):
+        raise ValueError("Only shared folders can be downloaded as a ZIP archive.")
+    return [path]
+
+
 def public_share_url(request, share, settings_obj):
     path = reverse("monitor:file-share-public", args=[share.token])
     base = settings_obj.normalized_app_public_base_url

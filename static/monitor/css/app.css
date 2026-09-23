@@ -2771,7 +2771,9 @@ body.app-shell {
 .share-item-icon.is-folder { color: #fbbf24; background: rgba(251,191,36,.1); }
 .share-item-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .share-item-copy span { color: #94a3b8; font-size: .8rem; }
-@media (max-width: 767.98px) { .users-create-panel { position: static !important; } .users-create-modal > form { max-height: calc(100dvh - .5rem); } .feature-permission-grid { grid-template-columns: 1fr; } .file-access-overview { align-items: flex-start; flex-direction: column; } .file-access-root-list { justify-content: flex-start; width: 100%; } .share-hero { align-items: flex-start; flex-wrap: wrap; } .share-hero-icon { width: 3.5rem; height: 3.5rem; } .share-download-all { width: 100%; } .share-download-all .btn { width: 100%; } .share-item { align-items: flex-start; } .share-item .btn { padding-inline: .65rem; } }
+.share-folder-actions { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
+.share-folder-actions form { margin: 0; }
+@media (max-width: 767.98px) { .users-create-panel { position: static !important; } .users-create-modal > form { max-height: calc(100dvh - .5rem); } .feature-permission-grid { grid-template-columns: 1fr; } .file-access-overview { align-items: flex-start; flex-direction: column; } .file-access-root-list { justify-content: flex-start; width: 100%; } .share-hero { align-items: flex-start; flex-wrap: wrap; } .share-hero-icon { width: 3.5rem; height: 3.5rem; } .share-download-all { width: 100%; } .share-download-all .btn { width: 100%; } .share-item { align-items: flex-start; flex-wrap: wrap; } .share-item-copy { min-width: calc(100% - 4rem); } .share-folder-actions { width: 100%; justify-content: flex-end; padding-left: 3.8rem; } .share-item .btn { padding-inline: .65rem; } }
 
 .file-manager-actions {
   display: inline-flex;

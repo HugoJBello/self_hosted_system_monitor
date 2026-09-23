@@ -67,6 +67,21 @@ class FileSharingTests(TestCase):
         self.assertEqual(self.client.get(self.url("monitor:file-share-public", [share.token])).status_code, 200)
         self.assertTrue(FileShareAccessEvent.objects.filter(share=share, action="view", user=self.member).exists())
 
+    @patch("file_manager_app.share_views.start_background_file_operation")
+    def test_public_link_can_prepare_any_shared_subfolder_as_zip(self, start_operation):
+        share = FileShare.objects.create(created_by=self.admin, paths=["/shared"], public_link=True)
+        response = self.client.post(self.url("monitor:file-share-public", [share.token]), {
+            "archive_path": "0/nested", "current_path": "0",
+        })
+        self.assertEqual(response.status_code, 302)
+        operation = share.download_operations.get()
+        self.assertEqual(operation.sources, ["/shared/nested"])
+        start_operation.assert_called_once_with(operation)
+        invalid = self.client.post(self.url("monitor:file-share-public", [share.token]), {
+            "archive_path": "0/hello.txt",
+        })
+        self.assertEqual(invalid.status_code, 404)
+
     def test_restricted_file_manager_rejects_paths_outside_roots(self):
         UserFeatureAccess.objects.create(user=self.member, feature="files")
         UserFileAccess.objects.create(user=self.member, path="/shared", granted_by=self.admin)

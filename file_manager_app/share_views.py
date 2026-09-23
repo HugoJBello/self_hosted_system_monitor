@@ -1,5 +1,6 @@
 import mimetypes
 import os
+from urllib.parse import quote
 
 from django.contrib import messages
 from django.contrib.auth import get_user_model
@@ -14,7 +15,7 @@ from django.utils.decorators import method_decorator
 
 from file_manager_app.models import FileOperation, FileShare, UserFileAccess
 from file_manager_app.services import create_file_operation, download_archive_path, start_background_file_operation
-from file_manager_app.sharing import can_access_share, parse_expiry, public_share_url, record_share_access, record_share_view_once, resolve_share_path, shared_entries, validate_shared_paths
+from file_manager_app.sharing import can_access_share, parse_expiry, public_share_url, record_share_access, record_share_view_once, resolve_share_path, shared_archive_sources, shared_entries, validate_shared_paths
 from main_app.models import MonitoringSettings
 
 
@@ -147,11 +148,17 @@ class PublicFileShareView(View):
 
     def post(self, request, token):
         share = _authorized_share(request, token)
-        operation = create_file_operation("download", share.paths, created_by=share.created_by)
+        try:
+            sources = shared_archive_sources(share, request.POST.get("archive_path") or "")
+        except ValueError as exc:
+            raise Http404(str(exc))
+        operation = create_file_operation("download", sources, created_by=share.created_by)
         operation.file_share = share
         operation.save(update_fields=["file_share"])
         start_background_file_operation(operation)
-        return redirect(reverse("monitor:file-share-public", args=[token]))
+        target = reverse("monitor:file-share-public", args=[token])
+        current_path = request.POST.get("current_path") or ""
+        return redirect(f"{target}?path={quote(current_path)}" if current_path else target)
 
 
 class PublicFileShareDownloadView(View):
