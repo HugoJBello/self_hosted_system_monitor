@@ -65,3 +65,18 @@ class FeatureAccessTests(TestCase):
         invalid = self.client.post(self.url("monitor:users"), {"create_user": "1", "new-username": ""})
         self.assertEqual(invalid.status_code, 200)
         self.assertContains(invalid, 'data-open-on-load="1"')
+
+    def test_user_deletion_requires_exact_confirmation_and_protects_self(self):
+        self.client.force_login(self.admin)
+        self.client.post(self.url("monitor:users"), {
+            "user_id": self.member.pk, "delete_user": "1", "confirm_username": "wrong",
+        })
+        self.assertTrue(get_user_model().objects.filter(pk=self.member.pk).exists())
+        self.client.post(self.url("monitor:users"), {
+            "user_id": self.admin.pk, "delete_user": "1", "confirm_username": self.admin.username,
+        })
+        self.assertTrue(get_user_model().objects.filter(pk=self.admin.pk).exists())
+        self.client.post(self.url("monitor:users"), {
+            "user_id": self.member.pk, "delete_user": "1", "confirm_username": self.member.username,
+        })
+        self.assertFalse(get_user_model().objects.filter(pk=self.member.pk).exists())

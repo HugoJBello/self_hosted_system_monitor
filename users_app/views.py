@@ -108,6 +108,18 @@ class UsersView(AdminRequiredMixin, View):
             return render(request, self.template_name, self._context(create_form=form))
 
         user = get_object_or_404(User, pk=request.POST.get("user_id"))
+        if "delete_user" in request.POST:
+            if user.pk == request.user.pk:
+                messages.error(request, "You cannot delete the account you are currently using.")
+            elif user.is_staff and not User.objects.filter(is_staff=True, is_active=True).exclude(pk=user.pk).exists():
+                messages.error(request, "The last active administrator cannot be deleted.")
+            elif request.POST.get("confirm_username") != user.username:
+                messages.error(request, "User deletion was not confirmed. Enter the exact username.")
+            else:
+                username = user.username
+                user.delete()
+                messages.success(request, f"User '{username}' and their access grants were deleted.")
+            return redirect("monitor:users")
         if "save_feature_access" in request.POST:
             selected = set(request.POST.getlist("features")) & FEATURE_KEYS
             if user.is_staff:
