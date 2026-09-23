@@ -21,7 +21,7 @@ from file_manager_app.browser import (
     list_file_manager_entries,
     media_kind_for_content_type,
 )
-from file_manager_app.access import access_roots, closest_allowed_parent, require_path_access
+from file_manager_app.access import access_roots, closest_allowed_parent, has_full_file_access, require_path_access
 from file_manager_app.embedded_media import extract_embedded_thumbnail
 from file_manager_app.information import continue_file_information, start_file_information
 from file_manager_app.models import FileOperation, FileSearch
@@ -194,6 +194,7 @@ class FileManagerView(LoginRequiredMixin, View):
                 "sort_fields": SORT_FIELDS,
                 "sort_directions": SORT_DIRECTIONS,
                 "allowed_roots": access_roots(request.user),
+                "full_file_access": has_full_file_access(request.user),
             },
         )
 
@@ -349,8 +350,6 @@ class FileManagerView(LoginRequiredMixin, View):
 
     def _entries(self, user, host_path, sort_field="name", sort_direction="asc"):
         try:
-            if not user.is_staff and not access_roots(user):
-                return [], "No file locations are assigned to your account yet. Ask an administrator to add a path or share a folder with you."
             require_path_access(user, host_path)
             return list_file_manager_entries(host_path, sort_field=sort_field, sort_direction=sort_direction), ""
         except (ValueError, PermissionError) as exc:

@@ -57,6 +57,19 @@ class FeatureAccessTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(set(UserFeatureAccess.objects.filter(user=self.member).values_list("feature", flat=True)), {"files", "reports"})
 
+    def test_adding_a_file_path_enables_files_and_removing_module_keeps_path(self):
+        self.client.force_login(self.admin)
+        self.client.post(self.url("monitor:users"), {
+            "user_id": self.member.pk, "save_file_access": "1", "file_access_paths": ["/app"],
+        })
+        self.assertTrue(UserFeatureAccess.objects.filter(user=self.member, feature="files").exists())
+        self.assertEqual(list(self.member.file_accesses.values_list("path", flat=True)), ["/app"])
+        self.client.post(self.url("monitor:users"), {
+            "user_id": self.member.pk, "save_feature_access": "1", "features": [],
+        })
+        self.assertFalse(UserFeatureAccess.objects.filter(user=self.member, feature="files").exists())
+        self.assertEqual(list(self.member.file_accesses.values_list("path", flat=True)), ["/app"])
+
     def test_user_creation_uses_modal_and_reopens_on_validation_errors(self):
         self.client.force_login(self.admin)
         page = self.client.get(self.url("monitor:users"))

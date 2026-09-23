@@ -80,7 +80,12 @@
     </div>
   </div>
 
-  {% if not request.user.is_staff %}<div class="restricted-files-notice"><i class="bi bi-shield-lock"></i><div><strong>Restricted file access</strong><span>You can only browse the approved roots shown under “Access roots” and folders shared with your account.</span></div></div>{% endif %}
+  {% if not request.user.is_staff %}
+  <section class="file-access-overview panel-card">
+    <div class="file-access-overview-copy"><span class="file-access-overview-icon"><i class="bi {% if full_file_access %}bi-unlock{% else %}bi-shield-lock{% endif %}"></i></span><div><strong>{% if full_file_access %}Full filesystem access{% else %}Your available locations{% endif %}</strong><span>{% if full_file_access %}Files is enabled and no limiting paths are configured, or the root path is assigned. You can browse from /.{% else %}You can browse these roots and everything contained inside them.{% endif %}</span></div></div>
+    <div class="file-access-root-list">{% for root in allowed_roots %}<a href="{% url 'monitor:file-manager' %}?path={{ root|urlencode }}"><i class="bi bi-folder2-open"></i><code>{{ root }}</code></a>{% endfor %}</div>
+  </section>
+  {% endif %}
 
   <section class="panel-card file-manager-panel">
     <div class="file-manager-loading d-none" data-file-manager-loading role="status" aria-live="polite">

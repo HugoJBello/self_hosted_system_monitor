@@ -136,7 +136,13 @@ class UsersView(AdminRequiredMixin, View):
                 paths = validate_shared_paths(raw_paths) if raw_paths else []
                 UserFileAccess.objects.filter(user=user, source_share__isnull=True).delete()
                 UserFileAccess.objects.bulk_create([UserFileAccess(user=user, path=path, granted_by=request.user) for path in paths])
-                messages.success(request, f"File access updated for '{user.username}'.")
+                files_enabled = False
+                if paths and not user.is_staff:
+                    _, files_enabled = UserFeatureAccess.objects.get_or_create(user=user, feature="files")
+                if files_enabled:
+                    messages.success(request, f"File paths updated for '{user.username}'. The Files section was enabled automatically.")
+                else:
+                    messages.success(request, f"File paths updated for '{user.username}'.")
             except ValueError as exc:
                 messages.error(request, str(exc))
             return redirect("monitor:users")

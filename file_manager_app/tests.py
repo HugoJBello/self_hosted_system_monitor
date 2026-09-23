@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
-from file_manager_app.access import access_roots, user_can_access_path
+from file_manager_app.access import access_roots, configured_access_roots, user_can_access_path
 from file_manager_app.models import FileShare, FileShareAccessEvent, UserFileAccess
 from main_app.models import UserFeatureAccess
 
@@ -39,7 +39,8 @@ class FileSharingTests(TestCase):
         self.assertEqual(response.status_code, 302)
         share = FileShare.objects.get()
         self.assertFalse(share.public_link)
-        self.assertTrue(user_can_access_path(self.member, "/shared/nested"))
+        self.assertEqual(configured_access_roots(self.member), ["/shared"])
+        self.assertFalse(user_can_access_path(self.member, "/shared/nested"))
         self.client.post(self.url("monitor:file-share-detail", [share.pk]), {"revoke": "1"})
         self.assertFalse(user_can_access_path(self.member, "/shared/nested"))
 
@@ -73,3 +74,10 @@ class FileSharingTests(TestCase):
         self.assertEqual(self.client.get(self.url("monitor:file-manager"), {"path": "/shared"}).status_code, 200)
         self.assertEqual(self.client.get(self.url("monitor:file-manager"), {"path": "/private"}).status_code, 403)
         self.assertEqual(access_roots(self.member), ["/shared"])
+
+    def test_files_without_paths_or_with_root_grants_full_access(self):
+        UserFeatureAccess.objects.create(user=self.member, feature="files")
+        self.assertEqual(access_roots(self.member), ["/"])
+        self.assertTrue(user_can_access_path(self.member, "/private"))
+        UserFileAccess.objects.create(user=self.member, path="/", granted_by=self.admin)
+        self.assertEqual(access_roots(self.member), ["/"])

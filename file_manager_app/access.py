@@ -8,7 +8,7 @@ from file_manager_app.models import UserFileAccess
 from volumes_app.path_browser import normalize_host_path
 
 
-def access_roots(user):
+def configured_access_roots(user):
     if user.is_staff or user.is_superuser:
         return ["/"]
     roots = []
@@ -19,6 +19,18 @@ def access_roots(user):
         if not any(normalized == root or normalized.startswith(root.rstrip("/") + "/") for root in roots):
             roots.append(normalized)
     return roots
+
+
+def access_roots(user):
+    """No configured roots intentionally means unrestricted once Files is enabled."""
+    if not (user.is_staff or user.is_superuser) and not user.feature_accesses.filter(feature="files").exists():
+        return []
+    roots = configured_access_roots(user)
+    return roots or ["/"]
+
+
+def has_full_file_access(user):
+    return "/" in access_roots(user)
 
 
 def user_can_access_path(user, path):
