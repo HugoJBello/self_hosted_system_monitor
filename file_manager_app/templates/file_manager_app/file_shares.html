@@ -1,0 +1,9 @@
+{% extends "main_app/base.html" %}
+{% block title %}Shares | System Monitor{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-end gap-3 mb-4"><div><p class="eyebrow mb-2">File manager</p><h1 class="display-6 mb-1">Shares</h1><p class="text-secondary mb-0">Review, change, or revoke access to shared files.</p></div><a class="btn btn-outline-light" href="{% url 'monitor:file-manager' %}"><i class="bi bi-folder2-open me-2"></i>Files</a></div>
+<section class="panel-card p-4 mb-4"><h2 class="h5 mb-3">Created by you</h2>
+  <div class="list-group list-group-flush">{% for share in owned_shares %}<a class="list-group-item list-group-item-action bg-transparent text-light border-secondary px-0 d-flex justify-content-between align-items-center" href="{% url 'monitor:file-share-detail' share.pk %}"><span><strong>{{ share.name|default:'Shared files' }}</strong><span class="d-block small text-secondary">{{ share.paths|length }} item{{ share.paths|length|pluralize }}{% if share.recipient %} · {{ share.recipient.username }}{% endif %}</span></span><span class="badge {% if share.is_active %}text-bg-success{% else %}text-bg-secondary{% endif %}">{% if share.is_active %}Active{% else %}Unavailable{% endif %}</span></a>{% empty %}<p class="text-secondary mb-0">You have not created any shares.</p>{% endfor %}</div>
+</section>
+{% if received_shares %}<section class="panel-card p-4"><h2 class="h5 mb-3">Shared with you</h2>{% for share in received_shares %}<a class="d-block text-light mb-2" href="{% url 'monitor:file-share-public' share.token %}">{{ share.name|default:'Shared files' }} <span class="text-secondary">by {{ share.created_by.username }}</span></a>{% endfor %}</section>{% endif %}
+{% endblock %}

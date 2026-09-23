@@ -29,7 +29,7 @@ class FileSearchResult:
     error: str = ""
 
 
-def create_search_operation(root_path, query, *, recursive=True, timeout_seconds=SEARCH_DEFAULT_TIMEOUT, case_sensitive=False, use_regex=False):
+def create_search_operation(root_path, query, *, recursive=True, timeout_seconds=SEARCH_DEFAULT_TIMEOUT, case_sensitive=False, use_regex=False, created_by=None):
     root_path = normalize_host_path(root_path or "/")
     absolute_root = hostfs_path(root_path)
     query = (query or "").strip()
@@ -61,7 +61,7 @@ def create_search_operation(root_path, query, *, recursive=True, timeout_seconds
         current_path=root_path,
         total_count=0,
         summary=f"Searching for '{query}'...",
-        heartbeat_at=timezone.now(),
+        heartbeat_at=timezone.now(), created_by=created_by,
     )
     FileSearch.objects.create(
         operation=operation,

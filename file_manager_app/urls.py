@@ -12,10 +12,20 @@ from .views import (
     FileManagerSearchView,
     FileManagerView,
 )
+from .share_views import (
+    FileShareCreateView, FileShareDetailView, FileSharesView, PublicFileShareArchiveView,
+    PublicFileShareDownloadView, PublicFileShareView,
+)
 
 
 urlpatterns = [
     path("files/", FileManagerView.as_view(), name="file-manager"),
+    path("files/shares/", FileSharesView.as_view(), name="file-shares"),
+    path("files/shares/new/", FileShareCreateView.as_view(), name="file-share-create"),
+    path("files/shares/<int:pk>/", FileShareDetailView.as_view(), name="file-share-detail"),
+    path("shared/<str:token>/", PublicFileShareView.as_view(), name="file-share-public"),
+    path("shared/<str:token>/download/", PublicFileShareDownloadView.as_view(), name="file-share-download"),
+    path("shared/<str:token>/archive/<int:operation_id>/", PublicFileShareArchiveView.as_view(), name="file-share-archive"),
     path("files/list/", FileManagerListView.as_view(), name="file-manager-list"),
     path("files/information/", FileManagerInformationView.as_view(), name="file-manager-information"),
     path("files/embedded-thumbnail/", FileManagerEmbeddedThumbnailView.as_view(), name="file-manager-embedded-thumbnail"),

@@ -19,6 +19,12 @@
       <p class="text-secondary mb-0">Browse host folders from a clean graphical view.</p>
     </div>
     <div class="file-manager-actions">
+      {% if not request.user.is_staff and allowed_roots %}
+      <div class="dropdown">
+        <button class="btn btn-outline-light dropdown-toggle" type="button" data-bs-toggle="dropdown"><i class="bi bi-shield-check"></i><span>Access roots</span></button>
+        <ul class="dropdown-menu dropdown-menu-dark shadow">{% for root in allowed_roots %}<li><a class="dropdown-item font-monospace" href="{% url 'monitor:file-manager' %}?path={{ root|urlencode }}">{{ root }}</a></li>{% endfor %}</ul>
+      </div>
+      {% endif %}
       <button type="button" class="btn btn-outline-light" data-parent-button {% if not parent_path %}disabled{% endif %}>
         <i class="bi bi-arrow-up"></i><span>Up</span>
       </button>
@@ -45,6 +51,9 @@
       <a href="{% url 'monitor:file-manager-operations' %}" class="btn btn-outline-light">
         <i class="bi bi-list-task"></i><span>Processes</span>
       </a>
+      <a href="{% url 'monitor:file-shares' %}" class="btn btn-outline-light">
+        <i class="bi bi-share"></i><span>Shares</span>
+      </a>
       <a href="{% url 'monitor:file-manager-search' %}?path={{ current_path|urlencode }}" class="btn btn-outline-light" data-file-search-link>
         <i class="bi bi-search"></i><span>Search</span>
       </a>
@@ -59,6 +68,7 @@
           <li><button type="button" class="dropdown-item" data-upload-trigger><i class="bi bi-upload me-2"></i>Upload here</button></li>
           <li><button type="button" class="dropdown-item" data-preview-trigger disabled><i class="bi bi-eye me-2"></i>Preview</button></li>
           <li><button type="button" class="dropdown-item" data-download-trigger data-selection-action disabled><i class="bi bi-download me-2"></i>Download</button></li>
+          {% if request.user.is_staff %}<li><button type="submit" form="file-manager-form" class="dropdown-item" name="file_action" value="share" formaction="{% url 'monitor:file-share-create' %}" data-selection-action disabled><i class="bi bi-share me-2"></i>Share...</button></li>{% endif %}
           <li><button type="button" class="dropdown-item" data-destination-action="copy" data-selection-action disabled><i class="bi bi-copy me-2"></i>Copy to...</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="move" data-selection-action disabled><i class="bi bi-arrows-move me-2"></i>Move to...</button></li>
           <li><button type="button" class="dropdown-item" data-destination-action="compress" data-selection-action disabled><i class="bi bi-file-earmark-zip me-2"></i>Compress...</button></li>
@@ -455,5 +465,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/file_manager.js' %}?v=20260913-file-manager-video-timeout"></script>
+<script src="{% static 'monitor/js/file_manager.js' %}?v=20260923-share-mobile-form"></script>
 {% endblock %}

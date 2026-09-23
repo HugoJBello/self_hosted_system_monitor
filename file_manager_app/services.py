@@ -166,6 +166,7 @@ def create_file_operation(
     action,
     sources,
     *,
+    created_by=None,
     destination_path="",
     transfer_method="standard",
     rsync_delete=False,
@@ -231,6 +232,7 @@ def create_file_operation(
         total_count=len(normalized_sources),
         summary=f"{action.title()} operation queued for {len(normalized_sources)} item(s).",
         heartbeat_at=timezone.now(),
+        created_by=created_by,
     )
     return operation
 
@@ -1118,7 +1120,7 @@ def _delete_path(absolute_path):
         os.unlink(absolute_path)
 
 
-def save_uploaded_files(current_path, uploaded_files, *, worker_count=2):
+def save_uploaded_files(current_path, uploaded_files, *, worker_count=2, created_by=None):
     destination = normalize_host_path(current_path or "/")
     absolute_destination = hostfs_path(destination)
     if not os.path.isdir(absolute_destination):
@@ -1140,6 +1142,7 @@ def save_uploaded_files(current_path, uploaded_files, *, worker_count=2):
         heartbeat_at=timezone.now(),
         runner_label=_runner_label(),
         process_pid=os.getpid(),
+        created_by=created_by,
     )
     _append_log(operation, f"Upload target: {destination}")
     _append_log(operation, f"Requested upload workers: {worker_count}. Files are committed conservatively as they arrive from the browser.")
@@ -1176,7 +1179,7 @@ def save_uploaded_files(current_path, uploaded_files, *, worker_count=2):
     return operation
 
 
-def start_chunked_upload(current_path, file_count, *, worker_count=2):
+def start_chunked_upload(current_path, file_count, *, worker_count=2, created_by=None):
     destination = normalize_host_path(current_path or "/")
     absolute_destination = hostfs_path(destination)
     if not os.path.isdir(absolute_destination):
@@ -1201,6 +1204,7 @@ def start_chunked_upload(current_path, file_count, *, worker_count=2):
         heartbeat_at=timezone.now(),
         runner_label=_runner_label(),
         process_pid=os.getpid(),
+        created_by=created_by,
     )
     _append_log(operation, f"Upload target: {destination}")
     _append_log(operation, f"Chunked upload started. Requested workers: {worker_count}.")
@@ -1209,8 +1213,8 @@ def start_chunked_upload(current_path, file_count, *, worker_count=2):
     return operation
 
 
-def save_upload_chunk(operation_id, current_path, relative_name, uploaded_chunk, chunk_index, total_chunks):
-    operation = FileOperation.objects.get(pk=operation_id, action="upload")
+def save_upload_chunk(operation_id, current_path, relative_name, uploaded_chunk, chunk_index, total_chunks, *, created_by=None):
+    operation = FileOperation.objects.get(pk=operation_id, action="upload", created_by=created_by)
     if operation.status != "running":
         raise ValueError("Upload operation is not running.")
     if uploaded_chunk is None:
@@ -1262,8 +1266,8 @@ def save_upload_chunk(operation_id, current_path, relative_name, uploaded_chunk,
     return operation, saved_path
 
 
-def finish_chunked_upload(operation_id):
-    operation = FileOperation.objects.get(pk=operation_id, action="upload")
+def finish_chunked_upload(operation_id, *, created_by=None):
+    operation = FileOperation.objects.get(pk=operation_id, action="upload", created_by=created_by)
     if operation.status != "running":
         return operation
     if operation.processed_count != operation.total_count:

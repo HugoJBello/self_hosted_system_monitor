@@ -21,6 +21,7 @@ from file_manager_app.browser import (
     list_file_manager_entries,
     media_kind_for_content_type,
 )
+from file_manager_app.access import access_roots, closest_allowed_parent, require_path_access
 from file_manager_app.embedded_media import extract_embedded_thumbnail
 from file_manager_app.information import continue_file_information, start_file_information
 from file_manager_app.models import FileOperation, FileSearch
@@ -83,6 +84,13 @@ def _operations_url(return_path=""):
     if return_path:
         return f"{url}?{urlencode({'return_path': return_path})}"
     return url
+
+
+def _operation_for_user(request, operation_id, **filters):
+    queryset = FileOperation.objects.filter(**filters)
+    if not request.user.is_staff:
+        queryset = queryset.filter(created_by=request.user)
+    return get_object_or_404(queryset, pk=operation_id)
 
 
 def _parse_http_range(range_header, file_size):
@@ -169,14 +177,14 @@ class FileManagerView(LoginRequiredMixin, View):
         settings_obj = MonitoringSettings.load()
         current_path = self._requested_path(request, settings_obj)
         sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
-        entries, error = self._entries(current_path, sort_field, sort_direction)
+        entries, error = self._entries(request.user, current_path, sort_field, sort_direction)
         return render(
             request,
             self.template_name,
             {
                 "settings_obj": settings_obj,
                 "current_path": current_path,
-                "parent_path": self._parent_path(current_path),
+                "parent_path": closest_allowed_parent(request.user, current_path),
                 "entries": entries,
                 "file_manager_error": error,
                 "running_file_operations": FileOperation.objects.filter(status="running").order_by("-started_at")[:5],
@@ -185,20 +193,27 @@ class FileManagerView(LoginRequiredMixin, View):
                 "sort_direction": sort_direction,
                 "sort_fields": SORT_FIELDS,
                 "sort_directions": SORT_DIRECTIONS,
+                "allowed_roots": access_roots(request.user),
             },
         )
 
     def post(self, request):
         current_path = normalize_host_path(request.POST.get("current_path") or "/")
+        require_path_access(request.user, current_path)
         return_path = self._return_path(request, current_path)
         action = self._requested_action(request)
         selected_paths = request.POST.getlist("selected_paths")
+        for selected_path in selected_paths:
+            require_path_access(request.user, selected_path)
+        if request.POST.get("destination_path"):
+            require_path_access(request.user, request.POST.get("destination_path"))
         try:
             if action == "upload_start":
                 operation = start_chunked_upload(
                     current_path,
                     request.POST.get("file_count"),
                     worker_count=request.POST.get("upload_workers"),
+                    created_by=request.user,
                 )
                 return JsonResponse(
                     {
@@ -217,6 +232,7 @@ class FileManagerView(LoginRequiredMixin, View):
                     request.FILES.get("chunk"),
                     request.POST.get("chunk_index"),
                     request.POST.get("total_chunks"),
+                    created_by=request.user,
                 )
                 return JsonResponse(
                     {
@@ -229,7 +245,7 @@ class FileManagerView(LoginRequiredMixin, View):
                     }
                 )
             if action == "upload_finish":
-                operation = finish_chunked_upload(request.POST.get("operation_id"))
+                operation = finish_chunked_upload(request.POST.get("operation_id"), created_by=request.user)
                 return JsonResponse(
                     {
                         "ok": operation.status == "success",
@@ -244,6 +260,7 @@ class FileManagerView(LoginRequiredMixin, View):
                     current_path,
                     request.FILES.getlist("uploads"),
                     worker_count=request.POST.get("upload_workers"),
+                    created_by=request.user,
                 )
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                     return JsonResponse(
@@ -263,7 +280,7 @@ class FileManagerView(LoginRequiredMixin, View):
                 messages.success(request, f"Folder '{item['name']}' created.")
                 return redirect(f"{reverse('monitor:file-manager')}?path={current_path}")
             if action == "download":
-                operation = create_file_operation("download", selected_paths)
+                operation = create_file_operation("download", selected_paths, created_by=request.user)
                 start_background_file_operation(operation)
                 payload = self._operation_payload(operation, return_path)
                 if request.headers.get("X-Requested-With") == "XMLHttpRequest":
@@ -274,6 +291,7 @@ class FileManagerView(LoginRequiredMixin, View):
                 operation = create_file_operation(
                     action,
                     selected_paths,
+                    created_by=request.user,
                     destination_path=request.POST.get("destination_path") or "",
                     transfer_method=request.POST.get("transfer_method") or "standard",
                     rsync_delete=request.POST.get("rsync_delete") == "1",
@@ -317,18 +335,23 @@ class FileManagerView(LoginRequiredMixin, View):
         requested_path = (request.GET.get("path") or "").strip()
         if requested_path:
             try:
-                return normalize_host_path(requested_path)
+                return require_path_access(request.user, requested_path)
             except ValueError:
                 pass
         try:
-            return normalize_host_path(settings_obj.file_manager_start_path or "/")
+            preferred = normalize_host_path(settings_obj.file_manager_start_path or "/")
+            if request.user.is_staff or preferred in access_roots(request.user):
+                return preferred
         except ValueError:
-            return "/"
+            pass
+        roots = access_roots(request.user)
+        return roots[0] if roots else "/"
 
-    def _entries(self, host_path, sort_field="name", sort_direction="asc"):
+    def _entries(self, user, host_path, sort_field="name", sort_direction="asc"):
         try:
+            require_path_access(user, host_path)
             return list_file_manager_entries(host_path, sort_field=sort_field, sort_direction=sort_direction), ""
-        except ValueError as exc:
+        except (ValueError, PermissionError) as exc:
             return [], str(exc)
 
     def _parent_path(self, host_path):
@@ -361,6 +384,7 @@ class FileManagerListView(LoginRequiredMixin, View):
         sort_field, sort_direction = normalize_sort(request.GET.get("sort"), request.GET.get("direction"))
         try:
             current_path = normalize_host_path(raw_path)
+            require_path_access(request.user, current_path)
             entries = list_file_manager_entries(
                 current_path,
                 folders_only=folders_only,
@@ -373,7 +397,7 @@ class FileManagerListView(LoginRequiredMixin, View):
         return JsonResponse(
             {
                 "path": current_path,
-                "parent_path": self._parent_path(current_path),
+                "parent_path": closest_allowed_parent(request.user, current_path),
                 "items": entries,
                 "sort_field": sort_field,
                 "sort_direction": sort_direction,
@@ -395,7 +419,7 @@ class FileManagerSearchView(LoginRequiredMixin, View):
         search = None
         operation_id = request.GET.get("operation_id") or ""
         if operation_id:
-            operation = get_object_or_404(FileOperation, pk=operation_id, action="search")
+            operation = _operation_for_user(request, operation_id, action="search")
             search = get_object_or_404(FileSearch, operation=operation)
             root_path = search.root_path
             query = search.query
@@ -408,11 +432,18 @@ class FileManagerSearchView(LoginRequiredMixin, View):
             timed_out = search.timed_out
             search_error = operation.summary if operation.status == "failed" else ""
         else:
-            root_path = request.GET.get("path") or settings_obj.file_manager_start_path or "/"
+            requested_root = request.GET.get("path")
+            root_path = requested_root or settings_obj.file_manager_start_path or "/"
             try:
                 root_path = normalize_host_path(root_path)
+                if requested_root:
+                    require_path_access(request.user, root_path)
+                elif not request.user.is_staff and not any(root_path == root or root_path.startswith(root.rstrip("/") + "/") for root in access_roots(request.user)):
+                    roots = access_roots(request.user)
+                    root_path = roots[0] if roots else "/"
             except ValueError:
-                root_path = "/"
+                roots = access_roots(request.user)
+                root_path = roots[0] if roots else "/"
             query = ""
             recursive = True
             case_sensitive = False
@@ -465,12 +496,13 @@ class FileManagerSearchView(LoginRequiredMixin, View):
 
     def post(self, request):
         if request.POST.get("operation_id"):
-            operation = get_object_or_404(FileOperation, pk=request.POST.get("operation_id"), action="search")
+            operation = _operation_for_user(request, request.POST.get("operation_id"), action="search")
             if request.POST.get("cancel_search"):
                 cancel_file_operation(operation)
             return redirect(search_operation_url(operation))
         root_path = request.POST.get("path") or MonitoringSettings.load().file_manager_start_path or "/"
         try:
+            require_path_access(request.user, root_path)
             operation = create_search_operation(
                 root_path,
                 request.POST.get("q") or "",
@@ -478,6 +510,7 @@ class FileManagerSearchView(LoginRequiredMixin, View):
                 timeout_seconds=request.POST.get("timeout") or SEARCH_DEFAULT_TIMEOUT,
                 case_sensitive=request.POST.get("case_sensitive") == "1",
                 use_regex=request.POST.get("use_regex") == "1",
+                created_by=request.user,
             )
         except ValueError as exc:
             return render(request, self.template_name, {
@@ -512,6 +545,7 @@ class FileManagerSearchView(LoginRequiredMixin, View):
 class FileManagerPreviewView(LoginRequiredMixin, View):
     def get(self, request):
         path = normalize_host_path(request.GET.get("path") or "")
+        require_path_access(request.user, path)
         absolute_path = hostfs_path(path)
         if not os.path.isfile(absolute_path):
             raise Http404("Preview not found.")
@@ -535,6 +569,7 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
 class FileManagerEmbeddedThumbnailView(LoginRequiredMixin, View):
     def get(self, request):
         path = normalize_host_path(request.GET.get("path") or "")
+        require_path_access(request.user, path)
         absolute_path = hostfs_path(path)
         if not os.path.isfile(absolute_path):
             raise Http404("Embedded thumbnail not found.")
@@ -553,6 +588,8 @@ class FileManagerInformationView(LoginRequiredMixin, View):
                 payload = continue_file_information(session_id)
             else:
                 paths = request.POST.getlist("selected_paths") or [request.POST.get("current_path") or "/"]
+                for path in paths:
+                    require_path_access(request.user, path)
                 payload = start_file_information(paths)
         except ValueError as exc:
             return JsonResponse({"ok": False, "error": str(exc)}, status=400)
@@ -567,6 +604,8 @@ class FileManagerOperationsView(LoginRequiredMixin, View):
         action = request.GET.get("action") or "all"
         return_path = _return_path_from_request(request, "")
         operations_qs = FileOperation.objects.order_by("-started_at")
+        if not request.user.is_staff:
+            operations_qs = operations_qs.filter(created_by=request.user)
         if status in {choice[0] for choice in FileOperation.STATUS_CHOICES}:
             operations_qs = operations_qs.filter(status=status)
         if action in {choice[0] for choice in FileOperation.ACTION_CHOICES}:
@@ -595,7 +634,7 @@ class FileManagerOperationDetailView(LoginRequiredMixin, View):
     template_name = "file_manager_app/file_operation_detail.html"
 
     def get(self, request, operation_id):
-        operation = get_object_or_404(FileOperation, pk=operation_id)
+        operation = _operation_for_user(request, operation_id)
         return_path = _return_path_from_request(request, "")
         search = getattr(operation, "search", None)
         return render(
@@ -613,7 +652,7 @@ class FileManagerOperationDetailView(LoginRequiredMixin, View):
         )
 
     def post(self, request, operation_id):
-        operation = get_object_or_404(FileOperation, pk=operation_id)
+        operation = _operation_for_user(request, operation_id)
         if "pause_operation" in request.POST:
             messages.info(request, "Pause requested." if pause_file_operation(operation) else "Operation is not running.")
         elif "cancel_operation" in request.POST:
@@ -625,7 +664,7 @@ class FileManagerOperationDetailView(LoginRequiredMixin, View):
 
 class FileManagerOperationStatusView(LoginRequiredMixin, View):
     def get(self, request, operation_id):
-        operation = get_object_or_404(FileOperation, pk=operation_id)
+        operation = _operation_for_user(request, operation_id)
         search = getattr(operation, "search", None)
         search_items = search_result_items(search) if search else []
         return JsonResponse(
@@ -667,7 +706,7 @@ class FileManagerOperationStatusView(LoginRequiredMixin, View):
 
 class FileManagerOperationDownloadView(LoginRequiredMixin, View):
     def get(self, request, operation_id):
-        operation = get_object_or_404(FileOperation, pk=operation_id, action="download")
+        operation = _operation_for_user(request, operation_id, action="download")
         if operation.status != "success":
             return JsonResponse({"error": "Download archive is not ready yet."}, status=409)
         archive_path = download_archive_path(operation.id)

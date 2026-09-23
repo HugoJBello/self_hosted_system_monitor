@@ -79,6 +79,14 @@
                 {% endfor %}
                 <div class="col-12"><button type="submit" name="set_password" value="1" class="btn btn-outline-light btn-sm">Set password</button></div>
               </form>
+              <form method="post" class="mt-3 pt-3 border-top border-secondary">
+                {% csrf_token %}<input type="hidden" name="user_id" value="{{ user.id }}">
+                <label class="form-label" for="file-access-{{ user.id }}">Allowed file manager roots</label>
+                <textarea class="form-control font-monospace" id="file-access-{{ user.id }}" name="file_access_paths" rows="3" placeholder="/srv/documents&#10;/mnt/media">{{ row.manual_file_paths }}</textarea>
+                <div class="form-text">One existing host path per line. Admin users always retain unrestricted access.</div>
+                {% if row.shared_file_accesses %}<div class="small mt-2 text-secondary">From shares: {% for access in row.shared_file_accesses %}<code>{{ access.path }}</code>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                <button type="submit" name="save_file_access" value="1" class="btn btn-outline-light btn-sm mt-2">Save file access</button>
+              </form>
             </article>
           {% endwith %}
         {% empty %}

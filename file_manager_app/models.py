@@ -1,5 +1,7 @@
 from django.db import models
 from django.utils import timezone
+from django.conf import settings
+import secrets
 
 
 class FileOperation(models.Model):
@@ -68,6 +70,8 @@ class FileOperation(models.Model):
     started_at = models.DateTimeField(default=timezone.now, db_index=True)
     finished_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    file_share = models.ForeignKey("FileShare", on_delete=models.CASCADE, related_name="download_operations", blank=True, null=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="file_operations", blank=True, null=True)
 
     class Meta:
         app_label = "monitor"
@@ -104,3 +108,44 @@ class FileSearch(models.Model):
     @property
     def timeout_label(self):
         return f"{self.timeout_seconds}s" if self.timeout_seconds else "No timeout"
+
+
+def _share_token():
+    return secrets.token_urlsafe(32)
+
+
+class FileShare(models.Model):
+    token = models.CharField(max_length=64, unique=True, db_index=True, default=_share_token, editable=False)
+    name = models.CharField(max_length=160, blank=True, default="")
+    paths = models.JSONField(default=list)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="created_file_shares")
+    recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="received_file_shares", blank=True, null=True)
+    public_link = models.BooleanField(default=True)
+    expires_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    revoked_at = models.DateTimeField(blank=True, null=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = "monitor"
+        ordering = ("-created_at",)
+
+    @property
+    def is_active(self):
+        return not self.revoked_at and (not self.expires_at or self.expires_at > timezone.now())
+
+    def __str__(self):
+        return self.name or f"Shared files {self.pk}"
+
+
+class UserFileAccess(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="file_accesses")
+    path = models.CharField(max_length=500)
+    granted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="granted_file_accesses", blank=True, null=True)
+    source_share = models.ForeignKey(FileShare, on_delete=models.CASCADE, related_name="access_grants", blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "monitor"
+        ordering = ("path",)
+        constraints = [models.UniqueConstraint(fields=("user", "path", "source_share"), name="unique_user_file_share_access")]

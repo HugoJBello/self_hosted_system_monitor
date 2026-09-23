@@ -124,7 +124,7 @@ from reports_app.models import ReportRule, ReportRun
 from jobs_app.models import ScriptJob, ScriptJobRun
 from backups_app.models import BackupJob, BackupRun
 from volumes_app.models import VolumeMountPreference, VolumeOperation
-from file_manager_app.models import FileOperation
+from file_manager_app.models import FileOperation, FileShare
 
 
 __all__ = [
@@ -133,6 +133,7 @@ __all__ = [
     "BackupJob",
     "BackupRun",
     "FileOperation",
+    "FileShare",
     "MonitoringSettings",
     "ProcessSnapshot",
     "ReportRule",

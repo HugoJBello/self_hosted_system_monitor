@@ -1,0 +1,21 @@
+{% extends "main_app/base.html" %}
+{% block title %}{{ share.name|default:'Shared files' }} | System Monitor{% endblock %}
+{% block content %}
+{% if operation.status == 'running' or operation.status == 'paused' %}<meta http-equiv="refresh" content="3">{% endif %}
+<div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
+  <div><p class="eyebrow mb-2"><i class="bi bi-share me-1"></i> Shared files</p><h1 class="display-6 mb-1">{{ share.name|default:'Shared files' }}</h1><p class="text-secondary mb-0">Read-only access{% if share.expires_at %} · available until <span data-browser-date="{{ share.expires_at|date:'c' }}">{{ share.expires_at }}</span>{% endif %}</p></div>
+  <form method="post">{% csrf_token %}<button class="btn btn-accent"><i class="bi bi-file-earmark-zip me-2"></i>Download all as ZIP</button></form>
+</div>
+{% if operation %}<div class="alert {% if operation.status == 'success' %}alert-success{% elif operation.status == 'failed' %}alert-danger{% else %}alert-info{% endif %} d-flex justify-content-between align-items-center gap-3"><span>{{ operation.summary }}</span>{% if operation.status == 'success' %}<a class="btn btn-sm btn-success" href="{% url 'monitor:file-share-archive' share.token operation.pk %}">Download ZIP</a>{% endif %}</div>{% endif %}
+<section class="panel-card file-manager-panel">
+  <div class="file-manager-toolbar"><div class="file-manager-path"><i class="bi bi-folder2-open"></i><span>{% if relative_path %}{{ relative_path }}{% else %}Shared content{% endif %}</span></div>{% if relative_path %}<a class="btn btn-outline-light btn-sm" href="{% url 'monitor:file-share-public' share.token %}{% if parent_path %}?path={{ parent_path|urlencode }}{% endif %}"><i class="bi bi-arrow-up me-1"></i>Up</a>{% endif %}</div>
+  <div class="list-group list-group-flush px-3 pb-3">
+  {% for entry in entries %}
+    <div class="list-group-item bg-transparent text-light border-secondary d-flex align-items-center justify-content-between gap-3 px-0 py-3">
+      <div class="d-flex align-items-center gap-3 text-truncate"><span class="file-manager-icon file-manager-icon-{% if entry.is_dir %}folder{% else %}file{% endif %}"><i class="bi {% if entry.is_dir %}bi-folder-fill{% else %}bi-file-earmark-text{% endif %}"></i></span><span class="text-truncate">{{ entry.name }}</span></div>
+      {% if entry.is_dir %}<a class="btn btn-outline-light btn-sm" href="{% url 'monitor:file-share-public' share.token %}?path={{ entry.relative_path|urlencode }}">Open</a>{% else %}<a class="btn btn-outline-light btn-sm" href="{% url 'monitor:file-share-download' share.token %}?path={{ entry.relative_path|urlencode }}"><i class="bi bi-download me-1"></i>Download</a>{% endif %}
+    </div>
+  {% empty %}<div class="file-manager-empty">This folder is empty.</div>{% endfor %}
+  </div>
+</section>
+{% endblock %}

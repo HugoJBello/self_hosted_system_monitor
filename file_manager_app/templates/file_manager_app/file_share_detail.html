@@ -1,0 +1,12 @@
+{% extends "main_app/base.html" %}
+{% block title %}Manage share | System Monitor{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-end gap-3 mb-4"><div><p class="eyebrow mb-2">File manager</p><h1 class="display-6 mb-1">Manage share</h1></div><a class="btn btn-outline-light" href="{% url 'monitor:file-shares' %}">All shares</a></div>
+<section class="panel-card p-4 mb-4"><label class="form-label" for="shareUrl">Share link</label><div class="input-group"><input id="shareUrl" class="form-control" readonly value="{{ share_url }}"><button class="btn btn-outline-light" type="button" onclick="navigator.clipboard.writeText(document.getElementById('shareUrl').value)"><i class="bi bi-clipboard"></i> Copy</button><a class="btn btn-accent" href="{% url 'monitor:file-share-public' share.token %}" target="_blank">Open</a></div>{% if not settings_obj.normalized_app_public_base_url %}<div class="form-text text-warning">This URL uses the current request host. Configure the public base URL in Settings for links behind a proxy.</div>{% endif %}</section>
+<form method="post" class="panel-card p-4">{% csrf_token %}<div class="row g-3">
+  <div class="col-md-6"><label class="form-label">Name</label><input class="form-control" name="name" maxlength="160" value="{{ share.name }}"></div>
+  <div class="col-md-6"><label class="form-label">Available until</label><input class="form-control" type="datetime-local" name="expires_at" value="{% if share.expires_at %}{{ share.expires_at|date:'Y-m-d\TH:i' }}{% endif %}"></div>
+  <div class="col-md-6"><label class="form-label">Application user</label><select class="form-select" name="recipient"><option value="">No specific user</option>{% for user in users %}<option value="{{ user.pk }}" {% if share.recipient_id == user.pk %}selected{% endif %}>{{ user.username }}</option>{% endfor %}</select></div>
+  <div class="col-md-6 d-flex align-items-center"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" name="public_link" value="1" id="publicLink" {% if share.public_link %}checked{% endif %}><label class="form-check-label" for="publicLink">Anyone with the link</label></div></div>
+</div><div class="mt-4 d-flex justify-content-between"><div>{% if share.revoked_at %}<button class="btn btn-outline-success" name="restore" value="1">Restore</button>{% else %}<button class="btn btn-outline-danger" name="revoke" value="1">Revoke now</button>{% endif %}</div><button class="btn btn-accent">Save changes</button></div></form>
+{% endblock %}
