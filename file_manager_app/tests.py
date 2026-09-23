@@ -7,7 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 
 from file_manager_app.access import access_roots, user_can_access_path
-from file_manager_app.models import FileShare, UserFileAccess
+from file_manager_app.models import FileShare, FileShareAccessEvent, UserFileAccess
 
 
 class FileSharingTests(TestCase):
@@ -51,6 +51,9 @@ class FileSharingTests(TestCase):
         share = FileShare.objects.create(created_by=self.admin, paths=["/shared"], public_link=True)
         response = self.client.get(self.url("monitor:file-share-download", [share.token]), {"path": "0/hello.txt"})
         self.assertEqual(response.status_code, 200)
+        event = FileShareAccessEvent.objects.get(action="download")
+        self.assertEqual(event.path, "0/hello.txt")
+        self.assertIsNone(event.user)
         response = self.client.get(self.url("monitor:file-share-download", [share.token]), {"path": "0/../private/missing.txt"})
         self.assertEqual(response.status_code, 404)
         share.public_link = False
@@ -60,6 +63,7 @@ class FileSharingTests(TestCase):
         self.assertEqual(self.client.get(self.url("monitor:file-share-public", [share.token])).status_code, 404)
         self.client.force_login(self.member)
         self.assertEqual(self.client.get(self.url("monitor:file-share-public", [share.token])).status_code, 200)
+        self.assertTrue(FileShareAccessEvent.objects.filter(share=share, action="view", user=self.member).exists())
 
     def test_restricted_file_manager_rejects_paths_outside_roots(self):
         UserFileAccess.objects.create(user=self.member, path="/shared", granted_by=self.admin)

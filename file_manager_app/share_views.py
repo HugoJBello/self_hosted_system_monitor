@@ -14,7 +14,7 @@ from django.utils.decorators import method_decorator
 
 from file_manager_app.models import FileOperation, FileShare, UserFileAccess
 from file_manager_app.services import create_file_operation, download_archive_path, start_background_file_operation
-from file_manager_app.sharing import can_access_share, parse_expiry, public_share_url, resolve_share_path, shared_entries, validate_shared_paths
+from file_manager_app.sharing import can_access_share, parse_expiry, public_share_url, record_share_access, record_share_view_once, resolve_share_path, shared_entries, validate_shared_paths
 from main_app.models import MonitoringSettings
 
 
@@ -136,6 +136,7 @@ class PublicFileShareView(View):
     template_name = "file_manager_app/file_share_public.html"
     def get(self, request, token):
         share = _authorized_share(request, token)
+        record_share_view_once(request, share)
         relative = request.GET.get("path") or ""
         try:
             entries, parent = shared_entries(share, relative)
@@ -163,6 +164,7 @@ class PublicFileShareDownloadView(View):
             raise Http404(str(exc))
         if not os.path.isfile(absolute):
             raise Http404("File not found.")
+        record_share_access(request, share, "download", relative)
         return FileResponse(open(absolute, "rb"), as_attachment=True, filename=os.path.basename(absolute), content_type=mimetypes.guess_type(absolute)[0])
 
 
@@ -175,4 +177,5 @@ class PublicFileShareArchiveView(View):
         path = download_archive_path(operation.pk)
         if not path.exists():
             raise Http404("Archive not found.")
+        record_share_access(request, share, "archive")
         return FileResponse(open(path, "rb"), as_attachment=True, filename=f"{share.name or 'shared-files'}.zip")

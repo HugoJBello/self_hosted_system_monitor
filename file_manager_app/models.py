@@ -149,3 +149,18 @@ class UserFileAccess(models.Model):
         app_label = "monitor"
         ordering = ("path",)
         constraints = [models.UniqueConstraint(fields=("user", "path", "source_share"), name="unique_user_file_share_access")]
+
+
+class FileShareAccessEvent(models.Model):
+    ACTION_CHOICES = [("view", "Opened share"), ("download", "Downloaded file"), ("archive", "Downloaded ZIP")]
+    share = models.ForeignKey(FileShare, on_delete=models.CASCADE, related_name="access_events")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, related_name="file_share_access_events", blank=True, null=True)
+    action = models.CharField(max_length=16, choices=ACTION_CHOICES, db_index=True)
+    path = models.CharField(max_length=500, blank=True, default="")
+    remote_address = models.GenericIPAddressField(blank=True, null=True)
+    user_agent = models.CharField(max_length=300, blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        app_label = "monitor"
+        ordering = ("-created_at",)

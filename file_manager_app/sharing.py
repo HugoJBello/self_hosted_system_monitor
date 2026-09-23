@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.conf import settings
 
 from file_manager_app.browser import list_file_manager_entries
+from file_manager_app.models import FileShareAccessEvent
 from volumes_app.path_browser import hostfs_path, normalize_host_path
 
 
@@ -100,3 +101,25 @@ def public_share_url(request, share, settings_obj):
     if base and app_subpath and base.endswith(app_subpath) and path.startswith(app_subpath + "/"):
         path = path[len(app_subpath):]
     return f"{base}{path}" if base else request.build_absolute_uri(path)
+
+
+def record_share_access(request, share, action, path=""):
+    """Record an access without trusting proxy-supplied identity headers."""
+    return FileShareAccessEvent.objects.create(
+        share=share,
+        user=request.user if request.user.is_authenticated else None,
+        action=action,
+        path=(path or "")[:500],
+        remote_address=request.META.get("REMOTE_ADDR") or None,
+        user_agent=(request.META.get("HTTP_USER_AGENT") or "")[:300],
+    )
+
+
+def record_share_view_once(request, share):
+    session_key = f"file_share_viewed_{share.pk}"
+    now = timezone.now().timestamp()
+    last_seen = request.session.get(session_key)
+    if last_seen and now - float(last_seen) < 30 * 60:
+        return
+    record_share_access(request, share, "view")
+    request.session[session_key] = now

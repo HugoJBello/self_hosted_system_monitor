@@ -22,7 +22,7 @@ from django.views.decorators.csrf import csrf_exempt
 from alerts_app.services import ensure_default_alert_rules, top_processes_for_alert_window
 from backups_app.services import _normalize_stream_output, get_runtime_state, list_browser_roots, list_directory_children, mark_stale_running_backups, request_backup_run_stop, start_background_backup
 from main_app.forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm, ReportRuleForm, ScriptJobForm, StyledPasswordChangeForm, StyledSetPasswordForm, UserAdminCreateForm, UserAdminUpdateForm
-from file_manager_app.models import UserFileAccess
+from file_manager_app.models import FileShareAccessEvent, UserFileAccess
 from file_manager_app.sharing import validate_shared_paths
 from main_app.models import MonitoringSettings
 from monitor_app.models import ProcessSnapshot, SystemSnapshot
@@ -106,7 +106,7 @@ class UsersView(AdminRequiredMixin, View):
         user = get_object_or_404(User, pk=request.POST.get("user_id"))
         if "save_file_access" in request.POST:
             try:
-                raw_paths = [line.strip() for line in (request.POST.get("file_access_paths") or "").splitlines() if line.strip()]
+                raw_paths = [line.strip() for value in request.POST.getlist("file_access_paths") for line in value.splitlines() if line.strip()]
                 paths = validate_shared_paths(raw_paths) if raw_paths else []
                 UserFileAccess.objects.filter(user=user, source_share__isnull=True).delete()
                 UserFileAccess.objects.bulk_create([UserFileAccess(user=user, path=path, granted_by=request.user) for path in paths])
@@ -151,4 +151,5 @@ class UsersView(AdminRequiredMixin, View):
             "user_rows": user_rows,
             "create_form": create_form or UserAdminCreateForm(prefix="new"),
             "settings_obj": MonitoringSettings.load(),
+            "share_access_events": FileShareAccessEvent.objects.select_related("share", "user", "share__created_by")[:200],
         }

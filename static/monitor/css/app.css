@@ -2690,6 +2690,41 @@ body.app-shell {
   flex-direction: column;
 }
 
+.users-create-panel { top: 1rem; }
+.users-accordion .accordion-item { border: 1px solid rgba(148, 163, 184, .18); }
+.users-accordion .accordion-button { box-shadow: none; padding: 1.1rem 1.25rem; }
+.users-accordion .accordion-button::after { filter: invert(1); margin-left: 1rem; }
+.users-avatar, .users-section-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 2.65rem; height: 2.65rem; border-radius: .85rem; background: rgba(56, 189, 248, .12); color: #7dd3fc; font-weight: 700; }
+.users-section-icon { width: 2.35rem; height: 2.35rem; }
+.status-dot { width: .65rem; height: .65rem; border-radius: 50%; background: #64748b; box-shadow: 0 0 0 4px rgba(100,116,139,.12); }
+.status-dot.is-online { background: #34d399; box-shadow: 0 0 0 4px rgba(52,211,153,.12); }
+.users-full-access { display: flex; gap: 1rem; align-items: center; padding: 1rem; border: 1px solid rgba(52,211,153,.25); background: rgba(52,211,153,.07); border-radius: .85rem; }
+.users-full-access .users-section-icon { color: #6ee7b7; background: rgba(52,211,153,.13); }
+.access-path-list { display: grid; gap: .6rem; }
+.access-path-item { display: flex; align-items: center; gap: .75rem; padding: .7rem .8rem; border: 1px solid rgba(148,163,184,.2); background: rgba(15,23,42,.5); border-radius: .7rem; }
+.access-path-item > i { color: #fbbf24; }
+.access-path-empty { padding: 1rem; border: 1px dashed rgba(148,163,184,.25); border-radius: .7rem; text-align: center; }
+
+.share-hero { display: flex; align-items: center; gap: 1.25rem; padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid rgba(56,189,248,.2); border-radius: 1.25rem; background: radial-gradient(circle at top right, rgba(56,189,248,.16), transparent 42%), linear-gradient(135deg, rgba(15,23,42,.98), rgba(30,41,59,.92)); box-shadow: 0 20px 50px rgba(2,6,23,.25); }
+.share-hero-icon { display: grid; place-items: center; width: 4.5rem; height: 4.5rem; flex: 0 0 auto; border-radius: 1.15rem; background: linear-gradient(135deg,#0ea5e9,#2563eb); color: white; font-size: 2rem; box-shadow: 0 12px 30px rgba(14,165,233,.25); }
+.share-kicker { color: #7dd3fc; font-size: .75rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; margin-bottom: .45rem; }
+.share-meta-pill { display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .65rem; border-radius: 999px; background: rgba(148,163,184,.1); color: #cbd5e1; font-size: .8rem; }
+.share-meta-pill.is-expiry { background: rgba(251,191,36,.1); color: #fde68a; }
+.share-operation { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 1rem; padding: 1rem 1.15rem; border-radius: .9rem; border: 1px solid rgba(56,189,248,.25); background: rgba(14,165,233,.08); }
+.share-operation.is-ready { border-color: rgba(52,211,153,.3); background: rgba(52,211,153,.08); }
+.share-operation.is-error { border-color: rgba(248,113,113,.3); background: rgba(248,113,113,.08); }
+.share-operation-icon { font-size: 1.35rem; }
+.share-browser { overflow: hidden; }
+.share-browser-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid rgba(148,163,184,.16); background: rgba(15,23,42,.38); }
+.share-items { padding: .4rem 1.25rem; }
+.share-item { display: flex; align-items: center; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid rgba(148,163,184,.13); }
+.share-item:last-child { border-bottom: 0; }
+.share-item-icon { display: grid; place-items: center; width: 2.8rem; height: 2.8rem; flex: 0 0 auto; border-radius: .75rem; color: #93c5fd; background: rgba(59,130,246,.1); font-size: 1.25rem; }
+.share-item-icon.is-folder { color: #fbbf24; background: rgba(251,191,36,.1); }
+.share-item-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.share-item-copy span { color: #94a3b8; font-size: .8rem; }
+@media (max-width: 767.98px) { .users-create-panel { position: static !important; } .share-hero { align-items: flex-start; flex-wrap: wrap; } .share-hero-icon { width: 3.5rem; height: 3.5rem; } .share-download-all { width: 100%; } .share-download-all .btn { width: 100%; } .share-item { align-items: flex-start; } .share-item .btn { padding-inline: .65rem; } }
+
 .file-manager-actions {
   display: inline-flex;
   flex-wrap: wrap;
