@@ -1,6 +1,7 @@
 from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils import timezone
+from django.conf import settings
 import os
 
 
@@ -116,6 +117,17 @@ class MonitoringSettings(models.Model):
         return "Monitoring Settings"
 
 
+class UserFeatureAccess(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="feature_accesses")
+    feature = models.CharField(max_length=32, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = "monitor"
+        ordering = ("feature",)
+        constraints = [models.UniqueConstraint(fields=("user", "feature"), name="unique_user_feature_access")]
+
+
 # Compatibility exports: model classes live in their owning apps,
 # but keep main_app.models imports stable while preserving app_label="monitor".
 from monitor_app.models import ProcessSnapshot, SystemSnapshot
@@ -136,6 +148,7 @@ __all__ = [
     "FileShare",
     "FileShareAccessEvent",
     "UserFileAccess",
+    "UserFeatureAccess",
     "MonitoringSettings",
     "ProcessSnapshot",
     "ReportRule",

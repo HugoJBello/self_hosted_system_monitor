@@ -1,0 +1,8 @@
+{% extends "main_app/base.html" %}
+{% block title %}Your applications | System Monitor{% endblock %}
+{% block content %}
+<div class="mb-4"><p class="eyebrow mb-2">Workspace</p><h1 class="display-6 mb-1">Welcome, {{ request.user.username }}</h1><p class="text-secondary mb-0">These are the sections available to your account.</p></div>
+{% if request.user.is_staff %}<div class="alert alert-info border-0"><i class="bi bi-shield-check me-2"></i>Administrator account: you have access to every section and administrative tool.</div>{% endif %}
+<div class="feature-launcher-grid">{% for feature in features %}{% if feature.allowed %}<a class="feature-launcher-card" href="{{ feature.url }}"><span class="feature-launcher-icon"><i class="bi {{ feature.icon }}"></i></span><span class="flex-grow-1"><strong>{{ feature.label }}</strong><small>{{ feature.description }}</small></span><i class="bi bi-arrow-right"></i></a>{% endif %}{% empty %}{% endfor %}</div>
+{% if not request.user.is_staff and not allowed_feature_keys %}<section class="panel-card empty-access-state"><span class="access-denied-icon"><i class="bi bi-grid"></i></span><h2 class="h4">No applications assigned yet</h2><p class="text-secondary mb-0">Your account is active, but an administrator has not granted access to any section. You can still change your password or sign out.</p></section>{% endif %}
+{% endblock %}

@@ -2691,9 +2691,14 @@ body.app-shell {
 }
 
 .users-create-panel { top: 1rem; }
-.users-accordion .accordion-item { border: 1px solid rgba(148, 163, 184, .18); }
-.users-accordion .accordion-button { box-shadow: none; padding: 1.1rem 1.25rem; }
+.users-accordion { --bs-accordion-color: #e5edf7; --bs-accordion-bg: rgba(15, 23, 42, .72); --bs-accordion-border-color: rgba(148, 163, 184, .18); --bs-accordion-btn-color: #f8fafc; --bs-accordion-btn-bg: transparent; --bs-accordion-active-color: #fff; --bs-accordion-active-bg: rgba(30, 41, 59, .82); }
+.users-accordion .accordion-item { border: 1px solid rgba(148, 163, 184, .18); color: #e5edf7; background: rgba(15, 23, 42, .72); }
+.users-accordion .accordion-button { box-shadow: none; padding: 1.1rem 1.25rem; color: #f8fafc; }
 .users-accordion .accordion-button::after { filter: invert(1); margin-left: 1rem; }
+.users-accordion .accordion-body, .users-accordion .users-subsection, .users-accordion .users-subsection h3, .users-accordion .form-label, .users-accordion .form-check-label, .users-accordion strong { color: #e5edf7; }
+.users-accordion .text-secondary, .users-accordion .form-text, .users-accordion small { color: #aebbd0 !important; }
+.users-accordion .form-control, .users-accordion .form-select { color: #f8fafc; background-color: rgba(2, 6, 23, .55); border-color: rgba(148, 163, 184, .3); }
+.users-accordion .form-control::placeholder { color: #8492a6; opacity: 1; }
 .users-avatar, .users-section-icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 2.65rem; height: 2.65rem; border-radius: .85rem; background: rgba(56, 189, 248, .12); color: #7dd3fc; font-weight: 700; }
 .users-section-icon { width: 2.35rem; height: 2.35rem; }
 .status-dot { width: .65rem; height: .65rem; border-radius: 50%; background: #64748b; box-shadow: 0 0 0 4px rgba(100,116,139,.12); }
@@ -2704,6 +2709,24 @@ body.app-shell {
 .access-path-item { display: flex; align-items: center; gap: .75rem; padding: .7rem .8rem; border: 1px solid rgba(148,163,184,.2); background: rgba(15,23,42,.5); border-radius: .7rem; }
 .access-path-item > i { color: #fbbf24; }
 .access-path-empty { padding: 1rem; border: 1px dashed rgba(148,163,184,.25); border-radius: .7rem; text-align: center; }
+.feature-permission-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.feature-permission-card { display: flex; align-items: center; gap: .75rem; padding: .8rem; border: 1px solid rgba(148,163,184,.18); border-radius: .8rem; background: rgba(15,23,42,.38); cursor: pointer; transition: border-color .15s ease, background .15s ease; }
+.feature-permission-card:hover { border-color: rgba(56,189,248,.4); background: rgba(56,189,248,.06); }
+.feature-permission-icon { display: grid; place-items: center; flex: 0 0 auto; width: 2.3rem; height: 2.3rem; border-radius: .65rem; background: rgba(56,189,248,.1); color: #7dd3fc; }
+.feature-permission-card strong, .feature-permission-card small { display: block; }
+.feature-permission-card small { color: #94a3b8; line-height: 1.25; margin-top: .15rem; }
+.feature-launcher-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
+.feature-launcher-card { display: flex; align-items: center; gap: 1rem; min-height: 7rem; padding: 1.2rem; border: 1px solid rgba(148,163,184,.17); border-radius: 1rem; background: linear-gradient(145deg,rgba(30,41,59,.8),rgba(15,23,42,.8)); color: #f8fafc; text-decoration: none; transition: transform .15s ease,border-color .15s ease; }
+.feature-launcher-card:hover { transform: translateY(-2px); border-color: rgba(56,189,248,.45); color: white; }
+.feature-launcher-icon { display: grid; place-items: center; width: 3.2rem; height: 3.2rem; flex: 0 0 auto; border-radius: .85rem; background: rgba(56,189,248,.12); color: #7dd3fc; font-size: 1.35rem; }
+.feature-launcher-card strong, .feature-launcher-card small { display: block; }
+.feature-launcher-card small { color: #94a3b8; margin-top: .3rem; line-height: 1.35; }
+.empty-access-state, .access-denied-card { max-width: 720px; margin: 8vh auto 0; padding: clamp(1.5rem,4vw,3rem); text-align: center; }
+.access-denied-icon { display: grid; place-items: center; width: 4rem; height: 4rem; margin: 0 auto 1rem; border-radius: 1rem; background: rgba(56,189,248,.1); color: #7dd3fc; font-size: 1.75rem; }
+.restricted-files-notice { display: flex; align-items: center; gap: .85rem; margin-bottom: 1rem; padding: .8rem 1rem; border: 1px solid rgba(251,191,36,.22); border-radius: .8rem; background: rgba(251,191,36,.07); color: #fde68a; }
+.restricted-files-notice > i { font-size: 1.25rem; }
+.restricted-files-notice strong, .restricted-files-notice span { display: block; }
+.restricted-files-notice span { color: #cbd5e1; font-size: .85rem; }
 
 .share-hero { display: flex; align-items: center; gap: 1.25rem; padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid rgba(56,189,248,.2); border-radius: 1.25rem; background: radial-gradient(circle at top right, rgba(56,189,248,.16), transparent 42%), linear-gradient(135deg, rgba(15,23,42,.98), rgba(30,41,59,.92)); box-shadow: 0 20px 50px rgba(2,6,23,.25); }
 .share-hero-icon { display: grid; place-items: center; width: 4.5rem; height: 4.5rem; flex: 0 0 auto; border-radius: 1.15rem; background: linear-gradient(135deg,#0ea5e9,#2563eb); color: white; font-size: 2rem; box-shadow: 0 12px 30px rgba(14,165,233,.25); }
@@ -2723,7 +2746,7 @@ body.app-shell {
 .share-item-icon.is-folder { color: #fbbf24; background: rgba(251,191,36,.1); }
 .share-item-copy { min-width: 0; flex: 1; display: flex; flex-direction: column; }
 .share-item-copy span { color: #94a3b8; font-size: .8rem; }
-@media (max-width: 767.98px) { .users-create-panel { position: static !important; } .share-hero { align-items: flex-start; flex-wrap: wrap; } .share-hero-icon { width: 3.5rem; height: 3.5rem; } .share-download-all { width: 100%; } .share-download-all .btn { width: 100%; } .share-item { align-items: flex-start; } .share-item .btn { padding-inline: .65rem; } }
+@media (max-width: 767.98px) { .users-create-panel { position: static !important; } .feature-permission-grid { grid-template-columns: 1fr; } .share-hero { align-items: flex-start; flex-wrap: wrap; } .share-hero-icon { width: 3.5rem; height: 3.5rem; } .share-download-all { width: 100%; } .share-download-all .btn { width: 100%; } .share-item { align-items: flex-start; } .share-item .btn { padding-inline: .65rem; } }
 
 .file-manager-actions {
   display: inline-flex;

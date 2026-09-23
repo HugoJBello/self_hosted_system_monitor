@@ -25,6 +25,8 @@ from main_app.forms import AlertRuleForm, BackupJobForm, MonitoringSettingsForm,
 from file_manager_app.models import FileShareAccessEvent, UserFileAccess
 from file_manager_app.sharing import validate_shared_paths
 from main_app.models import MonitoringSettings
+from main_app.models import UserFeatureAccess
+from main_app.features import FEATURES, FEATURE_KEYS
 from monitor_app.models import ProcessSnapshot, SystemSnapshot
 from alerts_app.models import AlertEvent, AlertRule
 from reports_app.models import ReportRule, ReportRun
@@ -53,6 +55,8 @@ class LoginView(auth_views.LoginView):
     redirect_authenticated_user = True
 
     def get_success_url(self):
+        if self.request.user.is_staff and not self.request.POST.get("next") and not self.request.GET.get("next"):
+            return reverse("monitor:system-monitor")
         url = super().get_success_url()
         return _with_app_subpath(url)
 
@@ -104,6 +108,16 @@ class UsersView(AdminRequiredMixin, View):
             return render(request, self.template_name, self._context(create_form=form))
 
         user = get_object_or_404(User, pk=request.POST.get("user_id"))
+        if "save_feature_access" in request.POST:
+            selected = set(request.POST.getlist("features")) & FEATURE_KEYS
+            if user.is_staff:
+                messages.info(request, f"'{user.username}' is an administrator and already has full access.")
+            else:
+                UserFeatureAccess.objects.filter(user=user).exclude(feature__in=selected).delete()
+                existing = set(UserFeatureAccess.objects.filter(user=user, feature__in=selected).values_list("feature", flat=True))
+                UserFeatureAccess.objects.bulk_create([UserFeatureAccess(user=user, feature=feature) for feature in selected - existing])
+                messages.success(request, f"Application access updated for '{user.username}'.")
+            return redirect("monitor:users")
         if "save_file_access" in request.POST:
             try:
                 raw_paths = [line.strip() for value in request.POST.getlist("file_access_paths") for line in value.splitlines() if line.strip()]
@@ -143,6 +157,7 @@ class UsersView(AdminRequiredMixin, View):
                 "password_form": password_form_overrides.get(user.id) or StyledSetPasswordForm(user, prefix=f"pass-{user.id}"),
                 "manual_file_paths": "\n".join(user.file_accesses.filter(source_share__isnull=True).values_list("path", flat=True)),
                 "shared_file_accesses": user.file_accesses.filter(source_share__isnull=False).select_related("source_share", "granted_by"),
+                "feature_keys": set(user.feature_accesses.values_list("feature", flat=True)),
             }
             for user in users
         ]
@@ -152,4 +167,5 @@ class UsersView(AdminRequiredMixin, View):
             "create_form": create_form or UserAdminCreateForm(prefix="new"),
             "settings_obj": MonitoringSettings.load(),
             "share_access_events": FileShareAccessEvent.objects.select_related("share", "user", "share__created_by")[:200],
+            "feature_catalog": FEATURES,
         }

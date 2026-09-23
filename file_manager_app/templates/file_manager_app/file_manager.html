@@ -80,6 +80,8 @@
     </div>
   </div>
 
+  {% if not request.user.is_staff %}<div class="restricted-files-notice"><i class="bi bi-shield-lock"></i><div><strong>Restricted file access</strong><span>You can only browse the approved roots shown under “Access roots” and folders shared with your account.</span></div></div>{% endif %}
+
   <section class="panel-card file-manager-panel">
     <div class="file-manager-loading d-none" data-file-manager-loading role="status" aria-live="polite">
       <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>

@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth import get_user_model
-from django.contrib.auth.mixins import UserPassesTestMixin
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.shortcuts import redirect, render
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -9,6 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from main_app.forms import MonitoringSettingsForm
 from main_app.models import MonitoringSettings, SystemSnapshot
 from main_app.notification_client import build_test_payload, send_json_notification
+from main_app.features import feature_catalog_for_user
 
 
 User = get_user_model()
@@ -16,6 +17,16 @@ User = get_user_model()
 class AdminRequiredMixin(UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_authenticated and self.request.user.is_staff
+
+
+class AccessHomeView(LoginRequiredMixin, View):
+    template_name = "main_app/access_home.html"
+
+    def get(self, request):
+        return render(request, self.template_name, {
+            "features": feature_catalog_for_user(request.user),
+            "settings_obj": MonitoringSettings.load(),
+        })
 
 @method_decorator(csrf_exempt, name="dispatch")
 class SettingsView(AdminRequiredMixin, View):

@@ -349,6 +349,8 @@ class FileManagerView(LoginRequiredMixin, View):
 
     def _entries(self, user, host_path, sort_field="name", sort_direction="asc"):
         try:
+            if not user.is_staff and not access_roots(user):
+                return [], "No file locations are assigned to your account yet. Ask an administrator to add a path or share a folder with you."
             require_path_access(user, host_path)
             return list_file_manager_entries(host_path, sort_field=sort_field, sort_direction=sort_direction), ""
         except (ValueError, PermissionError) as exc:

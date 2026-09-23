@@ -50,7 +50,7 @@ class AdminRequiredMixin(UserPassesTestMixin):
 
 class RedirectHomeView(LoginRequiredMixin, View):
     def get(self, request):
-        return redirect("monitor:system-monitor")
+        return redirect("monitor:system-monitor" if request.user.is_staff else "monitor:access-home")
 
 
 def _safe_next_url(request):
@@ -264,4 +264,3 @@ class SystemMonitorView(LoginRequiredMixin, View):
             "auto_refresh_seconds": auto_refresh_seconds,
         }
         return render(request, self.template_name, context)
-

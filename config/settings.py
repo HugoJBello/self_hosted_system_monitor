@@ -47,6 +47,7 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "main_app.middleware.RelaxedCsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "main_app.middleware.FeatureAccessMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -103,7 +104,7 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
 LOGIN_URL = "monitor:login"
-LOGIN_REDIRECT_URL = "monitor:system-monitor"
+LOGIN_REDIRECT_URL = "monitor:access-home"
 LOGOUT_REDIRECT_URL = "monitor:login"
 
 SAMPLER_DEFAULT_INTERVAL = int(os.getenv("SAMPLER_DEFAULT_INTERVAL", "60"))

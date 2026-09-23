@@ -8,6 +8,7 @@ from django.urls import reverse
 
 from file_manager_app.access import access_roots, user_can_access_path
 from file_manager_app.models import FileShare, FileShareAccessEvent, UserFileAccess
+from main_app.models import UserFeatureAccess
 
 
 class FileSharingTests(TestCase):
@@ -66,6 +67,7 @@ class FileSharingTests(TestCase):
         self.assertTrue(FileShareAccessEvent.objects.filter(share=share, action="view", user=self.member).exists())
 
     def test_restricted_file_manager_rejects_paths_outside_roots(self):
+        UserFeatureAccess.objects.create(user=self.member, feature="files")
         UserFileAccess.objects.create(user=self.member, path="/shared", granted_by=self.admin)
         self.client.force_login(self.member)
         self.assertEqual(self.client.get(self.url("monitor:file-manager"), {"path": "/shared"}).status_code, 200)
