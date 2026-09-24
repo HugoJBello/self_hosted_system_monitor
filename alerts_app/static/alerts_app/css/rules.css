@@ -1,0 +1,212 @@
+
+.severity-pill,
+.live-pill,
+.resolved-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.severity-warning {
+  border-color: rgba(255, 209, 102, 0.24);
+}
+
+.severity-critical {
+  border-color: rgba(255, 122, 89, 0.3);
+}
+
+.severity-info {
+  border-color: rgba(93, 198, 255, 0.24);
+}
+
+.severity-pill.severity-warning {
+  background: rgba(255, 209, 102, 0.14);
+  color: #ffd166;
+}
+
+.severity-pill.severity-critical {
+  background: rgba(255, 122, 89, 0.14);
+  color: #ff7a59;
+}
+
+.severity-pill.severity-info {
+  background: rgba(93, 198, 255, 0.14);
+  color: #5dc6ff;
+}
+
+.live-pill {
+  background: rgba(77, 212, 172, 0.14);
+  color: #4dd4ac;
+}
+
+.resolved-pill {
+  background: rgba(255, 255, 255, 0.08);
+  color: #cfd8e3;
+}
+
+.event-value {
+  font-size: 1.45rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.alert-rule-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+  border-width: 1px;
+  margin-bottom: 1rem;
+  padding: 1.35rem 1.35rem 1.2rem;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.16);
+}
+
+.alert-rule-card.severity-warning {
+  border-color: rgba(255, 209, 102, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 209, 102, 0.08), rgba(255, 255, 255, 0.02) 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+}
+
+.alert-rule-card.severity-critical {
+  border-color: rgba(255, 122, 89, 0.2);
+  background:
+    linear-gradient(180deg, rgba(255, 122, 89, 0.09), rgba(255, 255, 255, 0.02) 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+}
+
+.alert-rule-card.severity-info {
+  border-color: rgba(93, 198, 255, 0.18);
+  background:
+    linear-gradient(180deg, rgba(93, 198, 255, 0.08), rgba(255, 255, 255, 0.02) 26%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
+}
+
+.event-icon,
+.rule-icon {
+  font-size: 1rem;
+  color: var(--accent-3);
+}
+
+.rules-overview {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.rule-summary-card {
+  padding: 1rem 1.05rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.rule-summary-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.9rem;
+}
+
+.rule-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 0.8rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.compact-rule-header {
+  padding-bottom: 0.85rem;
+  margin-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rule-editor-hero {
+  margin-bottom: 1rem;
+  padding: 1rem 1rem 0.9rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.rule-editor-icon-wrap {
+  width: 3rem;
+  height: 3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.95rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.rule-editor-icon {
+  font-size: 1.2rem;
+  color: #ffffff;
+}
+
+.rule-editor-kicker {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 0.25rem;
+}
+
+.rule-editor-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.rule-editor-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.rule-editor-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.7rem;
+  margin-top: 0.85rem;
+}
+
+.rule-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0.65rem 0.8rem;
+  border-radius: 0.85rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.25;
+}
+
+.rule-editor-section {
+  padding: 0.95rem 1rem;
+  border-radius: 0.95rem;
+  background: rgba(6, 13, 24, 0.26);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.rule-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.25rem;
+  color: #dfe8f1;
+  font-weight: 700;
+}
+
+.compact-chip {
+  padding: 0.32rem 0.62rem;
+  font-size: 0.78rem;
+}

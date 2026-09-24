@@ -1,0 +1,18 @@
+
+.backup-run-config-card,
+.backup-run-log-card {
+  position: relative;
+  z-index: 1;
+}
+
+.backup-run-config-grid {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  align-items: stretch;
+}
+
+.backup-run-output-log {
+  background: rgba(5, 10, 17, 0.94);
+  border-color: rgba(255, 255, 255, 0.08);
+  max-height: min(64vh, 46rem);
+  overflow: auto;
+}

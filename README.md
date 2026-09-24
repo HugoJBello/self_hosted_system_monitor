@@ -23,9 +23,9 @@
 - `config/`: Django project settings and URL configuration.
 - `monitor/`: monitoring app, models, services, views, and management command.
 - `templates/`: Bootstrap templates.
-- `static/`: CSS assets and generated frontend bundles.
-- `static/monitor/js/<feature>/`: maintainable JavaScript sources grouped by responsibility.
-- `static/monitor/dist/`: generated JavaScript bundles (created during image builds and not committed).
+- `<app>/static/<app>/`: static assets owned and namespaced by each Django app.
+- `main_app/static/main_app/`: site-wide shell styles, icons, and reusable frontend components.
+- `<app>/static/<app>/dist/`: generated JavaScript bundles (created during image builds and not committed).
 - `data/`: bind-mounted runtime data such as SQLite.
 
 ## Run
@@ -111,10 +111,13 @@ The sampler service waits for the database and then begins saving snapshots.
 
 ## Frontend assets
 
-Large page scripts are split by responsibility under `static/monitor/js/file_manager/` and
-`static/monitor/js/web_terminal/`. Templates load generated bundles so each page retains one private
-JavaScript scope and one HTTP request. Docker builds them automatically before static files are
-collected. For local development, rebuild and validate them with:
+Every Django app owns its specific assets under a namespaced `static/<app>/` directory, alongside
+its templates. Shared shell assets and reusable components live under `main_app/static/main_app/`.
+The file manager and terminal scripts are further split by responsibility under their respective
+app directories. Templates load generated bundles so each page retains one private JavaScript scope
+and one HTTP request. App-specific CSS follows the same ownership rule and is concatenated into one
+site stylesheet in its original cascade order. Docker builds the JavaScript and CSS bundles
+automatically before static files are collected. For local development, rebuild and validate them with:
 
 ```bash
 python tools/build_frontend_bundles.py
@@ -122,7 +125,7 @@ python tools/build_frontend_bundles.py --check
 python -m unittest discover -s tools -p 'test_*.py'
 ```
 
-Generated files under `static/monitor/dist/` are intentionally ignored. Production static assets
+Generated `dist/` directories are intentionally ignored. Production static assets
 also use WhiteNoise's content-hashed manifest; `FRONTEND_ASSET_VERSION` provides one central cache
 version for development and proxies that retain query-string-aware caches.
 

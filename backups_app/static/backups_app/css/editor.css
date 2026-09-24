@@ -1,0 +1,60 @@
+
+.backup-advanced-toggle {
+  cursor: pointer;
+  list-style: none;
+}
+
+.backup-advanced-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.backup-run-card {
+  display: block;
+  overflow: hidden;
+}
+
+.running-backup-card {
+  border-color: rgba(77, 212, 172, 0.22);
+  background:
+    linear-gradient(180deg, rgba(77, 212, 172, 0.08), rgba(255, 255, 255, 0.02) 26%),
+    rgba(255, 255, 255, 0.03);
+}
+
+.backup-run-side {
+  min-width: 8rem;
+  max-width: 100%;
+}
+
+.backup-run-log-details summary {
+  cursor: pointer;
+  color: #9fb3c8;
+  font-size: 0.92rem;
+  margin-bottom: 0.75rem;
+}
+
+.backup-run-log {
+  max-height: 18rem;
+  overflow: auto;
+  padding: 0.9rem;
+  border-radius: 0.85rem;
+  background: rgba(5, 10, 17, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #d9e4ef;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.backup-source-group > .form-control,
+.backup-source-group > .form-select {
+  min-width: 0;
+}
+
+.backup-timeout-editor .form-control {
+  min-width: 4.5rem;
+}
+
+.backup-timeout-editor .form-select {
+  max-width: 8rem;
+}

@@ -1,0 +1,268 @@
+
+.file-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.75rem;
+  padding: 0.85rem;
+  overflow: auto;
+}
+
+.file-manager-row {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 0 var(--file-manager-col-name, minmax(14rem, 1.8fr)) var(--file-manager-col-kind, minmax(5rem, 0.45fr)) var(--file-manager-col-size, minmax(6rem, 0.5fr)) var(--file-manager-col-modified, minmax(10rem, 0.85fr)) var(--file-manager-col-owner, minmax(8rem, 0.7fr)) var(--file-manager-col-permissions, minmax(8rem, 0.7fr));
+  align-items: center;
+  gap: 1rem;
+  padding: 0.82rem 1rem;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.065);
+  background: transparent;
+  color: #dce5f1;
+  text-align: left;
+}
+
+.file-manager-select-cell {
+  width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: width 160ms ease, opacity 160ms ease;
+}
+
+.file-manager-page.is-selecting .file-manager-row {
+  grid-template-columns: 2rem var(--file-manager-col-name, minmax(14rem, 1.8fr)) var(--file-manager-col-kind, minmax(5rem, 0.45fr)) var(--file-manager-col-size, minmax(6rem, 0.5fr)) var(--file-manager-col-modified, minmax(10rem, 0.85fr)) var(--file-manager-col-owner, minmax(8rem, 0.7fr)) var(--file-manager-col-permissions, minmax(8rem, 0.7fr));
+}
+
+.file-manager-page.is-selecting .file-manager-select-cell {
+  width: 2rem;
+  opacity: 1;
+}
+
+.file-manager-checkbox {
+  width: 1.25rem;
+  height: 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(142, 163, 185, 0.42);
+  border-radius: 0.35rem;
+  color: transparent;
+}
+
+.file-manager-row-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #111827;
+  color: #8ea3b9;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.file-manager-sort-header {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0 0.55rem 0 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-transform: inherit;
+}
+
+.file-manager-column-resizer {
+  position: absolute;
+  top: -0.82rem;
+  right: -0.65rem;
+  bottom: -0.82rem;
+  width: 0.75rem;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.file-manager-column-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0.45rem;
+  right: 0.33rem;
+  bottom: 0.45rem;
+  width: 1px;
+  background: rgba(148, 163, 184, 0.28);
+}
+
+.file-manager-column-resizer:hover::after,
+.file-manager-column-resizer:focus-visible::after,
+.file-manager-page.is-resizing-column .file-manager-column-resizer::after {
+  background: rgba(125, 211, 252, 0.85);
+}
+
+.file-manager-page.is-resizing-column,
+.file-manager-page.is-resizing-column * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+
+.file-manager-sort-header:hover,
+.file-manager-sort-header:focus-visible {
+  color: #dff4ff;
+  outline: none;
+}
+
+.file-manager-sort-header i {
+  color: #7dd3fc;
+  font-size: 0.8rem;
+}
+
+.file-manager-item {
+  cursor: default;
+}
+
+.file-manager-page.is-single-click-open .file-manager-item {
+  cursor: pointer;
+}
+
+.file-manager-item:hover,
+.file-manager-item:focus-visible {
+  background: rgba(93, 198, 255, 0.08);
+  outline: none;
+}
+
+.file-manager-item.is-selected {
+  background: rgba(93, 198, 255, 0.13);
+}
+
+.file-manager-item.is-selected .file-manager-checkbox {
+  border-color: rgba(93, 198, 255, 0.72);
+  background: rgba(93, 198, 255, 0.22);
+  color: #dff4ff;
+}
+
+.file-manager-name {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-weight: 800;
+}
+
+.file-manager-icon {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.55rem;
+  background: rgba(255, 209, 102, 0.12);
+  color: #ffd166;
+}
+
+.file-manager-icon-file {
+  background: rgba(93, 198, 255, 0.11);
+  color: #90d7ff;
+}
+
+.file-manager-icon-parent {
+  background: rgba(142, 163, 185, 0.11);
+  color: #d6dde8;
+}
+
+.file-manager-chip {
+  flex: 0 0 auto;
+  padding: 0.18rem 0.42rem;
+  border-radius: 999px;
+  background: rgba(77, 212, 172, 0.12);
+  color: #9cf0d4;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.file-manager-row code {
+  color: #9fb0c7;
+}
+
+.file-manager-tile {
+  position: relative;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 7.25rem auto auto;
+  gap: 0.45rem;
+  padding: 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: #dce5f1;
+  text-align: left;
+}
+
+.file-manager-tile:hover,
+.file-manager-tile:focus-visible {
+  border-color: rgba(93, 198, 255, 0.35);
+  background: rgba(93, 198, 255, 0.08);
+  outline: none;
+}
+
+.file-manager-tile.is-selected {
+  border-color: rgba(93, 198, 255, 0.56);
+  background: rgba(93, 198, 255, 0.13);
+}
+
+.file-manager-tile .file-manager-checkbox {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  z-index: 1;
+  opacity: 0;
+}
+
+.file-manager-page.is-selecting .file-manager-tile .file-manager-checkbox {
+  opacity: 1;
+}
+
+.file-manager-tile-preview {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.055);
+  color: #ffd166;
+  font-size: 2.4rem;
+}
+
+.file-manager-tile-preview img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.file-manager-tile-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 800;
+}
+
+.file-manager-tile-meta {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9fb0c7;
+  font-size: 0.78rem;
+}
+
+.file-manager-empty {
+  padding: 2.4rem 1rem;
+  color: #8ea3b9;
+  text-align: center;
+}

@@ -1,0 +1,7 @@
+
+.config-section {
+  padding: 1.1rem 1.15rem;
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}

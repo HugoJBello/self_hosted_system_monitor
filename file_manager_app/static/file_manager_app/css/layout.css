@@ -1,0 +1,6 @@
+
+.file-manager-page {
+  min-height: calc(100vh - 8.5rem);
+  display: flex;
+  flex-direction: column;
+}

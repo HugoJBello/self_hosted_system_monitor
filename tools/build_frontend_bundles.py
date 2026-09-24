@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the small, dependency-free JavaScript bundles used by Django templates."""
+"""Build dependency-free JavaScript and CSS bundles used by Django templates."""
 
 from __future__ import annotations
 
@@ -20,33 +20,78 @@ class Bundle:
     sources: tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class StylesheetBundle:
+    target: str
+    sources: tuple[str, ...]
+
+
 BUNDLES = (
     Bundle(
-        target="static/monitor/dist/file_manager.bundle.js",
+        target="file_manager_app/static/file_manager_app/dist/file_manager.bundle.js",
         selector='[data-file-manager-page]',
         guard="!page",
         sources=(
-            "static/monitor/js/file_manager/core.js",
-            "static/monitor/js/file_manager/actions.js",
-            "static/monitor/js/file_manager/browser.js",
-            "static/monitor/js/file_manager/information.js",
-            "static/monitor/js/file_manager/preview.js",
-            "static/monitor/js/file_manager/transfers.js",
-            "static/monitor/js/file_manager/uploads.js",
-            "static/monitor/js/file_manager/downloads.js",
-            "static/monitor/js/file_manager/destination.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/core.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/actions.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/browser.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/information.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/preview.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/transfers.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/uploads.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/downloads.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/destination.js",
         ),
     ),
     Bundle(
-        target="static/monitor/dist/web_terminal.bundle.js",
+        target="terminal_app/static/terminal_app/dist/web_terminal.bundle.js",
         selector="[data-terminal-page]",
         guard="!page || !window.Terminal || !window.FitAddon",
         sources=(
-            "static/monitor/js/web_terminal/core.js",
-            "static/monitor/js/web_terminal/websocket.js",
-            "static/monitor/js/web_terminal/session.js",
-            "static/monitor/js/web_terminal/fallback.js",
-            "static/monitor/js/web_terminal/mobile.js",
+            "terminal_app/static/terminal_app/js/web_terminal/core.js",
+            "terminal_app/static/terminal_app/js/web_terminal/websocket.js",
+            "terminal_app/static/terminal_app/js/web_terminal/session.js",
+            "terminal_app/static/terminal_app/js/web_terminal/fallback.js",
+            "terminal_app/static/terminal_app/js/web_terminal/mobile.js",
+        ),
+    ),
+)
+
+STYLESHEET_BUNDLES = (
+    StylesheetBundle(
+        target="main_app/static/main_app/dist/app.bundle.css",
+        sources=(
+            "main_app/static/main_app/css/shell.css",
+            "monitor_app/static/monitor_app/css/monitor.css",
+            "volumes_app/static/volumes_app/css/volumes.css",
+            "monitor_app/static/monitor_app/css/memory.css",
+            "main_app/static/main_app/css/settings.css",
+            "alerts_app/static/alerts_app/css/feed.css",
+            "reports_app/static/reports_app/css/reports.css",
+            "main_app/static/main_app/css/path_browser.css",
+            "backups_app/static/backups_app/css/editor.css",
+            "jobs_app/static/jobs_app/css/lists.css",
+            "docker_runtime_app/static/docker_runtime_app/css/docker.css",
+            "backups_app/static/backups_app/css/jobs.css",
+            "alerts_app/static/alerts_app/css/rules.css",
+            "history_app/static/history_app/css/history.css",
+            "jobs_app/static/jobs_app/css/runs.css",
+            "backups_app/static/backups_app/css/runs.css",
+            "jobs_app/static/jobs_app/css/editor.css",
+            "main_app/static/main_app/css/responsive-components.css",
+            "main_app/static/main_app/css/forms.css",
+            "terminal_app/static/terminal_app/css/terminal.css",
+            "file_manager_app/static/file_manager_app/css/layout.css",
+            "users_app/static/users_app/css/users.css",
+            "main_app/static/main_app/css/home.css",
+            "file_manager_app/static/file_manager_app/css/shares.css",
+            "file_manager_app/static/file_manager_app/css/browser-shell.css",
+            "file_manager_app/static/file_manager_app/css/browser-items.css",
+            "file_manager_app/static/file_manager_app/css/transfers.css",
+            "file_manager_app/static/file_manager_app/css/uploads-search-downloads.css",
+            "file_manager_app/static/file_manager_app/css/preview.css",
+            "file_manager_app/static/file_manager_app/css/information.css",
+            "main_app/static/main_app/css/responsive-pages.css",
         ),
     ),
 )
@@ -64,18 +109,24 @@ def render(bundle: Bundle) -> str:
     )
 
 
+def render_stylesheet(bundle: StylesheetBundle) -> str:
+    body = "".join((ROOT / source).read_text(encoding="utf-8") for source in bundle.sources).rstrip("\n")
+    return "/* Generated by tools/build_frontend_bundles.py. Do not edit directly. */\n" + body + "\n"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="fail if a generated bundle is absent or stale")
     args = parser.parse_args()
 
     stale: list[str] = []
-    for bundle in BUNDLES:
-        target = ROOT / bundle.target
-        expected = render(bundle)
+    assets = tuple((bundle.target, render(bundle)) for bundle in BUNDLES)
+    assets += tuple((bundle.target, render_stylesheet(bundle)) for bundle in STYLESHEET_BUNDLES)
+    for target_name, expected in assets:
+        target = ROOT / target_name
         if args.check:
             if not target.exists() or target.read_text(encoding="utf-8") != expected:
-                stale.append(bundle.target)
+                stale.append(target_name)
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_suffix(f"{target.suffix}.tmp")

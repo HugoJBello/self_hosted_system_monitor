@@ -1,0 +1,71 @@
+
+.script-preview-shell {
+  margin: 0;
+  padding: 0.95rem 1rem;
+  border-radius: 0.9rem;
+  background: rgba(5, 10, 17, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  overflow: auto;
+}
+
+.script-preview-shell code {
+  display: block;
+  color: #dfe8f1;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.script-run-script-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.script-run-script-card .script-preview-shell {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.script-run-log-card {
+  position: relative;
+  z-index: 1;
+}
+
+.script-run-command-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  padding: 0.7rem 0.85rem;
+  border-radius: 0.75rem;
+  background: rgba(5, 10, 17, 0.38);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.script-run-command-strip span {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.7;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.script-run-command-strip code {
+  display: block;
+  min-width: 0;
+  max-height: 6.5rem;
+  overflow: auto;
+  color: #dfe8f1;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.script-run-output-log {
+  background: rgba(5, 10, 17, 0.94);
+  border-color: rgba(255, 255, 255, 0.08);
+  max-height: min(62vh, 44rem);
+  overflow: auto;
+}

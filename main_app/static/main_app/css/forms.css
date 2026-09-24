@@ -1,0 +1,40 @@
+
+.messages-wrap {
+  max-width: 32rem;
+}
+
+.auth-shell {
+  min-height: calc(100vh - 8rem);
+  display: grid;
+  place-items: center;
+}
+
+.auth-card {
+  width: min(100%, 28rem);
+}
+
+.form-control,
+.form-select {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.form-select option,
+.form-select optgroup {
+  background-color: #0d1b2a;
+  color: #edf2f7;
+}
+
+.form-control:focus,
+.form-select:focus {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 122, 89, 0.6);
+  box-shadow: 0 0 0 0.25rem rgba(255, 122, 89, 0.15);
+  color: #ffffff;
+}
+
+.text-secondary,
+.form-text {
+  color: var(--muted) !important;
+}

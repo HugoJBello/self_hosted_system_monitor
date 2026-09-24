@@ -1,0 +1,350 @@
+
+.file-manager-destination-list {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.file-manager-destination-topbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.file-manager-destination-path {
+  width: 100%;
+  min-width: 0;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-destination-topbar .file-manager-breadcrumbs {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.12rem 0 0.22rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(159, 176, 199, 0.45) transparent;
+}
+
+.file-manager-destination-topbar .file-manager-breadcrumb {
+  flex: 0 0 auto;
+}
+
+.file-manager-destination-topbar .file-manager-breadcrumb.is-current {
+  border-color: rgba(93, 198, 255, 0.38);
+  background: rgba(93, 198, 255, 0.1);
+  color: #ffffff;
+}
+
+.file-manager-destination-up {
+  flex: 0 0 auto;
+  min-height: 2.15rem;
+  white-space: nowrap;
+}
+
+.file-manager-destination-browser {
+  padding: 0.15rem;
+}
+
+.file-manager-destination-row {
+  width: 100%;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.62rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+  color: #edf2f7;
+  text-align: left;
+}
+
+.file-manager-destination-row:hover,
+.file-manager-destination-row:focus-visible {
+  border-color: rgba(93, 198, 255, 0.35);
+  background: rgba(93, 198, 255, 0.08);
+  outline: none;
+}
+
+.file-manager-destination-row i {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 209, 102, 0.1);
+  color: #ffd166;
+}
+
+.file-manager-destination-new-folder {
+  padding: 0.75rem;
+  border: 1px solid rgba(93, 198, 255, 0.18);
+  border-radius: 0.55rem;
+  background: rgba(93, 198, 255, 0.045);
+}
+
+.file-manager-destination-new-folder-fields {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.file-manager-compress-options {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(12rem, 0.65fr);
+  gap: 0.85rem;
+}
+
+.file-manager-compress-option {
+  min-width: 0;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-compress-options > .file-manager-status {
+  grid-column: 1 / -1;
+}
+
+.file-manager-conflict-policies {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+}
+
+.file-manager-conflict-policy {
+  min-width: 0;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-option-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #c9d8e8;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.file-manager-option-label i {
+  color: #7dd3fc;
+  font-size: 0.95rem;
+}
+
+.file-manager-transfer-method {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.7fr) minmax(0, 1.3fr);
+  align-items: end;
+  gap: 0.85rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(93, 198, 255, 0.16);
+  border-radius: 0.55rem;
+  background: rgba(93, 198, 255, 0.045);
+}
+
+.file-manager-transfer-method .form-text {
+  margin-bottom: 0.55rem;
+}
+
+.file-manager-rsync-options {
+  display: grid;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border: 1px solid rgba(255, 209, 102, 0.25);
+  border-radius: 0.55rem;
+  background: rgba(255, 209, 102, 0.045);
+}
+
+.file-manager-rsync-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid rgba(255, 122, 89, 0.42);
+  border-radius: 0.5rem;
+  background: rgba(255, 122, 89, 0.1);
+  color: #ffd7ce;
+  font-size: 0.82rem;
+}
+
+.file-manager-rsync-warning i {
+  flex: 0 0 auto;
+  color: #ffb39d;
+}
+
+.file-manager-transfer-plan {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.file-manager-transfer-plan-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.file-manager-transfer-plan-items {
+  display: grid;
+  gap: 0.45rem;
+  max-height: min(24rem, 52vh);
+  overflow-y: auto;
+  padding: 0.1rem;
+}
+
+.file-manager-transfer-plan-summary,
+.file-manager-transfer-plan-more {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid rgba(93, 198, 255, 0.22);
+  border-radius: 0.55rem;
+  background: rgba(93, 198, 255, 0.06);
+  color: #dff4ff;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.file-manager-transfer-plan-summary i {
+  color: #7dd3fc;
+}
+
+.file-manager-transfer-plan-more {
+  justify-content: center;
+  color: #9fb0c7;
+}
+
+.file-manager-transfer-plan-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+  min-width: 0;
+  padding: 0.2rem 0;
+}
+
+.file-manager-transfer-plan-path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.78rem;
+}
+
+.file-manager-transfer-plan-card {
+  min-width: 0;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.file-manager-transfer-plan-card:first-child {
+  border-color: rgba(148, 163, 184, 0.32);
+}
+
+.file-manager-transfer-plan-card:last-child {
+  border-color: rgba(93, 198, 255, 0.32);
+  background: rgba(93, 198, 255, 0.07);
+}
+
+.file-manager-transfer-plan-card-label,
+.file-manager-transfer-option-label {
+  margin-bottom: 0.3rem;
+  color: #8ea3b9;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.file-manager-transfer-plan-card-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.file-manager-transfer-plan-card-body > i {
+  flex: 0 0 auto;
+  color: #b9c9db;
+  font-size: 1rem;
+}
+
+.file-manager-transfer-plan-card:last-child .file-manager-transfer-plan-card-body > i {
+  color: #7dd3fc;
+}
+
+.file-manager-transfer-plan-arrow {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(93, 198, 255, 0.28);
+  border-radius: 50%;
+  background: rgba(93, 198, 255, 0.08);
+  color: #7dd3fc;
+}
+
+.file-manager-transfer-plan-arrow i {
+  font-size: 1rem;
+}
+
+.file-manager-transfer-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-transfer-option > i {
+  flex: 0 0 auto;
+  color: #7dd3fc;
+  font-size: 1.05rem;
+}
+
+.file-manager-transfer-option-value {
+  color: #dbeafe;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.file-manager-transfer-option.is-danger {
+  border-color: rgba(255, 122, 89, 0.45);
+  background: rgba(255, 122, 89, 0.1);
+}
+
+.file-manager-transfer-option.is-danger > i {
+  color: #ff9f87;
+}
+
+.file-manager-transfer-option.is-danger .file-manager-transfer-option-value {
+  color: #ffd7ce;
+}
+
+.file-manager-transfer-plan-item i {
+  color: #7dd3fc;
+}
+
+.file-manager-transfer-plan-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.75rem, 1fr));
+  gap: 0.55rem;
+}
+
+.file-manager-conflict-policies > .form-text {
+  grid-column: 1 / -1;
+}

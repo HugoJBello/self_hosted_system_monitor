@@ -1,0 +1,236 @@
+
+@media (max-width: 768px) {
+  .panel-card {
+    border-radius: 1.1rem;
+  }
+
+  .history-chart-shell {
+    height: 16rem;
+  }
+
+  .history-chart-shell-short {
+    height: 14rem;
+  }
+
+  .history-resource-chart-shell {
+    height: 18rem;
+  }
+
+  .history-gap-list {
+    grid-template-columns: 1fr;
+  }
+
+  .rule-summary-top {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .rule-editor-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-browser-node {
+    padding: 0.7rem;
+  }
+
+  .backup-browser-node.nested {
+    margin-left: 0.45rem;
+  }
+
+  .backup-browser-select {
+    max-width: 100%;
+    margin-left: 0;
+    margin-top: 0.45rem;
+  }
+
+  .backup-run-side {
+    min-width: 0;
+    width: 100%;
+    text-align: left !important;
+  }
+
+  .running-backup-card .d-flex.justify-content-between,
+  .backup-run-card .d-flex.justify-content-between {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+
+  .backup-run-side .event-value {
+    margin-bottom: 0.35rem;
+  }
+
+  .backup-run-side form,
+  .backup-run-side a.btn {
+    width: 100%;
+  }
+
+  .backup-run-side .btn {
+    width: 100%;
+  }
+
+  .backup-run-log {
+    max-height: 13rem;
+    font-size: 0.76rem;
+    padding: 0.75rem;
+  }
+
+  .backup-job-summary {
+    padding: 0.9rem;
+  }
+
+  .backup-job-summary-top,
+  .backup-job-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .docker-family-top,
+  .docker-family-mini-card,
+  .docker-image-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .docker-container-row {
+    grid-template-columns: 1fr;
+  }
+
+  .docker-container-side {
+    text-align: left;
+  }
+
+  .docker-log-row {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+  }
+
+  .docker-log-timestamp {
+    white-space: normal;
+  }
+
+  .backup-job-next {
+    width: 100%;
+  }
+
+  .backup-job-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .backup-job-arrow {
+    width: 100%;
+    height: 1.4rem;
+    transform: rotate(90deg);
+  }
+
+  .backup-job-actions .btn,
+  .backup-job-actions form {
+    width: 100%;
+  }
+
+  .job-list-toolbar,
+  .job-run-filter-bar,
+  .job-compact-row,
+  .execution-row {
+    grid-template-columns: 1fr;
+  }
+
+  .job-list-toolbar-actions,
+  .job-compact-actions,
+  .execution-actions {
+    justify-content: stretch;
+  }
+
+  .job-list-toolbar-actions .btn,
+  .job-list-toolbar-actions .btn-group,
+  .execution-actions .btn,
+  .execution-actions form {
+    width: 100%;
+  }
+
+  .job-list-toolbar-actions .btn-group .btn {
+    width: 50%;
+  }
+
+  .job-compact-row {
+    gap: 0.7rem;
+    padding: 0.85rem;
+  }
+
+  .job-compact-actions {
+    display: flex;
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+
+  .job-compact-actions form,
+  .job-compact-actions .btn {
+    width: 100%;
+  }
+
+  .job-compact-actions form:first-child {
+    flex: 1 1 6rem;
+  }
+
+  .job-compact-actions form:not(:first-child),
+  .job-compact-actions > button {
+    flex: 0 0 2.8rem;
+  }
+
+  .job-compact-actions .btn {
+    min-height: 2.4rem;
+    padding-inline: 0.55rem;
+  }
+
+  .job-compact-meta,
+  .job-compact-last,
+  .execution-times,
+  .execution-status {
+    font-size: 0.82rem;
+  }
+
+  .backup-source-group {
+    gap: 0.5rem;
+  }
+
+  .backup-source-group > .form-control,
+  .backup-source-group > .form-select,
+  .backup-source-group > .btn {
+    width: 100%;
+    flex: 0 0 100%;
+    border-radius: 0.75rem !important;
+  }
+
+  .backup-source-group > .btn {
+    margin-left: 0 !important;
+  }
+
+  .backup-timeout-editor > .form-control,
+  .backup-timeout-editor > .form-select {
+    width: 100%;
+    flex: 0 0 100%;
+    border-radius: 0.75rem !important;
+  }
+
+  .command-modal-block {
+    padding: 0.75rem;
+    font-size: 0.82rem;
+  }
+
+  .script-preview-shell {
+    padding: 0.75rem;
+  }
+
+  .script-argument-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .script-argument-columns,
+  .script-argument-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .script-argument-row-flag {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  }
+}

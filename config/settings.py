@@ -93,7 +93,6 @@ USE_TZ = True
 
 STATIC_URL = f"{APP_SUBPATH}/static/" if APP_SUBPATH else "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"]
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 FRONTEND_ASSET_VERSION = os.getenv("FRONTEND_ASSET_VERSION", "20260924-modular-js")
 

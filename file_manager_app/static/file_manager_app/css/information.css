@@ -1,0 +1,215 @@
+
+.file-manager-info-thumbnail {
+  display: block;
+  width: 9rem;
+  height: 9rem;
+  max-width: 100%;
+  max-height: 9rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  object-fit: contain;
+  background: #050914;
+  margin: 0.5rem auto 0;
+}
+
+.file-manager-info-video-thumbnail {
+  display: grid;
+  place-items: center;
+  gap: 0.35rem;
+  width: min(100%, 10rem);
+  min-height: 7rem;
+  margin: 0.5rem auto 0;
+  color: #7dd3fc;
+}
+
+.file-manager-info-video-thumbnail.is-unavailable {
+  padding: 0.75rem;
+  border: 1px dashed rgba(125, 211, 252, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(125, 211, 252, 0.06);
+  color: #8ea3b9;
+  text-align: center;
+}
+
+.file-manager-info-video-thumbnail.is-unavailable i {
+  color: #7dd3fc;
+  font-size: 1.5rem;
+}
+
+.file-manager-info-video-thumbnail.is-unavailable span {
+  font-size: 0.74rem;
+  line-height: 1.25;
+}
+
+.file-manager-preview-text {
+  width: 100%;
+  min-height: 18rem;
+  margin: 0;
+  padding: 1rem;
+  color: #dce5f1;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.file-manager-info-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0.6rem;
+}
+
+.file-manager-info-card {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-info-card span,
+.file-manager-info-section h3 {
+  color: #8ea3b9;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.file-manager-info-card strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #edf2f7;
+  font-size: 1rem;
+}
+
+.file-manager-info-items,
+.file-manager-info-errors {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.file-manager-info-item {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.55rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-info-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #edf2f7;
+  font-weight: 800;
+}
+
+.file-manager-info-path {
+  min-width: 0;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  color: #8ea3b9;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.file-manager-info-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.45rem;
+  margin: 0.6rem 0 0;
+}
+
+.file-manager-info-detail {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(4.75rem, 0.34fr) minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: baseline;
+  padding: 0.38rem 0.5rem;
+  border-radius: 0.4rem;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.file-manager-info-details dt {
+  color: #8ea3b9;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.file-manager-info-details dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: #dce5f1;
+  font-size: 0.82rem;
+}
+
+.file-manager-rich-metadata {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.7rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.file-manager-rich-metadata-group {
+  min-width: 0;
+}
+
+.file-manager-rich-metadata-group h4 {
+  margin: 0 0 0.35rem;
+  color: #b7c7d8;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.file-manager-info-error {
+  min-width: 0;
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid rgba(255, 122, 89, 0.28);
+  border-radius: 0.5rem;
+  background: rgba(255, 122, 89, 0.08);
+}
+
+.file-manager-info-error strong,
+.file-manager-info-error span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.file-manager-info-error strong {
+  color: #ffd7ce;
+  font-size: 0.78rem;
+}
+
+.file-manager-info-error span {
+  color: #ffb39d;
+  font-size: 0.8rem;
+}
+
+.file-manager-status.is-error {
+  border-color: rgba(255, 122, 89, 0.42);
+  color: #ffb39d;
+}
+
+.file-manager-page.is-loading .file-manager-panel {
+  opacity: 0.72;
+}
+
+.file-manager-page.is-loading .file-manager-list {
+  pointer-events: none;
+}
