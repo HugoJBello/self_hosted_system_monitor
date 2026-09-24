@@ -1534,6 +1534,8 @@ class MonitorViewsTests(TestCase):
         self.assertContains(response, "history-resource-legend")
         self.assertContains(response, "Memory %")
         self.assertContains(response, "Disk %")
+        self.assertContains(response, "Disk usage trend")
+        self.assertContains(response, 'id="diskDetailChart"')
 
     def test_reports_page_loads(self):
         response = self.client.get(self._path("monitor:reports"))

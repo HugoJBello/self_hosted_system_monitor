@@ -97,6 +97,7 @@ class HistoryView(LoginRequiredMixin, View):
             avg_disk=Avg("disk_percent"),
             max_cpu=Max("cpu_percent"),
             max_memory=Max("memory_percent"),
+            max_disk=Max("disk_percent"),
             avg_process_total=Avg("process_count_total"),
             avg_process_running=Avg("process_count_running"),
         )
@@ -224,4 +225,3 @@ class HistoryView(LoginRequiredMixin, View):
                 "settings_obj": settings_obj,
             },
         )
-

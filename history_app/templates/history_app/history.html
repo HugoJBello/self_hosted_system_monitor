@@ -109,6 +109,22 @@
   </div>
   <div class="col-12 col-xl-6">
     <section class="panel-card p-4">
+      <p class="eyebrow mb-2">Disk detail</p>
+      <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-end gap-2 mb-4">
+        <div>
+          <h2 class="h4 mb-1">Disk usage trend</h2>
+          <p class="text-secondary mb-0">Filesystem space used across the selected window.</p>
+        </div>
+        <div class="history-disk-summary" aria-label="Disk usage summary">
+          <span><small>Average</small><strong>{{ aggregates.avg_disk|default:0|floatformat:1 }}%</strong></span>
+          <span><small>Peak</small><strong>{{ aggregates.max_disk|default:0|floatformat:1 }}%</strong></span>
+        </div>
+      </div>
+      <div class="chart-shell history-chart-shell"><canvas id="diskDetailChart"></canvas></div>
+    </section>
+  </div>
+  <div class="col-12 col-xl-6">
+    <section class="panel-card p-4">
       <p class="eyebrow mb-2">Network</p>
       <h2 class="h4 mb-4">Send and receive rate</h2>
       <div class="chart-shell history-chart-shell"><canvas id="networkChart"></canvas></div>
@@ -543,6 +559,17 @@
         lineDataset("Cached MB", chartData.memory_cached_mb, "#ffd166", "rgba(255,209,102,0.10)", false),
         lineDataset("Buffers MB", chartData.memory_buffers_mb, "#ff9b73", "rgba(255,155,115,0.10)", false),
         lineDataset("Slab MB", chartData.memory_slab_mb, "#c084fc", "rgba(192,132,252,0.10)", false),
+      ]
+    },
+    options: baseChartOptions()
+  });
+
+  new Chart(document.getElementById("diskDetailChart"), {
+    type: "line",
+    data: {
+      labels,
+      datasets: [
+        lineDataset("Disk used %", chartData.disk, "#8db5ff", "rgba(141,181,255,0.14)"),
       ]
     },
     options: baseChartOptions()
