@@ -120,9 +120,15 @@ class MonitorViewsTests(TestCase):
         payload.update(overrides)
         return SystemSnapshot.objects.create(**payload)
 
-    def test_home_redirects_to_monitor(self):
+    def test_home_is_workspace_overview(self):
         response = self.client.get(self._path("monitor:home"))
-        self.assertRedirects(response, reverse("monitor:system-monitor"), fetch_redirect_response=False)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Workspace overview")
+        self.assertContains(response, "Applications")
+
+    def test_legacy_access_url_redirects_to_home(self):
+        response = self.client.get(self._path("monitor:access-home"))
+        self.assertRedirects(response, reverse("monitor:home"), fetch_redirect_response=False)
 
     def test_base_template_resets_stale_pending_ui(self):
         response = self.client.get(self._path("monitor:system-monitor"))

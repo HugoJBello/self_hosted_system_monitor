@@ -17,7 +17,7 @@ class FeatureAccessTests(TestCase):
     def test_new_non_admin_starts_without_application_access(self):
         self.assertFalse(UserFeatureAccess.objects.filter(user=self.member).exists())
         self.client.force_login(self.member)
-        response = self.client.get(self.url("monitor:access-home"))
+        response = self.client.get(self.url("monitor:home"))
         self.assertContains(response, "No applications assigned yet")
         self.assertNotContains(response, 'href="/system_monitor/history/"')
 
@@ -29,7 +29,7 @@ class FeatureAccessTests(TestCase):
     def test_one_grant_exposes_only_its_module(self):
         UserFeatureAccess.objects.create(user=self.member, feature="history")
         self.client.force_login(self.member)
-        home = self.client.get(self.url("monitor:access-home"))
+        home = self.client.get(self.url("monitor:home"))
         self.assertContains(home, "History")
         self.assertNotContains(home, "System monitor")
         self.assertEqual(self.client.get(self.url("monitor:history")).status_code, 200)
@@ -37,7 +37,7 @@ class FeatureAccessTests(TestCase):
 
     def test_admin_has_every_feature_without_rows(self):
         self.client.force_login(self.admin)
-        response = self.client.get(self.url("monitor:access-home"))
+        response = self.client.get(self.url("monitor:home"))
         for label in ("System monitor", "Files", "Backups"):
             self.assertContains(response, label)
         self.assertEqual(len(FEATURE_KEYS), 10)

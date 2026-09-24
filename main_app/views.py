@@ -9,7 +9,7 @@ from django.views.decorators.csrf import csrf_exempt
 from main_app.forms import MonitoringSettingsForm
 from main_app.models import MonitoringSettings, SystemSnapshot
 from main_app.notification_client import build_test_payload, send_json_notification
-from main_app.features import feature_catalog_for_user
+from main_app.home import home_features_for_user
 
 
 User = get_user_model()
@@ -19,12 +19,12 @@ class AdminRequiredMixin(UserPassesTestMixin):
         return self.request.user.is_authenticated and self.request.user.is_staff
 
 
-class AccessHomeView(LoginRequiredMixin, View):
-    template_name = "main_app/access_home.html"
+class HomeView(LoginRequiredMixin, View):
+    template_name = "main_app/home.html"
 
     def get(self, request):
         return render(request, self.template_name, {
-            "features": feature_catalog_for_user(request.user),
+            "features": home_features_for_user(request.user),
             "settings_obj": MonitoringSettings.load(),
         })
 

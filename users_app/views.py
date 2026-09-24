@@ -55,8 +55,6 @@ class LoginView(auth_views.LoginView):
     redirect_authenticated_user = True
 
     def get_success_url(self):
-        if self.request.user.is_staff and not self.request.POST.get("next") and not self.request.GET.get("next"):
-            return reverse("monitor:system-monitor")
         url = super().get_success_url()
         return _with_app_subpath(url)
 

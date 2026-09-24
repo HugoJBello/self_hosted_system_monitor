@@ -104,7 +104,7 @@ SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 USE_X_FORWARDED_HOST = True
 
 LOGIN_URL = "monitor:login"
-LOGIN_REDIRECT_URL = "monitor:access-home"
+LOGIN_REDIRECT_URL = "monitor:home"
 LOGOUT_REDIRECT_URL = "monitor:login"
 
 SAMPLER_DEFAULT_INTERVAL = int(os.getenv("SAMPLER_DEFAULT_INTERVAL", "60"))

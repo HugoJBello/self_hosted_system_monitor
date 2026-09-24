@@ -1,11 +1,13 @@
 from django.urls import include, path
+from django.views.generic import RedirectView
 
-from .views import AccessHomeView, SettingsView
+from .views import HomeView, SettingsView
 
 app_name = "monitor"
 
 urlpatterns = [
-    path("access/", AccessHomeView.as_view(), name="access-home"),
+    path("", HomeView.as_view(), name="home"),
+    path("access/", RedirectView.as_view(pattern_name="monitor:home", permanent=False), name="access-home"),
     path("", include("monitor_app.urls")),
     path("", include("users_app.urls")),
     path("settings/", SettingsView.as_view(), name="settings"),

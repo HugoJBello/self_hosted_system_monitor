@@ -1,0 +1,15 @@
+{% extends "main_app/base.html" %}
+{% block title %}Home | System Monitor{% endblock %}
+{% block content %}
+<section class="home-hero">
+  <div><p class="eyebrow mb-2">Workspace overview</p><h1>Welcome back, {{ request.user.username }}</h1><p>Everything available to your account, with the essentials at a glance.</p></div>
+  {% if request.user.is_staff %}<span class="home-role-badge"><i class="bi bi-shield-check"></i>Administrator · full access</span>{% else %}<span class="home-role-badge"><i class="bi bi-person-check"></i>Personal workspace</span>{% endif %}
+</section>
+{% if features %}<div class="home-section-heading"><div><h2>Your applications</h2><p>Open a section for its full controls and details.</p></div><span>{{ features|length }} available</span></div>{% endif %}
+<div class="feature-launcher-grid">{% for feature in features %}<a class="feature-launcher-card" href="{{ feature.url }}">
+  <span class="feature-launcher-top"><span class="feature-launcher-icon"><i class="bi {{ feature.icon }}"></i></span><i class="bi bi-arrow-up-right feature-launcher-arrow"></i></span>
+  <span class="feature-launcher-copy"><strong>{{ feature.label }}</strong><small>{{ feature.description }}</small></span>
+  {% if feature.summary %}<span class="feature-summary"><span class="feature-summary-message">{{ feature.summary.message }}{% if feature.summary.timestamp %}<time data-local-datetime="{{ feature.summary.timestamp|date:'c' }}" data-local-style="datetime-compact">{{ feature.summary.timestamp }}</time>{% endif %}</span>{% if feature.summary.metrics %}<span class="feature-summary-metrics">{% for metric in feature.summary.metrics %}<span><strong>{{ metric.value }}</strong><small>{{ metric.label }}</small></span>{% endfor %}</span>{% endif %}</span>{% endif %}
+</a>{% endfor %}</div>
+{% if not request.user.is_staff and not allowed_feature_keys %}<section class="panel-card empty-access-state"><span class="access-denied-icon"><i class="bi bi-grid"></i></span><h2 class="h4">No applications assigned yet</h2><p class="text-secondary mb-0">Your account is active, but an administrator has not granted access to any section. You can still change your password or sign out.</p></section>{% endif %}
+{% endblock %}

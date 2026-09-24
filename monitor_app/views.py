@@ -48,11 +48,6 @@ class AdminRequiredMixin(UserPassesTestMixin):
     def test_func(self):
         return self.request.user.is_authenticated and self.request.user.is_staff
 
-class RedirectHomeView(LoginRequiredMixin, View):
-    def get(self, request):
-        return redirect("monitor:system-monitor" if request.user.is_staff else "monitor:access-home")
-
-
 def _safe_next_url(request):
     next_url = request.POST.get("next") or request.META.get("HTTP_REFERER") or reverse("monitor:system-monitor")
     if url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()}):
