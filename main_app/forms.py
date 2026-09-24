@@ -78,6 +78,7 @@ class MonitoringSettingsForm(forms.ModelForm):
     class Meta:
         model = MonitoringSettings
         fields = (
+            "system_name",
             "sample_interval_seconds",
             "top_process_limit",
             "history_retention_days",
@@ -99,6 +100,7 @@ class MonitoringSettingsForm(forms.ModelForm):
             "file_manager_start_path",
         )
         widgets = {
+            "system_name": forms.TextInput(attrs={"class": "form-control", "placeholder": "Defaults to this host's name"}),
             "sample_interval_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 10, "step": 5}),
             "top_process_limit": forms.NumberInput(attrs={"class": "form-control", "min": 3, "max": 30}),
             "history_retention_days": forms.NumberInput(attrs={"class": "form-control", "min": 1, "max": 3650}),
@@ -161,6 +163,9 @@ class MonitoringSettingsForm(forms.ModelForm):
         if invalid:
             raise forms.ValidationError("Channels must be any combination of email, telegram, and xmpp.")
         return ";".join(channels)
+
+    def clean_system_name(self):
+        return " ".join((self.cleaned_data.get("system_name") or "").split())
 
     def clean_display_timezone(self):
         value = (self.cleaned_data.get("display_timezone") or "").strip()

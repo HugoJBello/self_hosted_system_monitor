@@ -1,6 +1,5 @@
 import os
 import platform
-import socket
 import time
 import logging
 from collections import Counter
@@ -15,6 +14,7 @@ from django.utils import timezone
 from alerts_app.services import evaluate_alerts
 from .memory import build_memory_breakdown
 from main_app.models import MonitoringSettings
+from main_app.system_identity import detected_hostname
 from monitor_app.models import ProcessSnapshot, SystemSnapshot
 from reports_app.services import dispatch_scheduled_reports
 
@@ -293,7 +293,7 @@ def _process_rows(limit):
 
 def collect_snapshot():
     settings_obj = MonitoringSettings.load()
-    hostname = socket.gethostname()
+    hostname = detected_hostname()
     platform_label = _platform_label()
 
     boot_dt = datetime.fromtimestamp(psutil.boot_time(), tz=dt_timezone.utc)

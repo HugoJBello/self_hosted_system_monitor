@@ -32,6 +32,8 @@
 docker compose up --build
 ```
 
+The deployment name shown in the navigation, home page, and monitor can be changed by an administrator in **Settings → System identity**. When it is left empty, System Monitor reads the host's `/etc/hostname` through `MONITOR_ROOT_PATH` (including the default Docker mount) and falls back to the local process hostname. `SYSTEM_MONITOR_HOSTNAME` can be used as an explicit hostname override for deployments without a mounted host filesystem.
+
 The web UI will be available at:
 
 - `http://localhost:8012/system_monitor/`

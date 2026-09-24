@@ -18,6 +18,12 @@ class MonitoringSettings(models.Model):
         ("fixed", "Fixed timezone for all users"),
     ]
 
+    system_name = models.CharField(
+        blank=True,
+        default="",
+        max_length=255,
+        help_text="Friendly name for this deployment. The monitored host name is used when empty.",
+    )
     sample_interval_seconds = models.PositiveIntegerField(
         default=60,
         validators=[MinValueValidator(10), MaxValueValidator(3600)],
@@ -112,6 +118,12 @@ class MonitoringSettings(models.Model):
     @property
     def normalized_app_public_base_url(self):
         return (self.app_public_base_url or "").rstrip("/")
+
+    @property
+    def effective_system_name(self):
+        from .system_identity import system_display_name
+
+        return system_display_name(self.system_name)
 
     def __str__(self):
         return "Monitoring Settings"

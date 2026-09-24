@@ -9,9 +9,9 @@
 <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3 mb-4">
   <div>
     <p class="eyebrow mb-2">Live system view</p>
-    <h1 class="display-6 mb-1">Web system monitor</h1>
+    <h1 class="display-6 mb-1">{{ system_name }}</h1>
     <p class="text-secondary mb-0 d-flex flex-wrap align-items-center gap-2">
-      <span>{{ latest_snapshot.hostname }}</span>
+      <span><i class="bi bi-pc-display-horizontal me-1" aria-hidden="true"></i>{{ latest_snapshot.hostname }}</span>
       <span class="os-chip {{ latest_snapshot.platform_label|platform_tone_class }}">
         <i class="{{ latest_snapshot.platform_label|platform_icon_class }}" aria-hidden="true"></i>
         <span>{{ latest_snapshot.platform_label }}</span>

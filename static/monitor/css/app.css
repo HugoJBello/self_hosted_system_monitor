@@ -78,6 +78,9 @@ body.app-shell {
   border: 1px solid rgba(255, 255, 255, 0.08);
   color: #fff4ec;
 }
+.brand-copy { display: flex; min-width: 0; flex-direction: column; line-height: 1.05; }
+.brand-copy > span { white-space: nowrap; }
+.brand-copy small { max-width: 16rem; margin-top: .2rem; overflow: hidden; color: var(--muted); font-size: .67rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 
 .topbar .nav-link i {
   opacity: 0.92;
@@ -105,6 +108,8 @@ body.app-shell {
 .app-switcher-item:hover { color: white; border-color: rgba(93,198,255,.2); background: rgba(93,198,255,.08); }
 .app-switcher-icon { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; flex: 0 0 auto; border-radius: .65rem; color: #7dd3fc; background: rgba(56,189,248,.11); }
 .app-switcher-item strong, .app-switcher-item small { display: block; }
+.app-switcher-item > span:last-child { min-width: 0; overflow: hidden; }
+.app-switcher-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .app-switcher-item strong { font-size: .9rem; }
 .app-switcher-item small { margin-top: .08rem; overflow: hidden; color: var(--muted); font-size: .72rem; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; }
 .app-switcher-admin { padding: .75rem 1rem 1rem; border-top: 1px solid rgba(148,163,184,.12); background: rgba(15,23,42,.45); }

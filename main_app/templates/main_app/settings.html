@@ -9,13 +9,25 @@
       <div class="d-flex justify-content-between align-items-start mb-4">
         <div>
           <p class="eyebrow mb-2">Configuration</p>
-          <h1 class="h3 mb-1">Sampling, time display, notifications and HTTP backups</h1>
-          <p class="text-secondary mb-0">Control collection frequency, the global date/time presentation, external notifications, and the HTTP backup receiver token.</p>
+          <h1 class="h3 mb-1">System identity, monitoring and integrations</h1>
+          <p class="text-secondary mb-0">Identify this deployment and control collection, date/time presentation, notifications, and HTTP backups.</p>
         </div>
         <span class="badge text-bg-light border">SQLite persisted</span>
       </div>
       <form method="post" class="vstack gap-3">
         {% csrf_token %}
+        <section class="config-section">
+          <h2 class="h5 mb-3">System identity</h2>
+          <div class="row g-3">
+            <div class="col-md-8">
+              <label class="form-label" for="{{ form.system_name.id_for_label }}">Equipment name</label>
+              {{ form.system_name }}
+              <div class="form-text">Shown throughout System Monitor. Leave empty to use the detected host name: <strong>{{ detected_system_hostname }}</strong>.</div>
+              {% for error in form.system_name.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+          </div>
+        </section>
+
         <section class="config-section">
           <h2 class="h5 mb-3">Monitoring</h2>
           <div class="row g-3">
@@ -172,6 +184,10 @@
       <p class="eyebrow mb-2">Current profile</p>
       <h2 class="h4 mb-4">Runtime summary</h2>
       <div class="stat-stack">
+        <div class="mini-stat">
+          <span class="label">Equipment name</span>
+          <strong>{{ settings_obj.effective_system_name }}</strong>
+        </div>
         <div class="mini-stat">
           <span class="label">Collection interval</span>
           <strong>{{ settings_obj.sample_interval_seconds }}s</strong>

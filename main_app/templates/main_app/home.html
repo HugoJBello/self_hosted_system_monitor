@@ -2,7 +2,7 @@
 {% block title %}Home | System Monitor{% endblock %}
 {% block content %}
 <section class="home-hero">
-  <div><p class="eyebrow mb-2">Workspace overview</p><h1>Welcome back, {{ request.user.username }}</h1><p>Everything available to your account, with the essentials at a glance.</p></div>
+  <div><p class="eyebrow mb-2">Workspace overview · {{ system_name }}</p><h1>{{ system_name }}</h1><p>Welcome back, {{ request.user.username }}. Everything available to your account, with the essentials at a glance.</p></div>
   {% if request.user.is_staff %}<span class="home-role-badge"><i class="bi bi-shield-check"></i>Administrator · full access</span>{% else %}<span class="home-role-badge"><i class="bi bi-person-check"></i>Personal workspace</span>{% endif %}
 </section>
 {% if features %}<div class="home-section-heading"><div><h2>Your applications</h2><p>Open a section for its full controls and details.</p></div><span>{{ features|length }} available</span></div>{% endif %}
