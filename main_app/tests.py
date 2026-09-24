@@ -1226,6 +1226,15 @@ class MonitorViewsTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Disposition"], f'attachment; filename="file-manager-download-{operation.id}.zip"')
+        self.assertEqual(response["Accept-Ranges"], "bytes")
+
+        partial = self.client.get(
+            self._path("monitor:file-manager-operation-download", [operation.id]),
+            HTTP_RANGE="bytes=4-7",
+        )
+        self.assertEqual(partial.status_code, 206)
+        self.assertEqual(partial["Content-Range"], "bytes 4-7/9")
+        self.assertEqual(b"".join(partial.streaming_content), b"byte")
 
     def test_admin_can_open_users_page(self):
         response = self.client.get(self._path("monitor:users"))

@@ -2803,12 +2803,22 @@
       }
       if (payload.status === "success" && payload.download_url) {
         setDownloadProgress(100);
-        setDownloadStatus("Download archive ready. Starting browser download...");
+        const downloadSize = Number(payload.download_size_bytes) || 0;
+        const managedThreshold = Number(payload.managed_download_threshold) || (100 * 1024 * 1024);
+        const useManagedDownload = downloadSize >= managedThreshold;
+        setDownloadStatus(useManagedDownload
+          ? "Large archive ready. Use Download ZIP for chunked transfer with pause and recovery."
+          : "Download archive ready. Starting browser download...");
         if (downloadReady) {
           downloadReady.href = payload.download_url;
           downloadReady.classList.remove("disabled");
+          downloadReady.dataset.downloadSize = String(downloadSize);
+          downloadReady.dataset.downloadThreshold = String(managedThreshold);
+          downloadReady.dataset.downloadChunkSize = String(payload.download_chunk_size || "");
+          downloadReady.dataset.downloadName = `file-manager-download-${payload.id}.zip`;
+          window.ResumableDownloads?.decorate();
         }
-        triggerBrowserDownload(payload.download_url);
+        if (!useManagedDownload) triggerBrowserDownload(payload.download_url);
         if (downloadPollTimer) {
           window.clearInterval(downloadPollTimer);
           downloadPollTimer = null;

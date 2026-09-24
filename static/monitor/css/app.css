@@ -2929,6 +2929,19 @@ body.app-shell {
 .share-item-copy span { color: #94a3b8; font-size: .8rem; }
 .share-folder-actions { display: flex; align-items: center; gap: .5rem; flex: 0 0 auto; }
 .share-folder-actions form { margin: 0; }
+.resumable-download-badge { display: inline-flex; align-items: center; gap: .25rem; margin-left: .45rem; padding: .15rem .4rem; border-radius: 999px; background: rgba(56,189,248,.14); color: #bae6fd; font-size: .65rem; font-weight: 700; vertical-align: middle; }
+.resumable-download-panel { position: fixed; right: 1rem; bottom: 1rem; z-index: 1090; width: min(25rem, calc(100vw - 2rem)); padding: 1rem; border: 1px solid rgba(56,189,248,.3); border-radius: 1rem; background: rgba(8,17,31,.98); box-shadow: 0 24px 60px rgba(0,0,0,.48); backdrop-filter: blur(18px); }
+.resumable-download-panel.is-error { border-color: rgba(248,113,113,.45); }
+.resumable-download-panel.is-complete { border-color: rgba(52,211,153,.4); }
+.resumable-download-heading { display: flex; align-items: center; gap: .75rem; margin-bottom: .8rem; }
+.resumable-download-heading > div { min-width: 0; flex: 1; }
+.resumable-download-heading strong, .resumable-download-heading small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.resumable-download-heading small { margin-top: .15rem; color: var(--muted); }
+.resumable-download-icon { display: grid; place-items: center; width: 2.35rem; height: 2.35rem; flex: 0 0 auto; border-radius: .7rem; background: rgba(56,189,248,.12); color: #7dd3fc; font-size: 1.1rem; }
+.resumable-download-panel .progress { height: .7rem; background: rgba(255,255,255,.08); }
+.resumable-download-panel .progress-bar { background: linear-gradient(90deg,#0ea5e9,#34d399); }
+.resumable-download-meta { display: flex; justify-content: space-between; gap: 1rem; margin-top: .45rem; color: var(--muted); font-size: .72rem; }
+.resumable-download-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .8rem; }
 @media (max-width: 767.98px) { .users-create-panel { position: static !important; } .users-create-modal > form { max-height: calc(100dvh - .5rem); } .feature-permission-grid { grid-template-columns: 1fr; } .file-access-overview { align-items: flex-start; flex-direction: column; } .file-access-root-list { justify-content: flex-start; width: 100%; } .share-hero { align-items: flex-start; flex-wrap: wrap; } .share-hero-icon { width: 3.5rem; height: 3.5rem; } .share-download-all { width: 100%; } .share-download-all .btn { width: 100%; } .share-item { align-items: flex-start; flex-wrap: wrap; } .share-item-copy { min-width: calc(100% - 4rem); } .share-folder-actions { width: 100%; justify-content: flex-end; padding-left: 3.8rem; } .share-item .btn { padding-inline: .65rem; } }
 
 .file-manager-actions {

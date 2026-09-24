@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
-from django.http import FileResponse, Http404, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import FileResponse, Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils.decorators import method_decorator
@@ -23,6 +23,7 @@ from file_manager_app.browser import (
 )
 from file_manager_app.access import access_roots, closest_allowed_parent, has_full_file_access, require_path_access
 from file_manager_app.embedded_media import extract_embedded_thumbnail
+from file_manager_app.downloads import DOWNLOAD_CHUNK_SIZE, MANAGED_DOWNLOAD_THRESHOLD, resumable_download_response
 from file_manager_app.information import continue_file_information, start_file_information
 from file_manager_app.models import FileOperation, FileSearch
 from file_manager_app.search import (
@@ -49,10 +50,6 @@ from file_manager_app.services import (
 from file_manager_app.sorting import SORT_DIRECTIONS, SORT_FIELDS, normalize_sort, sort_entries
 from main_app.models import MonitoringSettings
 from volumes_app.path_browser import create_directory, hostfs_path, normalize_host_path
-
-
-VIDEO_STREAM_CHUNK_SIZE = 1024 * 1024
-VIDEO_STREAM_MAX_RANGE_BYTES = 8 * 1024 * 1024
 
 
 def _file_manager_url(path):
@@ -93,80 +90,15 @@ def _operation_for_user(request, operation_id, **filters):
     return get_object_or_404(queryset, pk=operation_id)
 
 
-def _parse_http_range(range_header, file_size):
-    if not range_header:
-        return 0, file_size - 1, False
-    units, _, value = range_header.partition("=")
-    if units.strip().lower() != "bytes" or "," in value:
+def _ready_download_size(operation):
+    if operation.action != "download" or operation.status != "success":
         return None
-    start_text, _, end_text = value.strip().partition("-")
-    try:
-        if start_text:
-            start = int(start_text)
-            end = int(end_text) if end_text else file_size - 1
-        elif end_text:
-            suffix_length = int(end_text)
-            if suffix_length <= 0:
-                return None
-            start = max(file_size - suffix_length, 0)
-            end = file_size - 1
-        else:
-            return None
-    except ValueError:
-        return None
-    if start < 0 or end < start or start >= file_size:
-        return None
-    return start, min(end, file_size - 1), True
+    path = download_archive_path(operation.id)
+    return path.stat().st_size if path.exists() else None
 
 
-def _file_iterator(path, start, length, chunk_size=VIDEO_STREAM_CHUNK_SIZE):
-    with open(path, "rb") as handle:
-        handle.seek(start)
-        remaining = length
-        while remaining > 0:
-            chunk = handle.read(min(chunk_size, remaining))
-            if not chunk:
-                break
-            remaining -= len(chunk)
-            yield chunk
-
-
-def _range_not_satisfiable_response(file_size):
-    response = HttpResponse(status=416)
-    response["Content-Range"] = f"bytes */{file_size}"
-    response["Accept-Ranges"] = "bytes"
-    return response
-
-
-def _streaming_file_response(request, path, content_type, file_size):
-    range_header = request.headers.get("Range", "")
-    parsed_range = _parse_http_range(range_header, file_size)
-    if parsed_range is None:
-        return _range_not_satisfiable_response(file_size)
-    start, end, is_partial = parsed_range
-    if end - start + 1 > VIDEO_STREAM_MAX_RANGE_BYTES:
-        end = start + VIDEO_STREAM_MAX_RANGE_BYTES - 1
-        is_partial = True
-    elif not range_header and file_size > VIDEO_STREAM_MAX_RANGE_BYTES:
-        is_partial = True
-    length = end - start + 1
-    response = StreamingHttpResponse(
-        _file_iterator(path, start, length),
-        status=206 if is_partial else 200,
-        content_type=content_type,
-    )
-    response["Accept-Ranges"] = "bytes"
-    response["Content-Length"] = str(length)
-    if is_partial:
-        response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-    return response
-
-
-def _direct_file_response(path, content_type, *, as_attachment=False):
-    kwargs = {"content_type": content_type, "as_attachment": as_attachment}
-    if as_attachment:
-        kwargs["filename"] = os.path.basename(path)
-    return FileResponse(open(path, "rb"), **kwargs)
+def _direct_file_response(path, content_type):
+    return FileResponse(open(path, "rb"), content_type=content_type)
 
 
 @method_decorator(never_cache, name="dispatch")
@@ -561,9 +493,15 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
         if limit is not None and size_bytes > limit:
             raise Http404("Preview is too large.")
         if request.GET.get("download") == "1":
-            return _direct_file_response(absolute_path, content_type, as_attachment=True)
+            return resumable_download_response(request, absolute_path, os.path.basename(absolute_path), content_type)
         if media_kind == "video":
-            return _streaming_file_response(request, absolute_path, content_type, size_bytes)
+            return resumable_download_response(
+                request,
+                absolute_path,
+                os.path.basename(absolute_path),
+                content_type,
+                as_attachment=False,
+            )
         return _direct_file_response(absolute_path, content_type)
 
 
@@ -696,6 +634,9 @@ class FileManagerOperationStatusView(LoginRequiredMixin, View):
                 "finished_at": operation.finished_at.isoformat() if operation.finished_at else None,
                 "updated_at": timezone.now().isoformat(),
                 "download_url": reverse("monitor:file-manager-operation-download", args=[operation.id]) if operation.action == "download" and operation.status == "success" else "",
+                "download_size_bytes": _ready_download_size(operation),
+                "managed_download_threshold": MANAGED_DOWNLOAD_THRESHOLD,
+                "download_chunk_size": DOWNLOAD_CHUNK_SIZE,
                 "search_result_count": search.result_count if search else None,
                 "search_results": search_items if search else [],
                 "search_truncated": search.truncated if search else False,
@@ -713,4 +654,9 @@ class FileManagerOperationDownloadView(LoginRequiredMixin, View):
         archive_path = download_archive_path(operation.id)
         if not archive_path.exists():
             return JsonResponse({"error": "Download archive is missing."}, status=404)
-        return FileResponse(open(archive_path, "rb"), as_attachment=True, filename=f"file-manager-download-{operation.id}.zip")
+        return resumable_download_response(
+            request,
+            archive_path,
+            f"file-manager-download-{operation.id}.zip",
+            "application/zip",
+        )

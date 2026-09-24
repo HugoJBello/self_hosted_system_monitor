@@ -53,6 +53,7 @@ class FileSharingTests(TestCase):
         share = FileShare.objects.create(created_by=self.admin, paths=["/shared"], public_link=True)
         response = self.client.get(self.url("monitor:file-share-download", [share.token]), {"path": "0/hello.txt"})
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Accept-Ranges"], "bytes")
         event = FileShareAccessEvent.objects.get(action="download")
         self.assertEqual(event.path, "0/hello.txt")
         self.assertIsNone(event.user)
@@ -66,6 +67,27 @@ class FileSharingTests(TestCase):
         self.client.force_login(self.member)
         self.assertEqual(self.client.get(self.url("monitor:file-share-public", [share.token])).status_code, 200)
         self.assertTrue(FileShareAccessEvent.objects.filter(share=share, action="view", user=self.member).exists())
+
+    def test_public_download_supports_byte_ranges_without_duplicate_audit_events(self):
+        share = FileShare.objects.create(created_by=self.admin, paths=["/shared"], public_link=True)
+
+        first = self.client.get(
+            self.url("monitor:file-share-download", [share.token]),
+            {"path": "0/hello.txt"},
+            HTTP_RANGE="bytes=0-1",
+        )
+        resumed = self.client.get(
+            self.url("monitor:file-share-download", [share.token]),
+            {"path": "0/hello.txt"},
+            HTTP_RANGE="bytes=2-4",
+        )
+
+        self.assertEqual(first.status_code, 206)
+        self.assertEqual(first["Content-Range"], "bytes 0-1/5")
+        self.assertEqual(b"".join(first.streaming_content), b"he")
+        self.assertEqual(resumed.status_code, 206)
+        self.assertEqual(b"".join(resumed.streaming_content), b"llo")
+        self.assertEqual(FileShareAccessEvent.objects.filter(share=share, action="download").count(), 1)
 
     @patch("file_manager_app.share_views.start_background_file_operation")
     def test_public_link_can_prepare_any_shared_subfolder_as_zip(self, start_operation):

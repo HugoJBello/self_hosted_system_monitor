@@ -304,13 +304,17 @@ location /system_monitor/ {
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-Host $host;
     proxy_set_header X-Forwarded-Prefix /system_monitor;
+    proxy_set_header Range $http_range;
+    proxy_set_header If-Range $http_if_range;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
 
+    # Stream file downloads directly instead of buffering them to an Nginx temp file.
+    proxy_buffering off;
     proxy_redirect off;
-    proxy_read_timeout 300;
+    proxy_read_timeout 3600;
     proxy_connect_timeout 60;
-    proxy_send_timeout 300;
+    proxy_send_timeout 3600;
 }
 ```
 
@@ -321,5 +325,8 @@ Important notes:
 - Keep `client_max_body_size` high enough for file-manager uploads. Align it with `DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE`; otherwise Nginx can return `413 Request Entity Too Large` before Django receives the upload.
 - With this example, Nginx strips `/system_monitor/` before forwarding to Django. `FORCE_SCRIPT_NAME` handles URL generation with the external prefix.
 - Keep `X-Forwarded-Prefix /system_monitor` aligned with `APP_SUBPATH`.
+- Keep the `Range` and `If-Range` headers above, and leave `proxy_buffering off` enabled. System Monitor uses 8 MiB range requests for managed downloads of files and generated ZIPs of at least 100 MiB. Each request is independently retryable, which avoids sending one very large response through Nginx or Cloudflare.
+- The one-hour proxy timeouts protect slow native-browser downloads. Managed downloads normally complete each 8 MiB request much sooner.
+- No special Nginx cache or `proxy_force_ranges` directive is required: Django validates and serves the byte ranges itself and returns `Accept-Ranges`, `Content-Range`, `ETag`, and `Last-Modified`.
 - Add the public origin to `DJANGO_CSRF_TRUSTED_ORIGINS`, for example `https://*.hjbello.org` or explicit hosts such as `https://api-android18.hjbello.org`, otherwise login and other POST forms will be rejected by Django CSRF origin checks.
 - If the app is intentionally reached through many changing domains, set `DJANGO_CSRF_TRUST_ANY_ORIGIN=True`. This skips Django's Origin allowlist check, but forms still require a valid CSRF cookie and token.

@@ -5,7 +5,7 @@ from urllib.parse import quote
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.http import FileResponse, Http404, JsonResponse
+from django.http import Http404, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -13,6 +13,7 @@ from django.views import View
 from django.views.decorators.cache import never_cache
 from django.utils.decorators import method_decorator
 
+from file_manager_app.downloads import MANAGED_DOWNLOAD_THRESHOLD, resumable_download_response
 from file_manager_app.models import FileOperation, FileShare, UserFileAccess
 from file_manager_app.services import create_file_operation, download_archive_path, start_background_file_operation
 from file_manager_app.sharing import can_access_share, parse_expiry, public_share_url, record_share_access, record_share_view_once, resolve_share_path, shared_archive_sources, shared_entries, validate_shared_paths
@@ -36,6 +37,7 @@ def _share_context(request, share, **extra):
         "share": share,
         "share_url": public_share_url(request, share, MonitoringSettings.load()),
         "settings_obj": MonitoringSettings.load(),
+        "managed_download_threshold": MANAGED_DOWNLOAD_THRESHOLD,
     }
     context.update(extra)
     return context
@@ -144,6 +146,9 @@ class PublicFileShareView(View):
         except ValueError as exc:
             raise Http404(str(exc))
         operation = share.download_operations.order_by("-created_at").first()
+        if operation and operation.status == "success":
+            archive_path = download_archive_path(operation.pk)
+            operation.download_size_bytes = archive_path.stat().st_size if archive_path.exists() else 0
         return render(request, self.template_name, _share_context(request, share, entries=entries, relative_path=relative, parent_path=parent, operation=operation))
 
     def post(self, request, token):
@@ -171,8 +176,14 @@ class PublicFileShareDownloadView(View):
             raise Http404(str(exc))
         if not os.path.isfile(absolute):
             raise Http404("File not found.")
-        record_share_access(request, share, "download", relative)
-        return FileResponse(open(absolute, "rb"), as_attachment=True, filename=os.path.basename(absolute), content_type=mimetypes.guess_type(absolute)[0])
+        if request.method == "GET" and (not request.headers.get("Range") or request.headers.get("Range", "").startswith("bytes=0-")):
+            record_share_access(request, share, "download", relative)
+        return resumable_download_response(
+            request,
+            absolute,
+            os.path.basename(absolute),
+            mimetypes.guess_type(absolute)[0],
+        )
 
 
 class PublicFileShareArchiveView(View):
@@ -184,5 +195,11 @@ class PublicFileShareArchiveView(View):
         path = download_archive_path(operation.pk)
         if not path.exists():
             raise Http404("Archive not found.")
-        record_share_access(request, share, "archive")
-        return FileResponse(open(path, "rb"), as_attachment=True, filename=f"{share.name or 'shared-files'}.zip")
+        if request.method == "GET" and (not request.headers.get("Range") or request.headers.get("Range", "").startswith("bytes=0-")):
+            record_share_access(request, share, "archive")
+        return resumable_download_response(
+            request,
+            path,
+            f"{share.name or 'shared-files'}.zip",
+            "application/zip",
+        )
