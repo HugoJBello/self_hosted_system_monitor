@@ -125,6 +125,8 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Workspace overview")
         self.assertContains(response, "Applications")
+        self.assertContains(response, "Server tools")
+        self.assertContains(response, "Terminal")
 
     def test_legacy_access_url_redirects_to_home(self):
         response = self.client.get(self._path("monitor:access-home"))

@@ -15,6 +15,12 @@ FEATURES = (
 )
 FEATURE_KEYS = frozenset(item["key"] for item in FEATURES)
 
+ADMIN_TOOLS = (
+    {"label": "Terminal", "description": "Open a secure web terminal on the server.", "icon": "bi-terminal-fill", "url_name": "monitor:web-terminal"},
+    {"label": "Users", "description": "Manage accounts, application permissions and file paths.", "icon": "bi-people", "url_name": "monitor:users"},
+    {"label": "Settings", "description": "Configure monitoring, notifications and display options.", "icon": "bi-sliders", "url_name": "monitor:settings"},
+)
+
 URL_FEATURES = {
     "system-monitor": "monitor", "process-action": "monitor",
     "history": "history",
@@ -48,6 +54,12 @@ def feature_keys_for_user(user):
 def feature_catalog_for_user(user):
     allowed = feature_keys_for_user(user)
     return [{**item, "url": reverse(item["url_name"]) if item["url_name"] else "", "allowed": item["key"] in allowed} for item in FEATURES]
+
+
+def admin_tool_catalog_for_user(user):
+    if not user.is_authenticated or not user.is_staff:
+        return []
+    return [{**item, "url": reverse(item["url_name"])} for item in ADMIN_TOOLS]
 
 
 def user_has_feature(user, feature):

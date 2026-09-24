@@ -11,5 +11,9 @@
   <span class="feature-launcher-copy"><strong>{{ feature.label }}</strong><small>{{ feature.description }}</small></span>
   {% if feature.summary %}<span class="feature-summary"><span class="feature-summary-message">{{ feature.summary.message }}{% if feature.summary.timestamp %}<time data-local-datetime="{{ feature.summary.timestamp|date:'c' }}" data-local-style="datetime-compact">{{ feature.summary.timestamp }}</time>{% endif %}</span>{% if feature.summary.metrics %}<span class="feature-summary-metrics">{% for metric in feature.summary.metrics %}<span><strong>{{ metric.value }}</strong><small>{{ metric.label }}</small></span>{% endfor %}</span>{% endif %}</span>{% endif %}
 </a>{% endfor %}</div>
+{% if admin_tools %}<section class="home-admin-section">
+  <div class="home-section-heading"><div><p class="eyebrow mb-2">Administration</p><h2>Server tools</h2><p>Account and system controls available to administrators.</p></div></div>
+  <div class="home-tool-grid">{% for tool in admin_tools %}<a class="home-tool-card" href="{{ tool.url }}"><span class="home-tool-icon"><i class="bi {{ tool.icon }}"></i></span><span><strong>{{ tool.label }}</strong><small>{{ tool.description }}</small></span><i class="bi bi-arrow-up-right"></i></a>{% endfor %}</div>
+</section>{% endif %}
 {% if not request.user.is_staff and not allowed_feature_keys %}<section class="panel-card empty-access-state"><span class="access-denied-icon"><i class="bi bi-grid"></i></span><h2 class="h4">No applications assigned yet</h2><p class="text-secondary mb-0">Your account is active, but an administrator has not granted access to any section. You can still change your password or sign out.</p></section>{% endif %}
 {% endblock %}
