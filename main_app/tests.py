@@ -1530,6 +1530,10 @@ class MonitorViewsTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.context["chart_data"]["missing_periods"])
         self.assertIn(None, response.context["chart_data"]["cpu"])
+        self.assertContains(response, "CPU, memory and disk history")
+        self.assertContains(response, "history-resource-legend")
+        self.assertContains(response, "Memory %")
+        self.assertContains(response, "Disk %")
 
     def test_reports_page_loads(self):
         response = self.client.get(self._path("monitor:reports"))

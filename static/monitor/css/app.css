@@ -1913,11 +1913,43 @@ body.app-shell {
 }
 
 .history-chart-shell {
-  min-height: 19rem;
+  height: 19rem;
 }
 
 .history-chart-shell-short {
-  min-height: 16rem;
+  height: 16rem;
+}
+
+.history-resource-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem 1rem;
+  margin-bottom: .8rem;
+  color: #d8e1ea;
+  font-size: .78rem;
+}
+
+.history-resource-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  white-space: nowrap;
+}
+
+.history-series-dot {
+  width: .65rem;
+  height: .65rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+}
+
+.history-series-cpu { background: #ff7a59; }
+.history-series-memory { background: #4dd4ac; }
+.history-series-disk { background: #8db5ff; }
+.history-series-load { background: #ffd166; }
+
+.history-chart-shell canvas {
+  max-width: 100%;
 }
 
 .history-gap-list {
@@ -2235,11 +2267,15 @@ body.app-shell {
   }
 
   .history-chart-shell {
-    min-height: 15rem;
+    height: 16rem;
   }
 
   .history-chart-shell-short {
-    min-height: 13rem;
+    height: 14rem;
+  }
+
+  .history-resource-chart-shell {
+    height: 18rem;
   }
 
   .history-gap-list {

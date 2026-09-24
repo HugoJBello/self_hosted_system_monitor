@@ -81,8 +81,15 @@
   <div class="col-12 col-xl-6">
     <section class="panel-card p-4">
       <p class="eyebrow mb-2">Overview</p>
-      <h2 class="h4 mb-4">Resource mix</h2>
-      <div class="chart-shell history-chart-shell"><canvas id="resourceChart"></canvas></div>
+      <h2 class="h4 mb-2">CPU, memory and disk history</h2>
+      <p class="text-secondary mb-3">Percentage used across the selected window, alongside the one-minute load average.</p>
+      <div class="history-resource-legend" aria-label="Chart series">
+        <span><i class="history-series-dot history-series-cpu"></i>CPU %</span>
+        <span><i class="history-series-dot history-series-memory"></i>Memory %</span>
+        <span><i class="history-series-dot history-series-disk"></i>Disk %</span>
+        <span><i class="history-series-dot history-series-load"></i>Load avg (1m)</span>
+      </div>
+      <div class="chart-shell history-chart-shell history-resource-chart-shell"><canvas id="resourceChart"></canvas></div>
     </section>
   </div>
   <div class="col-12 col-xl-6">
@@ -486,6 +493,8 @@
     };
   }
 
+  const resourceChartOptions = baseChartOptions();
+  resourceChartOptions.plugins.legend.display = false;
   new Chart(document.getElementById("resourceChart"), {
     type: "line",
     data: {
@@ -497,7 +506,7 @@
         lineDataset("Load avg (1m)", chartData.load, "#ffd166", "rgba(255,209,102,0.10)", false),
       ]
     },
-    options: baseChartOptions()
+    options: resourceChartOptions
   });
 
   new Chart(document.getElementById("networkChart"), {
