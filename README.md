@@ -23,7 +23,9 @@
 - `config/`: Django project settings and URL configuration.
 - `monitor/`: monitoring app, models, services, views, and management command.
 - `templates/`: Bootstrap templates.
-- `static/`: CSS assets.
+- `static/`: CSS assets and generated frontend bundles.
+- `static/monitor/js/<feature>/`: maintainable JavaScript sources grouped by responsibility.
+- `static/monitor/dist/`: generated JavaScript bundles (created during image builds and not committed).
 - `data/`: bind-mounted runtime data such as SQLite.
 
 ## Run
@@ -61,6 +63,7 @@ Change this password immediately from the account password page. The default adm
 ## Main Environment Variables
 
 - `APP_SUBPATH`: default `/system_monitor`
+- `FRONTEND_ASSET_VERSION`: optional shared cache-busting version for CSS and JavaScript; its default changes with frontend releases
 - `DJANGO_DB_PATH`: default `/app/data/db.sqlite3`
 - `DJANGO_ALLOWED_HOSTS`: default `*`
 - `DJANGO_CSRF_TRUST_ANY_ORIGIN`: default `False`; set `True` to allow POST forms from any external origin while still requiring the CSRF cookie/token pair
@@ -105,6 +108,23 @@ The background services do not run these initialization steps. This avoids concu
 The web service also exposes a lightweight healthcheck endpoint at `<APP_SUBPATH>/healthz/`, for example `/system_monitor/healthz/`. Docker uses the internal `/healthz/` endpoint as the healthcheck, and the background services wait for the web container to become healthy before they start.
 
 The sampler service waits for the database and then begins saving snapshots.
+
+## Frontend assets
+
+Large page scripts are split by responsibility under `static/monitor/js/file_manager/` and
+`static/monitor/js/web_terminal/`. Templates load generated bundles so each page retains one private
+JavaScript scope and one HTTP request. Docker builds them automatically before static files are
+collected. For local development, rebuild and validate them with:
+
+```bash
+python tools/build_frontend_bundles.py
+python tools/build_frontend_bundles.py --check
+python -m unittest discover -s tools -p 'test_*.py'
+```
+
+Generated files under `static/monitor/dist/` are intentionally ignored. Production static assets
+also use WhiteNoise's content-hashed manifest; `FRONTEND_ASSET_VERSION` provides one central cache
+version for development and proxies that retain query-string-aware caches.
 
 ## Authentication and Users
 

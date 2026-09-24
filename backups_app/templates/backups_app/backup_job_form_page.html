@@ -26,6 +26,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{% static 'monitor/js/path_browser.js' %}?v=20260824-folder-browser-loading"></script>
-<script src="{% static 'monitor/js/backup_editor.js' %}?v=20260820-max-size-toggle"></script>
+<script src="{% static 'monitor/js/path_browser.js' %}?v={{ frontend_asset_version }}"></script>
+<script src="{% static 'monitor/js/backup_editor.js' %}?v={{ frontend_asset_version }}"></script>
 {% endblock %}

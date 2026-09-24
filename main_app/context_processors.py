@@ -10,6 +10,7 @@ def app_shell(request):
     monitoring_settings = MonitoringSettings.load()
     return {
         "app_subpath": settings.APP_SUBPATH,
+        "frontend_asset_version": settings.FRONTEND_ASSET_VERSION,
         "monitoring_settings": monitoring_settings,
         "system_name": monitoring_settings.effective_system_name,
         "detected_system_hostname": detected_hostname(),

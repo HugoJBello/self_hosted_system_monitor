@@ -22,7 +22,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-RUN chmod +x /app/docker/entrypoint.sh
+RUN python /app/tools/build_frontend_bundles.py \
+    && chmod +x /app/docker/entrypoint.sh
 
 EXPOSE 8000
 

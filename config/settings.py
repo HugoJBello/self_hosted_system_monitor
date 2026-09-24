@@ -95,6 +95,7 @@ STATIC_URL = f"{APP_SUBPATH}/static/" if APP_SUBPATH else "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+FRONTEND_ASSET_VERSION = os.getenv("FRONTEND_ASSET_VERSION", "20260924-modular-js")
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("DJANGO_DATA_UPLOAD_MAX_MEMORY_SIZE", str(10 * 1024 * 1024 * 1024)))
