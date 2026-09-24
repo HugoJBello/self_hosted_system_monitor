@@ -76,3 +76,19 @@ class ResumableDownloadResponseTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Length"], "10")
         self.assertEqual(self.body(response), b"")
+
+    def test_inline_media_caps_open_ranges_for_proxy_friendly_streaming(self):
+        initial = resumable_download_response(
+            self.requests.get("/video"), self.path, "example.bin",
+            as_attachment=False, max_range_bytes=4,
+        )
+        continued = resumable_download_response(
+            self.requests.get("/video", HTTP_RANGE="bytes=4-"), self.path, "example.bin",
+            as_attachment=False, max_range_bytes=4,
+        )
+
+        self.assertEqual(initial.status_code, 206)
+        self.assertEqual(initial["Content-Range"], "bytes 0-3/10")
+        self.assertEqual(self.body(initial), b"0123")
+        self.assertEqual(continued["Content-Range"], "bytes 4-7/10")
+        self.assertEqual(self.body(continued), b"4567")

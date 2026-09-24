@@ -447,6 +447,28 @@ class MonitorViewsTests(TestCase):
             self.assertEqual(item["media_kind"], "video")
             self.assertIn("/files/preview/", item["preview_url"])
 
+    @patch("file_manager_app.views.INLINE_MEDIA_MAX_RANGE_BYTES", 4)
+    @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
+    def test_video_preview_caps_open_ranges_for_proxy_streaming(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            video_path = Path(tmpdir, "clip.mp4")
+            video_path.write_bytes(b"0123456789")
+            preview_url = self._path("monitor:file-manager-preview")
+
+            initial = self.client.get(preview_url, {"path": str(video_path)})
+            continued = self.client.get(
+                preview_url,
+                {"path": str(video_path)},
+                HTTP_RANGE="bytes=4-",
+            )
+
+            self.assertEqual(initial.status_code, 206)
+            self.assertEqual(initial["Content-Range"], "bytes 0-3/10")
+            self.assertEqual(b"".join(initial.streaming_content), b"0123")
+            self.assertEqual(continued.status_code, 206)
+            self.assertEqual(continued["Content-Range"], "bytes 4-7/10")
+            self.assertEqual(b"".join(continued.streaming_content), b"4567")
+
     @patch("volumes_app.path_browser.HOST_ROOT_PATH", "/")
     def test_file_manager_preview_serves_small_images_only(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -725,6 +747,31 @@ class MonitorViewsTests(TestCase):
                 member = archive.getinfo("historic.txt")
                 self.assertEqual(member.date_time, (1980, 1, 1, 0, 0, 0))
                 self.assertEqual(archive.read(member), b"historic")
+
+    def test_download_archive_uses_fast_stored_zip_members(self):
+        from file_manager_app.services import download_archive_path, execute_file_operation
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            source_file = Path(tmpdir, "large.bin")
+            source_file.write_bytes(b"0123456789" * 1000)
+            operation = FileOperation.objects.create(
+                action="download",
+                status="running",
+                sources=["/large.bin"],
+                total_count=1,
+            )
+            archive_path = download_archive_path(operation.id)
+            self.addCleanup(lambda: archive_path.exists() and archive_path.unlink())
+
+            with patch("volumes_app.path_browser.HOST_ROOT_PATH", tmpdir):
+                execute_file_operation(operation)
+
+            operation.refresh_from_db()
+            self.assertEqual(operation.status, "success")
+            with zipfile.ZipFile(archive_path) as archive:
+                member = archive.getinfo("large.bin")
+                self.assertEqual(member.compress_type, zipfile.ZIP_STORED)
+                self.assertEqual(archive.read(member), source_file.read_bytes())
 
     def test_file_operation_compress_creates_tar_archive(self):
         from file_manager_app.services import execute_file_operation

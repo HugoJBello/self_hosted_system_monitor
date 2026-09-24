@@ -150,7 +150,7 @@
           }, 120000);
         }
         transfer.state = "complete";
-        updatePanel("Download complete and saved to disk.", "complete");
+        updatePanel("Download complete. Open the folder you selected (usually Downloads) to open the file.", "complete");
       }
     } catch (error) {
       if (!transfer || transfer.state === "paused" || transfer.state === "stopped") return;

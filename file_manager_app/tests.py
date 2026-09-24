@@ -7,7 +7,8 @@ from django.test import TestCase
 from django.urls import reverse
 
 from file_manager_app.access import access_roots, configured_access_roots, user_can_access_path
-from file_manager_app.models import FileShare, FileShareAccessEvent, UserFileAccess
+from file_manager_app.models import FileOperation, FileShare, FileShareAccessEvent, UserFileAccess
+from file_manager_app.services import download_archive_path
 from main_app.models import UserFeatureAccess
 
 
@@ -103,6 +104,21 @@ class FileSharingTests(TestCase):
             "archive_path": "0/hello.txt",
         })
         self.assertEqual(invalid.status_code, 404)
+
+    def test_ready_public_archive_explains_where_to_open_the_download(self):
+        share = FileShare.objects.create(created_by=self.admin, paths=["/shared"], public_link=True)
+        operation = FileOperation.objects.create(
+            action="download", status="success", sources=["/shared"], file_share=share,
+            summary="Download ZIP ready.",
+        )
+        archive_path = download_archive_path(operation.id)
+        archive_path.write_bytes(b"zip")
+        self.addCleanup(lambda: archive_path.exists() and archive_path.unlink())
+
+        response = self.client.get(self.url("monitor:file-share-public", [share.token]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "open your Downloads folder")
 
     def test_restricted_file_manager_rejects_paths_outside_roots(self):
         UserFeatureAccess.objects.create(user=self.member, feature="files")

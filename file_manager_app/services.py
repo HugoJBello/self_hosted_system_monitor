@@ -22,6 +22,8 @@ FILE_OPERATION_HEARTBEAT_SECONDS = 5
 ZIP_TIMESTAMP_FALLBACK_NOTE = "ZIP timestamps outside the supported 1980-2107 range will be clamped."
 DOWNLOAD_ARCHIVE_DIR_NAME = "file_manager_downloads"
 UPLOAD_SESSION_DIR_NAME = "file_manager_uploads"
+DOWNLOAD_ZIP_COPY_BUFFER_SIZE = 4 * 1024 * 1024
+DOWNLOAD_PROGRESS_UPDATE_SECONDS = 2
 SQLITE_LOCK_RETRY_SECONDS = 0.2
 SQLITE_LOCK_RETRY_ATTEMPTS = 5
 ARCHIVE_FORMATS = {
@@ -984,8 +986,9 @@ def _execute_download_operation(operation):
     with zipfile.ZipFile(
         tmp_archive_path,
         "w",
-        compression=zipfile.ZIP_DEFLATED,
+        compression=zipfile.ZIP_STORED,
         strict_timestamps=False,
+        allowZip64=True,
     ) as zip_handle:
         sources = operation.sources or []
         total_sources = len(sources)
@@ -1010,7 +1013,7 @@ def _execute_download_operation(operation):
             _append_log(operation, f"Starting ZIP item {source_index}/{total_sources}: {source}")
             operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
             try:
-                _write_source_to_zip(zip_handle, source, operation)
+                _write_download_source_to_zip(zip_handle, source, operation)
             except FileOperationInterrupted as exc:
                 if exc.status == "cancelled":
                     finalize_file_operation(operation, "cancelled", "Download preparation cancelled by operator.")
@@ -1069,6 +1072,64 @@ def _write_source_to_zip(zip_handle, source, operation=None):
     if operation:
         _raise_if_archive_operation_interrupted(operation)
     zip_handle.write(absolute_source, archive_root)
+
+
+def _write_download_file_to_zip(zip_handle, absolute_file, archive_name, operation=None):
+    """Copy a download member with a large buffer and interruption checkpoints."""
+    if os.path.isdir(absolute_file):
+        zip_handle.write(absolute_file, archive_name)
+        return
+    member = zipfile.ZipInfo.from_file(absolute_file, archive_name, strict_timestamps=False)
+    member.compress_type = zipfile.ZIP_STORED
+    transferred = 0
+    last_update = time.monotonic()
+    with open(absolute_file, "rb") as source_handle, zip_handle.open(member, "w", force_zip64=True) as target_handle:
+        while True:
+            chunk = source_handle.read(DOWNLOAD_ZIP_COPY_BUFFER_SIZE)
+            if not chunk:
+                break
+            target_handle.write(chunk)
+            transferred += len(chunk)
+            now = time.monotonic()
+            if operation and now - last_update >= DOWNLOAD_PROGRESS_UPDATE_SECONDS:
+                _raise_if_archive_operation_interrupted(operation)
+                operation.summary = f"Adding {archive_name} to ZIP: {transferred / (1024 * 1024):.0f} MB"
+                operation.heartbeat_at = timezone.now()
+                operation.save(update_fields=["summary", "heartbeat_at"])
+                last_update = now
+
+
+def _write_download_source_to_zip(zip_handle, source, operation=None):
+    absolute_source = hostfs_path(source)
+    if not os.path.lexists(absolute_source):
+        raise FileNotFoundError("Source no longer exists.")
+    archive_root = os.path.basename(source.rstrip("/")) or "root"
+    if os.path.isdir(absolute_source) and not os.path.islink(absolute_source):
+        archived_files = 0
+        for root, dirs, files in os.walk(absolute_source):
+            if operation:
+                _raise_if_archive_operation_interrupted(operation)
+            dirs.sort()
+            files.sort()
+            relative_root = os.path.relpath(root, absolute_source)
+            if relative_root != ".":
+                _write_download_file_to_zip(zip_handle, root, os.path.join(archive_root, relative_root), operation)
+            for file_name in files:
+                absolute_file = os.path.join(root, file_name)
+                relative_name = os.path.relpath(absolute_file, absolute_source)
+                archive_name = os.path.join(archive_root, relative_name)
+                _write_download_file_to_zip(zip_handle, absolute_file, archive_name, operation)
+                archived_files += 1
+                if operation and (archived_files == 1 or archived_files % 25 == 0):
+                    _raise_if_archive_operation_interrupted(operation)
+                    operation.current_path = f"{source}/{relative_name}".replace("//", "/")
+                    operation.summary = f"Adding {source} to ZIP: {archived_files} file(s)"
+                    _append_log(operation, f"ZIP progress {source}: {archived_files} file(s) added")
+                    operation.save(update_fields=["current_path", "summary", "log_output", "heartbeat_at"])
+        return
+    if operation:
+        _raise_if_archive_operation_interrupted(operation)
+    _write_download_file_to_zip(zip_handle, absolute_source, archive_root, operation)
 
 
 def _write_source_to_tar(tar_handle, source, operation=None):

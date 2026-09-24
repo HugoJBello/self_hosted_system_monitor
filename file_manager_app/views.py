@@ -23,7 +23,7 @@ from file_manager_app.browser import (
 )
 from file_manager_app.access import access_roots, closest_allowed_parent, has_full_file_access, require_path_access
 from file_manager_app.embedded_media import extract_embedded_thumbnail
-from file_manager_app.downloads import DOWNLOAD_CHUNK_SIZE, MANAGED_DOWNLOAD_THRESHOLD, resumable_download_response
+from file_manager_app.downloads import DOWNLOAD_CHUNK_SIZE, INLINE_MEDIA_MAX_RANGE_BYTES, MANAGED_DOWNLOAD_THRESHOLD, resumable_download_response
 from file_manager_app.information import continue_file_information, start_file_information
 from file_manager_app.models import FileOperation, FileSearch
 from file_manager_app.search import (
@@ -501,6 +501,7 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
                 os.path.basename(absolute_path),
                 content_type,
                 as_attachment=False,
+                max_range_bytes=INLINE_MEDIA_MAX_RANGE_BYTES,
             )
         return _direct_file_response(absolute_path, content_type)
 

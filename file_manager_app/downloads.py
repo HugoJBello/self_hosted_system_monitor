@@ -9,6 +9,7 @@ from django.utils.http import content_disposition_header
 MANAGED_DOWNLOAD_THRESHOLD = 100 * 1024 * 1024
 DOWNLOAD_CHUNK_SIZE = 8 * 1024 * 1024
 STREAM_READ_SIZE = 1024 * 1024
+INLINE_MEDIA_MAX_RANGE_BYTES = 8 * 1024 * 1024
 
 
 def _parse_range(value, size):
@@ -56,7 +57,15 @@ def _etag(stat_result):
     return f'"{hashlib.sha256(identity).hexdigest()[:24]}"'
 
 
-def resumable_download_response(request, path, filename, content_type=None, *, as_attachment=True):
+def resumable_download_response(
+    request,
+    path,
+    filename,
+    content_type=None,
+    *,
+    as_attachment=True,
+    max_range_bytes=None,
+):
     """Serve one local file with standards-compliant single byte range support."""
     path = os.fspath(path)
     stat_result = os.stat(path)
@@ -74,6 +83,11 @@ def resumable_download_response(request, path, filename, content_type=None, *, a
         response["ETag"] = etag
         return response
 
+    if max_range_bytes and size > max_range_bytes:
+        if byte_range is None:
+            byte_range = (0, max_range_bytes - 1)
+        elif byte_range[1] - byte_range[0] + 1 > max_range_bytes:
+            byte_range = (byte_range[0], byte_range[0] + max_range_bytes - 1)
     start, end = byte_range if byte_range is not None else (0, max(size - 1, 0))
     length = max(end - start + 1, 0)
     response = StreamingHttpResponse(

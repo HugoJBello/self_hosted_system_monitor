@@ -2808,7 +2808,7 @@
         const useManagedDownload = downloadSize >= managedThreshold;
         setDownloadStatus(useManagedDownload
           ? "Large archive ready. Use Download ZIP for chunked transfer with pause and recovery."
-          : "Download archive ready. Starting browser download...");
+          : "Browser download started. When it finishes, open your Downloads folder to open the ZIP.");
         if (downloadReady) {
           downloadReady.href = payload.download_url;
           downloadReady.classList.remove("disabled");
