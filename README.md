@@ -73,7 +73,7 @@ Change this password immediately from the account password page. The default adm
 - `SAMPLER_DEFAULT_INTERVAL`: default `60`
 - `MONITOR_ROOT_PATH`: default `/hostfs`
 - `MONITOR_PROCFS_PATH`: default `/hostfs/proc`
-- `WEB_TERMINAL_IDLE_TIMEOUT_SECONDS`: default `600`; disconnected terminal sessions are kept for at least 10 minutes
+- `WEB_TERMINAL_IDLE_TIMEOUT_SECONDS`: default `3600`; initial idle duration for disconnected terminal sessions. The administrator can change it later in Settings → Web terminal (10 minutes to 7 days).
 - `WEB_TERMINAL_HOST_SSH`: default `true`; after validating the Linux login, open the host shell through SSH so `sudo` works normally
 - `WEB_TERMINAL_HOST_SSH_HOST`: default auto-detects `host.docker.internal`, then Docker's default gateway
 - `WEB_TERMINAL_SSH_KNOWN_HOSTS`: default `/app/data/web_terminal_known_hosts`
@@ -117,7 +117,8 @@ The file manager and terminal scripts are further split by responsibility under 
 app directories. Templates load generated bundles so each page retains one private JavaScript scope
 and one HTTP request. App-specific CSS follows the same ownership rule and is concatenated into one
 site stylesheet in its original cascade order. Docker builds the JavaScript and CSS bundles
-automatically before static files are collected. For local development, rebuild and validate them with:
+automatically before static files are collected. For local development, `manage.py runserver`
+regenerates them automatically. They can also be rebuilt and validated explicitly with:
 
 ```bash
 python tools/build_frontend_bundles.py
@@ -184,7 +185,7 @@ Useful terminal environment variables:
 - `WEB_TERMINAL_HOST_SSH=true`: use host SSH after login. This is the default and recommended setting.
 - `WEB_TERMINAL_HOST_SSH_HOST=host.docker.internal`: override the host SSH target if Docker's gateway name is not suitable.
 - `WEB_TERMINAL_SSH_KNOWN_HOSTS=/app/data/web_terminal_known_hosts`: persistent known-hosts file used by the web terminal SSH client.
-- `WEB_TERMINAL_IDLE_TIMEOUT_SECONDS=600`: keep disconnected terminal sessions alive for at least 10 minutes.
+- `WEB_TERMINAL_IDLE_TIMEOUT_SECONDS=3600`: initial idle duration for disconnected terminal sessions; the persisted Settings → Web terminal value takes precedence afterward.
 - `WEB_TERMINAL_COMMAND`: override the whole terminal command for debugging or custom deployments.
 
 ## HTTP Backup Receiver Token

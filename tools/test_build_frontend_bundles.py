@@ -4,6 +4,9 @@ import build_frontend_bundles as builder
 
 
 class FrontendBundleTests(unittest.TestCase):
+    def test_public_build_api_accepts_fresh_bundles(self):
+        self.assertEqual(builder.build(check=True), 0)
+
     def test_sources_are_small_and_owned_by_one_bundle(self):
         seen = set()
         for bundle in builder.BUNDLES:

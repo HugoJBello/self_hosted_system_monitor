@@ -73,6 +73,11 @@ class MonitoringSettings(models.Model):
         max_length=500,
         default="/",
     )
+    terminal_idle_timeout_seconds = models.PositiveIntegerField(
+        default=3600,
+        validators=[MinValueValidator(600), MaxValueValidator(604800)],
+        help_text="Maximum inactivity before an unattended web terminal is closed.",
+    )
     updated_at = models.DateTimeField(auto_now=True)
 
     def save(self, *args, **kwargs):
@@ -103,6 +108,7 @@ class MonitoringSettings(models.Model):
                 "display_time_mode": os.getenv("SYSTEM_MONITOR_DISPLAY_TIME_MODE", "browser"),
                 "display_timezone": os.getenv("SYSTEM_MONITOR_DISPLAY_TIMEZONE", "Europe/Madrid"),
                 "file_manager_start_path": os.getenv("FILE_MANAGER_START_PATH", "/"),
+                "terminal_idle_timeout_seconds": int(os.getenv("WEB_TERMINAL_IDLE_TIMEOUT_SECONDS", "3600")),
             },
         )
         return settings_obj

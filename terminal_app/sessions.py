@@ -30,7 +30,14 @@ def terminal_command():
 
 
 def terminal_idle_timeout():
-    return max(600, int(getattr(settings, "WEB_TERMINAL_IDLE_TIMEOUT_SECONDS", 600)))
+    fallback = max(600, int(getattr(settings, "WEB_TERMINAL_IDLE_TIMEOUT_SECONDS", 3600)))
+    try:
+        from main_app.models import MonitoringSettings
+
+        configured = int(MonitoringSettings.load().terminal_idle_timeout_seconds)
+    except Exception:
+        configured = fallback
+    return max(600, min(configured, 604800))
 
 
 class TerminalSession:
@@ -199,6 +206,15 @@ class TerminalSessionRegistry:
         if not item or item["user_id"] != user_id:
             return None
         session = item["session"]
+        # A PTY can exit between websocket reconnects. Do not report that dead
+        # process as a successfully restored terminal: the client would show
+        # "Restored" while the new xterm instance has no output to render.
+        if not session.alive:
+            with self._lock:
+                current = self._sessions.get(session_id)
+                if current is item:
+                    self._sessions.pop(session_id, None)
+            return None
         session.touch()
         return session
 

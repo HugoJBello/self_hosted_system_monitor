@@ -94,9 +94,9 @@ class WebTerminalConsumer(AsyncWebsocketConsumer):
                 return
 
     async def _idle_watchdog(self):
-        timeout = terminal_idle_timeout()
         while True:
             await asyncio.sleep(30)
+            timeout = terminal_idle_timeout()
             if time.monotonic() - self.last_activity > timeout:
                 await self._send_status("Terminal closed after inactivity.", level="warning")
                 await self.close(code=4000)

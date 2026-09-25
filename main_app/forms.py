@@ -98,6 +98,7 @@ class MonitoringSettingsForm(forms.ModelForm):
             "display_time_mode",
             "display_timezone",
             "file_manager_start_path",
+            "terminal_idle_timeout_seconds",
         )
         widgets = {
             "system_name": forms.TextInput(attrs={"class": "form-control", "placeholder": "Defaults to this host's name"}),
@@ -120,6 +121,7 @@ class MonitoringSettingsForm(forms.ModelForm):
             "display_time_mode": forms.Select(attrs={"class": "form-select js-display-time-mode"}),
             "display_timezone": forms.Select(attrs={"class": "form-select js-display-timezone"}),
             "file_manager_start_path": forms.TextInput(attrs={"class": "form-control", "placeholder": "/"}),
+            "terminal_idle_timeout_seconds": forms.NumberInput(attrs={"class": "form-control", "min": 600, "max": 604800, "step": 60}),
         }
 
     COMMON_TIMEZONES = [
@@ -143,6 +145,9 @@ class MonitoringSettingsForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Keep older scripted/admin POSTs compatible when this setting is added
+        # to an already-running installation.
+        self.fields["terminal_idle_timeout_seconds"].required = False
         timezone_choices = []
         seen = set()
         for value in self.COMMON_TIMEZONES + sorted(available_timezones()):
@@ -151,9 +156,16 @@ class MonitoringSettingsForm(forms.ModelForm):
             seen.add(value)
             timezone_choices.append((value, value.replace("_", " ")))
         self.fields["display_timezone"].choices = timezone_choices
+
         self.fields["display_time_mode"].label = "Date and time mode"
         self.fields["display_timezone"].label = "Fixed display timezone"
         self.fields["display_timezone"].required = False
+
+    def clean_terminal_idle_timeout_seconds(self):
+        value = self.cleaned_data.get("terminal_idle_timeout_seconds")
+        if value in (None, ""):
+            return self.instance.terminal_idle_timeout_seconds or 3600
+        return value
 
     def clean_notifications_default_channels(self):
         value = self.cleaned_data["notifications_default_channels"].strip()

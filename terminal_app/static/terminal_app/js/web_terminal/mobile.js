@@ -235,6 +235,22 @@
     }
   }
 
+  function scheduleTerminalRefresh({ scrollToBottom = false } = {}) {
+    const refresh = () => {
+      if (!container.isConnected) return;
+      refreshTerminal();
+      if (scrollToBottom) {
+        try {
+          terminal.scrollToBottom();
+        } catch (error) {
+        }
+      }
+    };
+
+    refresh();
+    [80, 240, 700].forEach((delay) => window.setTimeout(refresh, delay));
+  }
+
   function terminalLooksBlank() {
     const buffer = terminal.buffer && terminal.buffer.active;
     if (!buffer) return false;

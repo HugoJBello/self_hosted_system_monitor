@@ -95,6 +95,18 @@
         </section>
 
         <section class="config-section">
+          <h2 class="h5 mb-3">Web terminal</h2>
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label" for="{{ form.terminal_idle_timeout_seconds.id_for_label }}">Idle session duration (seconds)</label>
+              {{ form.terminal_idle_timeout_seconds }}
+              <div class="form-text">A terminal stays alive while active and survives tab/link changes. It is closed only after this period without activity. Allowed range: 10 minutes to 7 days.</div>
+              {% for error in form.terminal_idle_timeout_seconds.errors %}<div class="text-danger small mt-1">{{ error }}</div>{% endfor %}
+            </div>
+          </div>
+        </section>
+
+        <section class="config-section">
           <h2 class="h5 mb-3">Date and Time Display</h2>
           <div class="row g-3">
             <div class="col-md-5">
@@ -223,6 +235,10 @@
         <div class="mini-stat">
           <span class="label">File manager start</span>
           <strong>{{ settings_obj.file_manager_start_path|default:"/" }}</strong>
+        </div>
+        <div class="mini-stat">
+          <span class="label">Terminal idle duration</span>
+          <strong>{{ settings_obj.terminal_idle_timeout_seconds }}s</strong>
         </div>
       </div>
       <hr class="border-secondary-subtle my-4">

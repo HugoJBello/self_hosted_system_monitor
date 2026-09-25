@@ -39,7 +39,7 @@
         socketReadyForInput = true;
         flushPendingInput(payload);
         sendResize();
-        window.setTimeout(refreshTerminal, 0);
+        scheduleTerminalRefresh({ scrollToBottom: Boolean(payload.reused) });
       } else if (payload.type === "status") {
         setState(payload.message || "Connected", payload.level || "info");
       } else if (payload.type === "pong") {
