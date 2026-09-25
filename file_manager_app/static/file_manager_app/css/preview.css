@@ -179,6 +179,29 @@
   min-height: 2.25rem;
 }
 
+.file-manager-video-preparation {
+  width: 100%;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+  border-radius: 0.65rem;
+  background: rgba(14, 116, 144, 0.12);
+}
+
+.file-manager-video-preparation-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: 0.6rem;
+}
+
+.file-manager-video-preparation-heading > i { color: #7dd3fc; font-size: 1.15rem; }
+.file-manager-video-preparation-heading strong,
+.file-manager-video-preparation-heading span { display: block; }
+.file-manager-video-preparation-heading span { color: #b9d7e8; font-size: 0.78rem; }
+.file-manager-video-preparation .progress { height: 0.55rem; background: rgba(255, 255, 255, 0.09); }
+.file-manager-video-preparation .progress-bar { background: linear-gradient(90deg, #0ea5e9, #34d399); transition: width 0.35s ease; }
+.file-manager-video-preparation > small { display: block; margin-top: 0.55rem; color: #9fb7c8; line-height: 1.4; }
+
 .file-manager-video-download {
   display: inline-flex;
   align-items: center;

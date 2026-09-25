@@ -36,6 +36,7 @@ BUNDLES = (
             "file_manager_app/static/file_manager_app/js/file_manager/actions.js",
             "file_manager_app/static/file_manager_app/js/file_manager/browser.js",
             "file_manager_app/static/file_manager_app/js/file_manager/information.js",
+            "file_manager_app/static/file_manager_app/js/file_manager/video.js",
             "file_manager_app/static/file_manager_app/js/file_manager/preview.js",
             "file_manager_app/static/file_manager_app/js/file_manager/transfers.js",
             "file_manager_app/static/file_manager_app/js/file_manager/uploads.js",

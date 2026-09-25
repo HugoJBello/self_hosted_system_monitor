@@ -129,6 +129,18 @@
     video.src = url;
     const actions = document.createElement("div");
     actions.className = "file-manager-video-actions";
+    const preparation = document.createElement("div");
+    preparation.className = "file-manager-video-preparation d-none";
+    preparation.innerHTML = `
+      <div class="file-manager-video-preparation-heading">
+        <i class="bi bi-gear-wide-connected" aria-hidden="true"></i>
+        <div><strong data-video-preparation-title>Preparing compatible preview</strong><span data-video-preparation-detail></span></div>
+      </div>
+      <div class="progress" role="progressbar" aria-label="Compatible preview progress" aria-valuemin="0" aria-valuemax="100">
+        <div class="progress-bar" data-video-preparation-bar></div>
+      </div>
+      <small data-video-preparation-help>The player will switch to the compatible version automatically when it is ready. You can close this window; preparation continues in the background.</small>
+      <button type="button" class="btn btn-sm btn-primary d-none mt-2" data-video-compatible-play><i class="bi bi-play-fill me-1"></i>Play compatible preview</button>`;
     const download = document.createElement("a");
     download.className = "file-manager-video-download";
     download.href = directDownloadUrl(url);
@@ -137,38 +149,86 @@
     download.setAttribute("aria-label", "Download video");
     download.innerHTML = '<i class="bi bi-download" aria-hidden="true"></i><span>Download</span>';
     actions.appendChild(download);
-    wrapper.append(video, actions);
+    wrapper.append(video, preparation, actions);
     previewStage.appendChild(wrapper);
     let loaded = false;
-    let failed = false;
     const timeoutId = window.setTimeout(() => {
-      if (loaded || failed || renderId !== previewRenderId) return;
+      if (loaded || renderId !== previewRenderId) return;
       setPreviewStatus("Video metadata is taking longer than expected. Direct download is available.", false);
     }, 12000);
     const show = () => {
-      if (failed || renderId !== previewRenderId) return;
+      if (renderId !== previewRenderId) return;
       loaded = true;
       window.clearTimeout(timeoutId);
-      setPreviewStatus("", false);
+      if (video.currentSrc === new URL(url, window.location.href).href) setPreviewStatus("", false);
     };
-    const fail = () => {
-      if (failed || renderId !== previewRenderId) return;
-      failed = true;
+    const unavailable = (message) => {
+      if (renderId !== previewRenderId) return;
       window.clearTimeout(timeoutId);
       renderPreviewUnavailable({
         icon: "bi-file-earmark-play",
         title: "Video preview unavailable",
-        message: "This browser cannot decode this video container or codec here.",
+        message,
         actionUrl: directDownloadUrl(url),
         actionLabel: "Download video",
       });
       setPreviewStatus(`Preview unavailable for ${contentType || "this video type"}.`, true);
     };
+    const setPreparation = (state) => {
+      const visible = state?.status === "preparing";
+      preparation.classList.toggle("d-none", !visible);
+      if (!visible) return;
+      const percent = Number(state.progress_percent || 0);
+      const title = preparation.querySelector("[data-video-preparation-title]");
+      const detail = preparation.querySelector("[data-video-preparation-detail]");
+      const bar = preparation.querySelector("[data-video-preparation-bar]");
+      const help = preparation.querySelector("[data-video-preparation-help]");
+      const playButton = preparation.querySelector("[data-video-compatible-play]");
+      const stage = state.stage === "remuxing" ? "Optimizing container" : state.stage === "transcoding" ? "Converting video" : "Preparing subtitles";
+      title.textContent = stage;
+      const eta = formatVideoEta(state.eta_seconds);
+      detail.textContent = percent > 0 ? `${percent}%${eta ? ` · ${eta} remaining` : ""}${state.speed ? ` · ${state.speed}` : ""}` : "Starting…";
+      bar.style.width = `${percent}%`;
+      bar.parentElement.setAttribute("aria-valuenow", String(percent));
+      bar.classList.toggle("progress-bar-striped", percent === 0);
+      bar.classList.toggle("progress-bar-animated", percent === 0);
+      help.textContent = "The player will switch to the compatible version automatically when it is ready. You can close this window; preparation continues in the background.";
+      playButton.classList.add("d-none");
+    };
+    const setCompatibleReady = (play) => {
+      preparation.classList.remove("d-none");
+      preparation.querySelector("[data-video-preparation-title]").textContent = "Compatible preview ready";
+      preparation.querySelector("[data-video-preparation-detail]").textContent = "The converted video is loaded in the player.";
+      const bar = preparation.querySelector("[data-video-preparation-bar]");
+      bar.style.width = "100%";
+      bar.classList.remove("progress-bar-striped", "progress-bar-animated");
+      bar.parentElement.setAttribute("aria-valuenow", "100");
+      preparation.querySelector("[data-video-preparation-help]").textContent = "Press play to start. Subtitles will appear in the player menu as they become available.";
+      const playButton = preparation.querySelector("[data-video-compatible-play]");
+      playButton.classList.remove("d-none");
+      playButton.onclick = play;
+    };
+    enhanceVideoPreview(video, url, contentType, {
+      isCurrent: () => renderId === previewRenderId,
+      setStatus: setPreviewStatus,
+      unavailable,
+      setPreparation,
+      setCompatibleReady,
+    });
     video.addEventListener("loadedmetadata", show, { once: true });
     video.addEventListener("loadeddata", show, { once: true });
     video.addEventListener("canplay", show, { once: true });
-    video.addEventListener("error", fail, { once: true });
     video.load();
+  }
+
+  function formatVideoEta(seconds) {
+    if (!Number.isFinite(Number(seconds)) || Number(seconds) < 0) return "";
+    const total = Math.round(Number(seconds));
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    if (hours) return `${hours}h ${minutes}m`;
+    if (minutes) return `${minutes}m`;
+    return `${Math.max(1, total)}s`;
   }
 
   function renderPreviewAudio(url, contentType) {

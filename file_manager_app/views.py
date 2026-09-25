@@ -1,5 +1,6 @@
 import mimetypes
 import os
+import subprocess
 from io import BytesIO
 from urllib.parse import urlencode
 
@@ -48,6 +49,7 @@ from file_manager_app.services import (
     start_background_file_operation,
 )
 from file_manager_app.sorting import SORT_DIRECTIONS, SORT_FIELDS, normalize_sort, sort_entries
+from file_manager_app.video_preview import state_for, subtitle_artifact, video_artifact
 from main_app.models import MonitoringSettings
 from volumes_app.path_browser import create_directory, hostfs_path, normalize_host_path
 
@@ -504,6 +506,53 @@ class FileManagerPreviewView(LoginRequiredMixin, View):
                 max_range_bytes=INLINE_MEDIA_MAX_RANGE_BYTES,
             )
         return _direct_file_response(absolute_path, content_type)
+
+
+class FileManagerVideoMetadataView(LoginRequiredMixin, View):
+    def get(self, request):
+        _, absolute_path = _video_preview_path(request)
+        try:
+            payload = state_for(absolute_path)
+        except (OSError, ValueError, subprocess.SubprocessError):
+            return JsonResponse({"status": "failed", "error": "Video metadata could not be read."}, status=422)
+        query = urlencode({"path": request.GET.get("path") or ""})
+        payload["compatible_url"] = f"{reverse('monitor:file-manager-video-compatible')}?{query}" if payload.get("status") == "ready" else ""
+        for subtitle in payload.get("subtitles_ready", []):
+            subtitle["url"] = f"{reverse('monitor:file-manager-video-subtitle', args=[subtitle['index']])}?{query}"
+        return JsonResponse(payload)
+
+
+class FileManagerCompatibleVideoView(LoginRequiredMixin, View):
+    def get(self, request):
+        _, absolute_path = _video_preview_path(request)
+        artifact = video_artifact(absolute_path)
+        if not artifact.is_file():
+            raise Http404("Compatible preview is not ready.")
+        return resumable_download_response(
+            request, artifact, "preview.mp4", "video/mp4", as_attachment=False,
+            max_range_bytes=INLINE_MEDIA_MAX_RANGE_BYTES,
+        )
+
+
+class FileManagerVideoSubtitleView(LoginRequiredMixin, View):
+    def get(self, request, stream_index):
+        _, absolute_path = _video_preview_path(request)
+        artifact = subtitle_artifact(absolute_path, stream_index)
+        if artifact is None:
+            raise Http404("Subtitle track is not ready.")
+        response = FileResponse(open(artifact, "rb"), content_type="text/vtt; charset=utf-8")
+        response["Cache-Control"] = "private, max-age=86400"
+        return response
+
+
+def _video_preview_path(request):
+    path = normalize_host_path(request.GET.get("path") or "")
+    require_path_access(request.user, path)
+    absolute_path = hostfs_path(path)
+    content_type = mimetypes.guess_type(absolute_path)[0] or ""
+    if not os.path.isfile(absolute_path) or media_kind_for_content_type(content_type) != "video":
+        raise Http404("Video not found.")
+    return path, absolute_path
 
 
 class FileManagerEmbeddedThumbnailView(LoginRequiredMixin, View):
